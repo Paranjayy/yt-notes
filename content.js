@@ -4,36 +4,43 @@
 (function () {
   'use strict';
 
-  // Inject CSS styles into the page
+  // Inject CSS styles into the page (Glassmorphism, High Aesthetics)
   const styleEl = document.createElement('style');
   styleEl.textContent = `
     /* Common Design System & Variables */
     :root {
-      --sc-primary: #6366f1;
-      --sc-primary-hover: #4f46e5;
-      --sc-bg-light: #ffffff;
-      --sc-bg-dark: #1f2937;
-      --sc-text-light: #111827;
-      --sc-text-dark: #f9fafb;
-      --sc-text-muted-light: #6b7280;
-      --sc-text-muted-dark: #9ca3af;
-      --sc-border-light: #e5e7eb;
-      --sc-border-dark: #374151;
-      --sc-accent-red: #ef4444;
+      --sc-primary: #8b5cf6;
+      --sc-primary-hover: #7c3aed;
+      --sc-secondary: #ec4899;
+      --sc-bg-light: rgba(255, 255, 255, 0.85);
+      --sc-bg-dark: rgba(24, 24, 37, 0.9);
+      --sc-text-light: #0f172a;
+      --sc-text-dark: #f8fafc;
+      --sc-text-muted-light: #64748b;
+      --sc-text-muted-dark: #94a3b8;
+      --sc-border-light: rgba(0, 0, 0, 0.08);
+      --sc-border-dark: rgba(255, 255, 255, 0.08);
+      --sc-accent-red: #f43f5e;
       --sc-accent-green: #10b981;
+      --sc-glass-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
+      --sc-glass-blur: blur(12px);
     }
 
     /* Embedded Companion Widget Container */
     #sc-youtube-widget {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      margin-bottom: 16px;
-      border-radius: 12px;
+      margin-bottom: 20px;
+      border-radius: 16px;
       overflow: hidden;
       border: 1px solid var(--sc-border-light);
       background: var(--sc-bg-light);
       color: var(--sc-text-light);
+      backdrop-filter: var(--sc-glass-blur);
+      -webkit-backdrop-filter: var(--sc-glass-blur);
+      box-shadow: var(--sc-glass-shadow);
       transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
+    
     html[theme="dark"] #sc-youtube-widget,
     body.ytd-masthead-dark #sc-youtube-widget,
     @media (prefers-color-scheme: dark) {
@@ -45,50 +52,63 @@
     }
 
     .sc-header {
-      background: linear-gradient(135deg, var(--sc-primary), #8b5cf6);
+      background: linear-gradient(135deg, var(--sc-primary), var(--sc-secondary));
       color: white;
-      padding: 14px 18px;
-      font-weight: 700;
-      font-size: 16px;
+      padding: 16px 20px;
+      font-weight: 800;
+      font-size: 17px;
       display: flex;
       justify-content: space-between;
       align-items: center;
       letter-spacing: 0.5px;
+      position: relative;
+    }
+    .sc-header::after {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: rgba(255,255,255,0.1);
     }
 
     .sc-header-title {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
     }
 
     .sc-logo-icon {
-      font-size: 18px;
+      font-size: 20px;
+      filter: drop-shadow(0 2px 4px rgba(0,0,0,0.15));
     }
 
     .sc-tabs {
       display: flex;
-      background: rgba(0,0,0,0.05);
+      background: rgba(0,0,0,0.02);
       border-bottom: 1px solid var(--sc-border-light);
+      padding: 4px;
+      gap: 4px;
     }
     html[theme="dark"] .sc-tabs,
     @media (prefers-color-scheme: dark) {
       .sc-adaptive-theme .sc-tabs {
-        background: rgba(255,255,255,0.03);
+        background: rgba(255,255,255,0.01);
         border-color: var(--sc-border-dark);
       }
     }
 
     .sc-tab {
       flex: 1;
-      padding: 10px;
+      padding: 12px;
       text-align: center;
       font-size: 13px;
-      font-weight: 600;
+      font-weight: 700;
       cursor: pointer;
+      border-radius: 8px;
       color: var(--sc-text-muted-light);
-      border-bottom: 2px solid transparent;
-      transition: all 0.2s;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     }
     html[theme="dark"] .sc-tab,
     @media (prefers-color-scheme: dark) {
@@ -97,14 +117,15 @@
       }
     }
     .sc-tab.active {
-      color: var(--sc-primary);
-      border-bottom-color: var(--sc-primary);
+      color: white;
+      background: var(--sc-primary);
+      box-shadow: 0 4px 12px rgba(139, 92, 246, 0.25);
     }
 
     .sc-content-panel {
       display: none;
-      padding: 16px;
-      max-height: 400px;
+      padding: 18px;
+      max-height: 480px;
       overflow-y: auto;
     }
     .sc-content-panel.active {
@@ -115,117 +136,158 @@
     .sc-notes-input-group {
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: 12px;
       margin-bottom: 16px;
     }
 
     .sc-textarea {
       width: 100%;
       box-sizing: border-box;
-      padding: 10px;
-      border-radius: 8px;
+      padding: 12px;
+      border-radius: 10px;
       border: 1px solid var(--sc-border-light);
-      background: transparent;
+      background: rgba(0,0,0,0.02);
       color: inherit;
       resize: vertical;
-      min-height: 60px;
-      font-size: 13px;
+      min-height: 70px;
+      font-size: 13.5px;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
     }
     html[theme="dark"] .sc-textarea,
     @media (prefers-color-scheme: dark) {
       .sc-adaptive-theme .sc-textarea {
+        background: rgba(255,255,255,0.02);
         border-color: var(--sc-border-dark);
       }
+    }
+    .sc-textarea:focus {
+      border-color: var(--sc-primary);
+      box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.15);
     }
 
     .sc-btn-row {
       display: flex;
-      gap: 8px;
+      gap: 10px;
       flex-wrap: wrap;
+      align-items: center;
     }
 
     .sc-btn {
-      padding: 8px 12px;
-      border-radius: 6px;
+      padding: 9px 15px;
+      border-radius: 8px;
       border: none;
       font-size: 13px;
-      font-weight: 600;
+      font-weight: 700;
       cursor: pointer;
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      transition: background 0.2s, transform 0.1s;
+      gap: 8px;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     }
     .sc-btn:active {
-      transform: scale(0.97);
+      transform: scale(0.96);
     }
     .sc-btn-primary {
       background: var(--sc-primary);
       color: white;
+      box-shadow: 0 4px 12px rgba(139, 92, 246, 0.2);
     }
     .sc-btn-primary:hover {
       background: var(--sc-primary-hover);
     }
     .sc-btn-secondary {
-      background: rgba(0,0,0,0.06);
+      background: rgba(0,0,0,0.05);
       color: inherit;
+      border: 1px solid var(--sc-border-light);
     }
     html[theme="dark"] .sc-btn-secondary,
     @media (prefers-color-scheme: dark) {
       .sc-adaptive-theme .sc-btn-secondary {
-        background: rgba(255,255,255,0.08);
+        background: rgba(255,255,255,0.05);
+        border-color: var(--sc-border-dark);
       }
     }
     .sc-btn-secondary:hover {
-      background: rgba(0,0,0,0.1);
+      background: rgba(0,0,0,0.08);
     }
     html[theme="dark"] .sc-btn-secondary:hover,
     @media (prefers-color-scheme: dark) {
       .sc-adaptive-theme .sc-btn-secondary:hover {
-        background: rgba(255,255,255,0.12);
+        background: rgba(255,255,255,0.08);
+      }
+    }
+
+    /* Option Settings Row */
+    .sc-options-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--sc-text-muted-light);
+    }
+    html[theme="dark"] .sc-options-row,
+    @media (prefers-color-scheme: dark) {
+      .sc-adaptive-theme .sc-options-row {
+        color: var(--sc-text-muted-dark);
       }
     }
 
     .sc-note-item {
       display: flex;
       flex-direction: column;
-      padding: 10px;
-      border-radius: 8px;
-      background: rgba(0,0,0,0.02);
+      padding: 12px;
+      border-radius: 10px;
+      background: rgba(0,0,0,0.01);
       border: 1px solid var(--sc-border-light);
-      margin-bottom: 8px;
-      position: relative;
+      margin-bottom: 10px;
+      transition: all 0.2s;
     }
     html[theme="dark"] .sc-note-item,
     @media (prefers-color-scheme: dark) {
       .sc-adaptive-theme .sc-note-item {
-        background: rgba(255,255,255,0.02);
+        background: rgba(255,255,255,0.01);
         border-color: var(--sc-border-dark);
       }
+    }
+    .sc-note-item:hover {
+      box-shadow: 0 4px 12px rgba(0,0,0,0.03);
     }
 
     .sc-note-timestamp {
       font-size: 12px;
-      font-weight: 700;
+      font-weight: 800;
       color: var(--sc-primary);
       cursor: pointer;
       align-self: flex-start;
-      margin-bottom: 4px;
+      margin-bottom: 6px;
+      background: rgba(139, 92, 246, 0.1);
+      padding: 2px 6px;
+      border-radius: 4px;
     }
     .sc-note-timestamp:hover {
-      text-decoration: underline;
+      background: rgba(139, 92, 246, 0.2);
     }
 
     .sc-note-text {
-      font-size: 13px;
+      font-size: 13.5px;
       word-break: break-word;
+      line-height: 1.4;
     }
 
     .sc-note-actions {
       display: flex;
-      gap: 8px;
+      gap: 12px;
       justify-content: flex-end;
-      margin-top: 6px;
+      margin-top: 8px;
+      border-top: 1px solid var(--sc-border-light);
+      padding-top: 6px;
+    }
+    html[theme="dark"] .sc-note-actions,
+    @media (prefers-color-scheme: dark) {
+      .sc-adaptive-theme .sc-note-actions {
+        border-color: var(--sc-border-dark);
+      }
     }
 
     .sc-note-action-btn {
@@ -233,7 +295,9 @@
       background: none;
       border: none;
       cursor: pointer;
+      font-weight: 600;
       color: var(--sc-text-muted-light);
+      transition: color 0.15s;
     }
     html[theme="dark"] .sc-note-action-btn,
     @media (prefers-color-scheme: dark) {
@@ -242,26 +306,30 @@
       }
     }
     .sc-note-action-btn:hover {
+      color: var(--sc-primary);
+    }
+    .sc-note-action-btn.sc-delete:hover {
       color: var(--sc-accent-red);
     }
 
     /* Timeline Markers */
     .sc-timeline-marker {
       position: absolute;
-      width: 10px;
-      height: 10px;
-      background: #8b5cf6;
+      width: 12px;
+      height: 12px;
+      background: var(--sc-primary);
       border: 2px solid white;
       border-radius: 50%;
       top: 50%;
       transform: translateY(-50%) scale(1);
       cursor: pointer;
       z-index: 50;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
       transition: transform 0.2s;
     }
     .sc-timeline-marker:hover {
       transform: translateY(-50%) scale(1.4);
-      background: var(--sc-primary);
+      background: var(--sc-secondary);
     }
 
     /* Tooltips for markers */
@@ -270,16 +338,17 @@
       bottom: 25px;
       left: 50%;
       transform: translateX(-50%);
-      background: rgba(0,0,0,0.85);
+      background: rgba(15, 23, 42, 0.95);
       color: white;
-      padding: 6px 10px;
-      border-radius: 6px;
+      padding: 8px 12px;
+      border-radius: 8px;
       font-size: 11px;
       white-space: nowrap;
       pointer-events: none;
       z-index: 100;
       display: none;
-      box-shadow: 0 4px 6px rgba(0,0,0,0.15);
+      box-shadow: var(--sc-glass-shadow);
+      border: 1px solid rgba(255,255,255,0.1);
     }
     .sc-timeline-marker:hover .sc-marker-tooltip {
       display: block;
@@ -292,23 +361,46 @@
       gap: 12px;
     }
 
+    .sc-search-bar {
+      width: 100%;
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--sc-border-light);
+      background: rgba(0,0,0,0.02);
+      color: inherit;
+      font-size: 12.5px;
+      outline: none;
+      box-sizing: border-box;
+      margin-bottom: 8px;
+    }
+    html[theme="dark"] .sc-search-bar,
+    @media (prefers-color-scheme: dark) {
+      .sc-adaptive-theme .sc-search-bar {
+        background: rgba(255,255,255,0.02);
+        border-color: var(--sc-border-dark);
+      }
+    }
+    .sc-search-bar:focus {
+      border-color: var(--sc-primary);
+    }
+
     .sc-transcript-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 8px;
+      margin-bottom: 4px;
     }
 
     .sc-transcript-list {
-      max-height: 250px;
+      max-height: 280px;
       overflow-y: auto;
       border: 1px solid var(--sc-border-light);
-      border-radius: 8px;
-      padding: 8px;
-      font-size: 12px;
+      border-radius: 10px;
+      padding: 10px;
+      font-size: 12.5px;
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: 8px;
     }
     html[theme="dark"] .sc-transcript-list,
     @media (prefers-color-scheme: dark) {
@@ -319,47 +411,53 @@
 
     .sc-transcript-line {
       display: flex;
-      gap: 8px;
+      gap: 10px;
+      line-height: 1.4;
     }
 
     .sc-transcript-time {
-      font-weight: 700;
+      font-weight: 800;
       color: var(--sc-primary);
       cursor: pointer;
-      min-width: 45px;
+      min-width: 50px;
+      background: rgba(139, 92, 246, 0.08);
+      padding: 0px 4px;
+      border-radius: 4px;
+      text-align: center;
+      align-self: flex-start;
     }
-
     .sc-transcript-time:hover {
-      text-decoration: underline;
+      background: rgba(139, 92, 246, 0.15);
     }
 
     /* Screenshots list */
     .sc-screenshots-container {
       display: flex;
-      gap: 8px;
+      gap: 10px;
       overflow-x: auto;
-      margin-top: 8px;
+      margin-top: 4px;
       padding: 4px 0;
     }
 
     .sc-screenshot-thumbnail {
-      width: 80px;
-      height: 45px;
+      width: 90px;
+      height: 50px;
       object-fit: cover;
-      border-radius: 4px;
+      border-radius: 6px;
       border: 1px solid var(--sc-border-light);
       cursor: pointer;
-      transition: transform 0.2s;
+      transition: transform 0.2s, border-color 0.2s;
     }
     .sc-screenshot-thumbnail:hover {
-      transform: scale(1.05);
+      transform: scale(1.04);
+      border-color: var(--sc-primary);
     }
 
     /* LLM Routing menu */
     .sc-llm-routing {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
-      gap: 6px;
+      gap: 8px;
       margin-top: 10px;
     }
 
@@ -368,36 +466,38 @@
       position: fixed;
       bottom: 24px;
       right: 24px;
-      background: linear-gradient(135deg, var(--sc-primary), #8b5cf6);
+      background: linear-gradient(135deg, var(--sc-primary), var(--sc-secondary));
       color: white;
       width: 56px;
       height: 56px;
       border-radius: 50%;
-      box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);
+      box-shadow: 0 8px 24px rgba(139, 92, 246, 0.4);
       display: flex;
       align-items: center;
       justify-content: center;
       cursor: pointer;
       z-index: 9999;
-      font-weight: 700;
-      font-size: 20px;
-      transition: transform 0.2s;
+      font-weight: 800;
+      font-size: 22px;
+      transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     }
     .sc-floating-action-button:hover {
-      transform: scale(1.08) rotate(5deg);
+      transform: scale(1.1) rotate(10deg);
     }
 
     .sc-floating-panel {
       position: fixed;
-      bottom: 90px;
+      bottom: 96px;
       right: 24px;
-      width: 360px;
-      height: 500px;
-      border-radius: 12px;
+      width: 380px;
+      height: 520px;
+      border-radius: 16px;
       border: 1px solid var(--sc-border-light);
       background: var(--sc-bg-light);
       color: var(--sc-text-light);
-      box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+      backdrop-filter: var(--sc-glass-blur);
+      -webkit-backdrop-filter: var(--sc-glass-blur);
+      box-shadow: var(--sc-glass-shadow);
       z-index: 9999;
       display: flex;
       flex-direction: column;
@@ -416,8 +516,24 @@
     }
 
     @keyframes scSlideUp {
-      from { transform: translateY(20px) scale(0.95); opacity: 0; }
+      from { transform: translateY(30px) scale(0.95); opacity: 0; }
       to { transform: translateY(0) scale(1); opacity: 1; }
+    }
+
+    /* Custom Scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(139, 92, 246, 0.3);
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(139, 92, 246, 0.5);
     }
   `;
   document.head.appendChild(styleEl);
@@ -427,6 +543,9 @@
   let activeTabName = 'notes';
   let ytCaptions = [];
   let screenshotList = [];
+  let autoPauseOnType = true;
+  let notesSearchQuery = '';
+  let transcriptSearchQuery = '';
 
   // Initialize script depending on host
   const host = location.hostname;
@@ -440,7 +559,6 @@
 
   // --- YouTube Scripting & Logic ---
   function initYouTubeWatcher() {
-    // Watch URL transitions
     let lastUrl = location.href;
     setInterval(() => {
       if (location.href !== lastUrl) {
@@ -462,17 +580,14 @@
       injectTimelineMarkers();
       fetchYouTubeTranscript();
     } else {
-      // Remove widget if not on video page
       const existing = document.getElementById('sc-youtube-widget');
       if (existing) existing.remove();
     }
   }
 
-  // Inject widget in secondary column above recommendation list
   function injectYouTubeWidget() {
     const target = document.querySelector('#secondary-inner') || document.querySelector('#secondary');
     if (!target) {
-      // Retry in 1.5s if DOM not ready
       setTimeout(injectYouTubeWidget, 1500);
       return;
     }
@@ -492,7 +607,7 @@
     container.innerHTML = `
       <div class="sc-header">
         <div class="sc-header-title">
-          <span class="sc-logo-icon">🚀</span>
+          <span class="sc-logo-icon">🔮</span>
           <span>Social Companion</span>
         </div>
       </div>
@@ -505,13 +620,18 @@
       <!-- Notes tab -->
       <div class="sc-content-panel ${activeTabName === 'notes' ? 'active' : ''}" id="sc-panel-notes">
         <div class="sc-notes-input-group">
-          <textarea class="sc-textarea" id="sc-note-input" placeholder="Type a timestamped note..."></textarea>
+          <textarea class="sc-textarea" id="sc-note-input" placeholder="Type a timestamped note... (Auto-pauses video)"></textarea>
           <div class="sc-btn-row">
             <button class="sc-btn sc-btn-primary" id="sc-btn-add-note">Add Note</button>
             <button class="sc-btn sc-btn-secondary" id="sc-btn-ss">📸 Screenshot</button>
+            <div class="sc-options-row">
+              <input type="checkbox" id="sc-chk-autopause" ${autoPauseOnType ? 'checked' : ''}>
+              <label for="sc-chk-autopause">Auto-Pause</label>
+            </div>
           </div>
         </div>
         <div id="sc-screenshots-row" class="sc-screenshots-container"></div>
+        <input type="text" class="sc-search-bar" id="sc-notes-search" placeholder="Search notes..." value="${notesSearchQuery}">
         <div id="sc-notes-list" style="margin-top: 12px;"></div>
       </div>
 
@@ -519,8 +639,8 @@
       <div class="sc-content-panel ${activeTabName === 'transcript' ? 'active' : ''}" id="sc-panel-transcript">
         <div class="sc-tools-panel">
           <div class="sc-transcript-header">
-            <strong>Video Transcript</strong>
-            <button class="sc-btn sc-btn-secondary" style="font-size: 11px; padding: 4px 8px;" id="sc-btn-copy-transcript">Copy Raw</button>
+            <input type="text" class="sc-search-bar" style="margin-bottom:0; flex:1; margin-right:10px;" id="sc-transcript-search" placeholder="Search transcript..." value="${transcriptSearchQuery}">
+            <button class="sc-btn sc-btn-secondary" style="font-size: 11px; padding: 6px 10px;" id="sc-btn-copy-transcript">Copy</button>
           </div>
           <div class="sc-transcript-list" id="sc-transcript-box">
             <div style="color: var(--sc-text-muted-light); text-align: center; padding: 12px;">Loading transcript...</div>
@@ -531,10 +651,10 @@
       <!-- Export tab -->
       <div class="sc-content-panel ${activeTabName === 'export' ? 'active' : ''}" id="sc-panel-export">
         <div class="sc-tools-panel">
-          <button class="sc-btn sc-btn-primary" style="width: 100%; justify-content: center;" id="sc-btn-copy-all">Copy Note & Info Markdown</button>
+          <button class="sc-btn sc-btn-primary" style="width: 100%; justify-content: center;" id="sc-btn-copy-all">Copy Notes & Info Markdown</button>
           <button class="sc-btn sc-btn-secondary" style="width: 100%; justify-content: center;" id="sc-btn-dl-md">Download Markdown File</button>
           
-          <div style="margin-top: 12px;">
+          <div style="margin-top: 16px;">
             <strong style="font-size: 13px;">Send context to AI chatbot:</strong>
             <div class="sc-llm-routing">
               <button class="sc-btn sc-btn-secondary" data-llm="chatgpt">ChatGPT</button>
@@ -560,28 +680,55 @@
       });
     });
 
-    // Note operations
-    const addNoteBtn = container.querySelector('#sc-btn-add-note');
+    // Auto-Pause & Inputs
     const noteInput = container.querySelector('#sc-note-input');
-    const ssBtn = container.querySelector('#sc-btn-ss');
+    const autoPauseChk = container.querySelector('#sc-chk-autopause');
+    const notesSearch = container.querySelector('#sc-notes-search');
+    const transcriptSearch = container.querySelector('#sc-transcript-search');
 
-    addNoteBtn.addEventListener('click', () => {
-      const text = noteInput.value.trim();
-      if (!text) return;
-      const video = document.querySelector('video');
-      const time = video ? Math.floor(video.currentTime) : 0;
-      saveNote(currentVideoId, time, text);
-      noteInput.value = '';
+    autoPauseChk.addEventListener('change', (e) => {
+      autoPauseOnType = e.target.checked;
     });
 
-    ssBtn.addEventListener('click', () => {
+    noteInput.addEventListener('focus', () => {
+      if (autoPauseOnType) {
+        const video = document.querySelector('video');
+        if (video && !video.paused) {
+          video.pause();
+        }
+      }
+    });
+
+    notesSearch.addEventListener('input', (e) => {
+      notesSearchQuery = e.target.value;
+      renderNotesList();
+    });
+
+    transcriptSearch.addEventListener('input', (e) => {
+      transcriptSearchQuery = e.target.value;
+      renderTranscript();
+    });
+
+    // Add Note
+    container.querySelector('#sc-btn-add-note').addEventListener('click', () => {
+      const text = noteInput.value.trim();
+      const video = document.querySelector('video');
+      // Save precise decimal time (microsecond aware)
+      const time = video ? video.currentTime : 0.0;
+      
+      saveNote(currentVideoId, time, text || "[Marker Only]");
+      noteInput.value = '';
+      
+      if (autoPauseOnType && video) {
+        video.play().catch(() => {});
+      }
+    });
+
+    container.querySelector('#sc-btn-ss').addEventListener('click', () => {
       capturePlayerScreenshot();
     });
 
-    // Render initial notes list
     renderNotesList();
-
-    // Setup Transcript operations
     renderTranscript();
 
     // Export operations
@@ -605,11 +752,9 @@
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       const dataUrl = canvas.toDataURL('image/jpeg');
 
-      // Add to session list
       screenshotList.unshift(dataUrl);
       if (screenshotList.length > 5) screenshotList.pop();
 
-      // Refresh thumbnails
       renderScreenshotsList();
     } catch (e) {
       console.error("Failed to capture frame screenshot", e);
@@ -621,13 +766,12 @@
     if (!container) return;
     container.innerHTML = '';
 
-    screenshotList.forEach((src, idx) => {
+    screenshotList.forEach((src) => {
       const img = document.createElement('img');
       img.src = src;
       img.className = 'sc-screenshot-thumbnail';
-      img.title = "Click to copy image to clipboard";
+      img.title = "Click to copy image";
       img.addEventListener('click', async () => {
-        // Copy to clipboard
         try {
           const res = await fetch(src);
           const blob = await res.blob();
@@ -643,24 +787,26 @@
     });
   }
 
-  // Seek video player time helper
   function seekTo(seconds) {
     const video = document.querySelector('video');
     if (video) {
-      video.currentTime = seconds;
+      video.currentTime = parseFloat(seconds);
       video.play().catch(() => {});
     }
   }
 
-  // Format seconds to H:MM:SS
+  // Format double precision time to MM:SS.hh (including fractional seconds)
   function formatTime(secs) {
     const h = Math.floor(secs / 3600);
     const m = Math.floor((secs % 3600) / 60);
     const s = Math.floor(secs % 60);
+    const ms = Math.floor((secs % 1) * 100);
+    
+    const msStr = ms.toString().padStart(2, '0');
     if (h > 0) {
-      return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+      return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${msStr}`;
     }
-    return `${m}:${s.toString().padStart(2, '0')}`;
+    return `${m}:${s.toString().padStart(2, '0')}.${msStr}`;
   }
 
   // Storage and Notes Management
@@ -674,6 +820,21 @@
         renderNotesList();
         injectTimelineMarkers();
       });
+    });
+  }
+
+  function updateNote(noteId, newText) {
+    const key = `sc_notes_${currentVideoId}`;
+    chrome.storage.local.get([key], (data) => {
+      const notes = data[key] || [];
+      const note = notes.find(n => n.id === noteId);
+      if (note) {
+        note.text = newText || "[Marker Only]";
+        chrome.storage.local.set({ [key]: notes }, () => {
+          renderNotesList();
+          injectTimelineMarkers();
+        });
+      }
     });
   }
 
@@ -696,17 +857,26 @@
     const key = `sc_notes_${currentVideoId}`;
     chrome.storage.local.get([key], (data) => {
       const notes = data[key] || [];
-      if (notes.length === 0) {
-        listContainer.innerHTML = `<div style="color: var(--sc-text-muted-light); text-align: center; font-size: 13px; padding: 12px 0;">No notes added yet. Add your first note!</div>`;
+      
+      // Filter notes
+      const filtered = notes.filter(n => 
+        n.text.toLowerCase().includes(notesSearchQuery.toLowerCase())
+      );
+
+      if (filtered.length === 0) {
+        listContainer.innerHTML = `<div style="color: var(--sc-text-muted-light); text-align: center; font-size: 13px; padding: 12px 0;">No matching notes found.</div>`;
         return;
       }
 
-      listContainer.innerHTML = notes.map(n => `
-        <div class="sc-note-item">
-          <div class="sc-note-timestamp" data-time="${n.time}">${formatTime(n.time)}</div>
-          <div class="sc-note-text">${escapeHtml(n.text)}</div>
+      listContainer.innerHTML = filtered.map(n => `
+        <div class="sc-note-item" id="sc-note-${n.id}">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div class="sc-note-timestamp" data-time="${n.time}">${formatTime(n.time)}</div>
+          </div>
+          <div class="sc-note-text" id="sc-text-${n.id}">${escapeHtml(n.text)}</div>
           <div class="sc-note-actions">
-            <button class="sc-note-action-btn" data-del-id="${n.id}">Delete</button>
+            <button class="sc-note-action-btn sc-edit" data-edit-id="${n.id}">Edit</button>
+            <button class="sc-note-action-btn sc-delete" data-del-id="${n.id}">Delete</button>
           </div>
         </div>
       `).join('');
@@ -714,15 +884,48 @@
       // Add listeners
       listContainer.querySelectorAll('.sc-note-timestamp').forEach(el => {
         el.addEventListener('click', (e) => {
-          seekTo(parseInt(e.target.dataset.time));
+          seekTo(parseFloat(e.target.dataset.time));
         });
       });
 
-      listContainer.querySelectorAll('.sc-note-action-btn').forEach(btn => {
+      listContainer.querySelectorAll('.sc-delete').forEach(btn => {
         btn.addEventListener('click', (e) => {
           deleteNote(e.target.dataset.delId);
         });
       });
+
+      listContainer.querySelectorAll('.sc-edit').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const noteId = e.target.dataset.editId;
+          enterNoteEditMode(noteId);
+        });
+      });
+    });
+  }
+
+  function enterNoteEditMode(noteId) {
+    const textDiv = document.getElementById(`sc-text-${noteId}`);
+    const noteCard = document.getElementById(`sc-note-${noteId}`);
+    if (!textDiv || !noteCard) return;
+
+    const originalText = textDiv.innerText === "[Marker Only]" ? "" : textDiv.innerText;
+    textDiv.innerHTML = `
+      <textarea class="sc-textarea" id="sc-edit-textarea-${noteId}" style="min-height: 50px;">${escapeHtml(originalText)}</textarea>
+    `;
+
+    const actionsDiv = noteCard.querySelector('.sc-note-actions');
+    actionsDiv.innerHTML = `
+      <button class="sc-note-action-btn" id="sc-save-edit-${noteId}">Save</button>
+      <button class="sc-note-action-btn" id="sc-cancel-edit-${noteId}">Cancel</button>
+    `;
+
+    document.getElementById(`sc-save-edit-${noteId}`).addEventListener('click', () => {
+      const newText = document.getElementById(`sc-edit-textarea-${noteId}`).value.trim();
+      updateNote(noteId, newText);
+    });
+
+    document.getElementById(`sc-cancel-edit-${noteId}`).addEventListener('click', () => {
+      renderNotesList();
     });
   }
 
@@ -731,7 +934,6 @@
     const progressBar = document.querySelector('.ytp-progress-bar');
     if (!progressBar) return;
 
-    // Remove old ones
     document.querySelectorAll('.sc-timeline-marker').forEach(m => m.remove());
 
     const key = `sc_notes_${currentVideoId}`;
@@ -763,7 +965,7 @@
     });
   }
 
-  // Fetch YouTube Captions directly
+  // Fetch YouTube Captions directly & Scrape Native Panel Fallback
   function fetchYouTubeTranscript() {
     ytCaptions = [];
     const scriptId = 'sc-yt-injected-script';
@@ -785,14 +987,12 @@
             } catch(e) {}
           }
           getCaptions();
-          // Watch for navigation events
           document.addEventListener('yt-navigate-finish', getCaptions);
         })();
       `;
       document.documentElement.appendChild(script);
     }
 
-    // Clean old listener
     window.removeEventListener('message', handleTranscriptMessage);
     window.addEventListener('message', handleTranscriptMessage);
   }
@@ -800,39 +1000,81 @@
   async function handleTranscriptMessage(event) {
     if (event.source !== window || event.data?.type !== 'SC_YT_TRACKS') return;
     const tracks = event.data.tracks || [];
-    const transcriptBox = document.getElementById('sc-transcript-box');
 
     if (tracks.length === 0) {
-      if (transcriptBox) {
-        transcriptBox.innerHTML = `<div style="color: var(--sc-text-muted-light); text-align: center; padding: 12px;">No auto-captions found for this video.</div>`;
-      }
+      // Fallback: Trigger native transcript scraper
+      scrapeNativeYouTubeTranscript();
       return;
     }
 
-    // Prefer English if available, otherwise take first
     const englishTrack = tracks.find(t => t.languageCode === 'en') || tracks[0];
     try {
       const res = await fetch(englishTrack.baseUrl);
       const text = await res.text();
       
-      // Parse XML timedtext
       const parser = new DOMParser();
       const xmlDoc = parser.parseFromString(text, 'text/xml');
       const textNodes = xmlDoc.getElementsByTagName('text');
       
       ytCaptions = Array.from(textNodes).map(node => ({
         start: parseFloat(node.getAttribute('start')),
-        duration: parseFloat(node.getAttribute('dur')),
+        duration: parseFloat(node.getAttribute('dur')) || 0.0,
         text: decodeHtmlEntities(node.textContent)
       }));
 
       renderTranscript();
     } catch (e) {
-      console.error("Failed to parse caption tracks XML", e);
-      if (transcriptBox) {
-        transcriptBox.innerHTML = `<div style="color: var(--sc-accent-red); text-align: center; padding: 12px;">Error parsing captions.</div>`;
-      }
+      console.error("Failed to parse caption tracks XML. Attempting scraping...", e);
+      scrapeNativeYouTubeTranscript();
     }
+  }
+
+  // Fallback: Click and scrape the native YouTube transcript panel
+  function scrapeNativeYouTubeTranscript() {
+    const transcriptBox = document.getElementById('sc-transcript-box');
+    if (transcriptBox) {
+      transcriptBox.innerHTML = `<div style="color: var(--sc-text-muted-light); text-align: center; padding: 12px;">Attempting native transcript extraction...</div>`;
+    }
+
+    // Look for native 'Show transcript' button
+    const showBtn = document.querySelector('ytd-video-description-transcript-section-renderer button') || 
+                    Array.from(document.querySelectorAll('button')).find(el => el.innerText.includes('Show transcript'));
+    
+    if (showBtn) {
+      showBtn.click();
+    }
+
+    // Poll for the transcript elements to appear
+    let retries = 10;
+    const interval = setInterval(() => {
+      const segments = document.querySelectorAll('ytd-transcript-segment-renderer');
+      if (segments.length > 0) {
+        clearInterval(interval);
+        
+        ytCaptions = Array.from(segments).map(seg => {
+          const timeStr = seg.querySelector('.segment-timestamp')?.innerText.trim() || '0:00';
+          const text = seg.querySelector('.segment-text')?.innerText.trim() || '';
+          
+          // Convert timestamp (e.g. 1:23) to seconds
+          const parts = timeStr.split(':').map(Number);
+          let start = 0;
+          if (parts.length === 3) start = parts[0]*3600 + parts[1]*60 + parts[2];
+          else start = parts[0]*60 + parts[1];
+
+          return { start, text };
+        });
+
+        renderTranscript();
+      } else {
+        retries--;
+        if (retries <= 0) {
+          clearInterval(interval);
+          if (transcriptBox) {
+            transcriptBox.innerHTML = `<div style="color: var(--sc-text-muted-light); text-align: center; padding: 12px;">Failed to scrape native transcript. Open the transcript panel manually to assist scraping.</div>`;
+          }
+        }
+      }
+    }, 1000);
   }
 
   function renderTranscript() {
@@ -840,18 +1082,26 @@
     if (!transcriptBox) return;
 
     if (ytCaptions.length === 0) {
-      transcriptBox.innerHTML = `<div style="color: var(--sc-text-muted-light); text-align: center; padding: 12px;">No captions loaded.</div>`;
+      transcriptBox.innerHTML = `<div style="color: var(--sc-text-muted-light); text-align: center; padding: 12px;">No transcript loaded.</div>`;
       return;
     }
 
-    transcriptBox.innerHTML = ytCaptions.map(c => `
+    const filtered = ytCaptions.filter(c => 
+      c.text.toLowerCase().includes(transcriptSearchQuery.toLowerCase())
+    );
+
+    if (filtered.length === 0) {
+      transcriptBox.innerHTML = `<div style="color: var(--sc-text-muted-light); text-align: center; padding: 12px;">No matching transcript lines.</div>`;
+      return;
+    }
+
+    transcriptBox.innerHTML = filtered.map(c => `
       <div class="sc-transcript-line">
         <span class="sc-transcript-time" data-time="${c.start}">${formatTime(c.start)}</span>
         <span>${escapeHtml(c.text)}</span>
       </div>
     `).join('');
 
-    // Hook listeners
     transcriptBox.querySelectorAll('.sc-transcript-time').forEach(el => {
       el.addEventListener('click', (e) => {
         seekTo(parseFloat(e.target.dataset.time));
@@ -860,11 +1110,11 @@
 
     const copyBtn = document.getElementById('sc-btn-copy-transcript');
     if (copyBtn) {
-      copyBtn.addEventListener('click', () => {
+      copyBtn.onclick = () => {
         const raw = ytCaptions.map(c => `[${formatTime(c.start)}] ${c.text}`).join('\n');
         navigator.clipboard.writeText(raw);
         alert("Transcript copied to clipboard!");
-      });
+      };
     }
   }
 
@@ -875,21 +1125,17 @@
     const subCount = document.querySelector('ytd-video-owner-renderer #owner-sub-count')?.innerText || 'Unknown';
     const views = document.querySelector('#info-container #info span, ytd-watch-info-text #info span')?.innerText || 'Unknown views';
     
-    // Scrape description elements
     const descEl = document.querySelector('ytd-text-inline-expander span, #description-inline-expander span');
     const description = descEl ? descEl.innerText : '';
 
-    // Comments count
     const commentsCount = document.querySelector('ytd-comments #title')?.innerText || 'Unknown comments';
 
-    // Tags
     const tagsList = [];
     document.querySelectorAll('a[href*="/hashtag/"]').forEach(el => {
       tagsList.push(el.innerText.trim());
     });
     const tags = tagsList.join(', ') || 'None';
 
-    // Comments scraping
     const comments = [];
     document.querySelectorAll('ytd-comment-thread-renderer').forEach((el, idx) => {
       if (idx < 5) {
@@ -901,7 +1147,6 @@
       }
     });
 
-    // Recommendations
     const recVids = [];
     document.querySelectorAll('ytd-compact-video-renderer').forEach((el, idx) => {
       if (idx < 5) {
@@ -1016,7 +1261,6 @@
 
   async function sendToLLM(target) {
     const md = await generateMarkdown();
-    // Prepare prompt
     const promptText = encodeURIComponent(`Please review the transcript, notes, and metadata of this video and summarize the main takeaways:\n\n${md}`);
     
     let url = '';
@@ -1025,10 +1269,10 @@
         url = `https://chatgpt.com/?q=${promptText}`;
         break;
       case 'claude':
-        url = `https://claude.ai/new`; // Doesn't support direct query injection via URL easily, fallback to open
+        url = `https://claude.ai/new`;
         break;
       case 'gemini':
-        url = `https://gemini.google.com/app`; // Fallback
+        url = `https://gemini.google.com/app`;
         break;
       case 'aistudio':
         url = `https://aistudio.google.com/`;
@@ -1042,7 +1286,6 @@
 
   // --- X (Twitter) & Reddit Content Panels ---
   function initSocialCompanion(platform) {
-    // Inject floating helper trigger button
     const fab = document.createElement('div');
     fab.className = 'sc-floating-action-button';
     fab.innerHTML = '🚀';
@@ -1068,7 +1311,7 @@
     panel.innerHTML = `
       <div class="sc-header">
         <div class="sc-header-title">
-          <span>🚀 Social Companion (${platform === 'x' ? 'X' : 'Reddit'})</span>
+          <span>🔮 Social Companion (${platform === 'x' ? 'X' : 'Reddit'})</span>
         </div>
         <span class="sc-close-btn" style="cursor:pointer; font-weight: bold;">✕</span>
       </div>
@@ -1098,7 +1341,6 @@
 
     const previewBox = panel.querySelector('#sc-social-preview');
 
-    // Scrape data
     const scraped = platform === 'x' ? scrapeXThread() : scrapeRedditPost();
     const md = formatSocialMarkdown(scraped, platform);
     previewBox.textContent = md;
@@ -1175,7 +1417,6 @@
     return md;
   }
 
-  // --- Utility functions ---
   function escapeHtml(text) {
     const map = {
       '&': '&amp;',
