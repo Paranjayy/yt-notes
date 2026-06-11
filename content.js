@@ -13,7 +13,7 @@
       --sc-primary-hover: #7c3aed;
       --sc-secondary: #ec4899;
       --sc-bg-light: rgba(255, 255, 255, 0.85);
-      --sc-bg-dark: rgba(24, 24, 37, 0.9);
+      --sc-bg-dark: rgba(24, 24, 37, 0.95);
       --sc-text-light: #0f172a;
       --sc-text-dark: #f8fafc;
       --sc-text-muted-light: #64748b;
@@ -63,15 +63,6 @@
       letter-spacing: 0.5px;
       position: relative;
     }
-    .sc-header::after {
-      content: '';
-      position: absolute;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      height: 1px;
-      background: rgba(255,255,255,0.1);
-    }
 
     .sc-header-title {
       display: flex;
@@ -81,7 +72,6 @@
 
     .sc-logo-icon {
       font-size: 20px;
-      filter: drop-shadow(0 2px 4px rgba(0,0,0,0.15));
     }
 
     .sc-tabs {
@@ -218,19 +208,12 @@
       }
     }
 
-    /* Option Settings Row */
     .sc-options-row {
       display: flex;
       align-items: center;
       gap: 8px;
       font-size: 12px;
       color: var(--sc-text-muted-light);
-    }
-    html[theme="dark"] .sc-options-row,
-    @media (prefers-color-scheme: dark) {
-      .sc-adaptive-theme .sc-options-row {
-        color: var(--sc-text-muted-dark);
-      }
     }
 
     .sc-note-item {
@@ -250,9 +233,6 @@
         border-color: var(--sc-border-dark);
       }
     }
-    .sc-note-item:hover {
-      box-shadow: 0 4px 12px rgba(0,0,0,0.03);
-    }
 
     .sc-note-timestamp {
       font-size: 12px;
@@ -264,9 +244,6 @@
       background: rgba(139, 92, 246, 0.1);
       padding: 2px 6px;
       border-radius: 4px;
-    }
-    .sc-note-timestamp:hover {
-      background: rgba(139, 92, 246, 0.2);
     }
 
     .sc-note-text {
@@ -297,13 +274,6 @@
       cursor: pointer;
       font-weight: 600;
       color: var(--sc-text-muted-light);
-      transition: color 0.15s;
-    }
-    html[theme="dark"] .sc-note-action-btn,
-    @media (prefers-color-scheme: dark) {
-      .sc-adaptive-theme .sc-note-action-btn {
-        color: var(--sc-text-muted-dark);
-      }
     }
     .sc-note-action-btn:hover {
       color: var(--sc-primary);
@@ -325,14 +295,8 @@
       cursor: pointer;
       z-index: 50;
       box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-      transition: transform 0.2s;
-    }
-    .sc-timeline-marker:hover {
-      transform: translateY(-50%) scale(1.4);
-      background: var(--sc-secondary);
     }
 
-    /* Tooltips for markers */
     .sc-marker-tooltip {
       position: absolute;
       bottom: 25px;
@@ -347,20 +311,12 @@
       pointer-events: none;
       z-index: 100;
       display: none;
-      box-shadow: var(--sc-glass-shadow);
-      border: 1px solid rgba(255,255,255,0.1);
     }
     .sc-timeline-marker:hover .sc-marker-tooltip {
       display: block;
     }
 
     /* Transcript UI & Tools */
-    .sc-tools-panel {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-
     .sc-search-bar {
       width: 100%;
       padding: 8px 12px;
@@ -379,16 +335,6 @@
         background: rgba(255,255,255,0.02);
         border-color: var(--sc-border-dark);
       }
-    }
-    .sc-search-bar:focus {
-      border-color: var(--sc-primary);
-    }
-
-    .sc-transcript-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 4px;
     }
 
     .sc-transcript-list {
@@ -426,11 +372,7 @@
       text-align: center;
       align-self: flex-start;
     }
-    .sc-transcript-time:hover {
-      background: rgba(139, 92, 246, 0.15);
-    }
 
-    /* Screenshots list */
     .sc-screenshots-container {
       display: flex;
       gap: 10px;
@@ -446,14 +388,8 @@
       border-radius: 6px;
       border: 1px solid var(--sc-border-light);
       cursor: pointer;
-      transition: transform 0.2s, border-color 0.2s;
-    }
-    .sc-screenshot-thumbnail:hover {
-      transform: scale(1.04);
-      border-color: var(--sc-primary);
     }
 
-    /* LLM Routing menu */
     .sc-llm-routing {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
@@ -479,10 +415,6 @@
       z-index: 9999;
       font-weight: 800;
       font-size: 22px;
-      transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-    }
-    .sc-floating-action-button:hover {
-      transform: scale(1.1) rotate(10deg);
     }
 
     .sc-floating-panel {
@@ -495,18 +427,13 @@
       border: 1px solid var(--sc-border-light);
       background: var(--sc-bg-light);
       color: var(--sc-text-light);
-      backdrop-filter: var(--sc-glass-blur);
-      -webkit-backdrop-filter: var(--sc-glass-blur);
       box-shadow: var(--sc-glass-shadow);
       z-index: 9999;
       display: flex;
       flex-direction: column;
       overflow: hidden;
-      animation: scSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     }
     html[theme="dark"] .sc-floating-panel,
-    body.theme-dark .sc-floating-panel,
-    body.dark-mode .sc-floating-panel,
     @media (prefers-color-scheme: dark) {
       .sc-floating-panel.sc-adaptive-theme {
         background: var(--sc-bg-dark);
@@ -514,29 +441,62 @@
         border-color: var(--sc-border-dark);
       }
     }
-
-    @keyframes scSlideUp {
-      from { transform: translateY(30px) scale(0.95); opacity: 0; }
-      to { transform: translateY(0) scale(1); opacity: 1; }
-    }
-
-    /* Custom Scrollbars */
-    ::-webkit-scrollbar {
-      width: 6px;
-      height: 6px;
-    }
-    ::-webkit-scrollbar-track {
-      background: transparent;
-    }
-    ::-webkit-scrollbar-thumb {
-      background: rgba(139, 92, 246, 0.3);
-      border-radius: 3px;
-    }
-    ::-webkit-scrollbar-thumb:hover {
-      background: rgba(139, 92, 246, 0.5);
-    }
   `;
   document.head.appendChild(styleEl);
+
+  // Bulletproof Storage Wrapper
+  const storage = {
+    get: (keys, callback) => {
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        chrome.storage.local.get(keys, (data) => {
+          if (chrome.runtime.lastError) {
+            // Fallback to localStorage on error
+            fallbackGet(keys, callback);
+          } else {
+            callback(data);
+          }
+        });
+      } else {
+        fallbackGet(keys, callback);
+      }
+    },
+    set: (items, callback) => {
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        chrome.storage.local.set(items, () => {
+          if (chrome.runtime.lastError) {
+            fallbackSet(items, callback);
+          } else if (callback) {
+            callback();
+          }
+        });
+      } else {
+        fallbackSet(items, callback);
+      }
+    }
+  };
+
+  function fallbackGet(keys, callback) {
+    const result = {};
+    const keyList = Array.isArray(keys) ? keys : [keys];
+    keyList.forEach(k => {
+      try {
+        const val = localStorage.getItem(k);
+        result[k] = val ? JSON.parse(val) : undefined;
+      } catch (e) {
+        result[k] = undefined;
+      }
+    });
+    callback(result);
+  }
+
+  function fallbackSet(items, callback) {
+    Object.keys(items).forEach(k => {
+      try {
+        localStorage.setItem(k, JSON.stringify(items[k]));
+      } catch (e) {}
+    });
+    if (callback) callback();
+  }
 
   // Global variables
   let currentVideoId = '';
@@ -713,7 +673,6 @@
     container.querySelector('#sc-btn-add-note').addEventListener('click', () => {
       const text = noteInput.value.trim();
       const video = document.querySelector('video');
-      // Save precise decimal time (microsecond aware)
       const time = video ? video.currentTime : 0.0;
       
       saveNote(currentVideoId, time, text || "[Marker Only]");
@@ -739,7 +698,7 @@
     });
   }
 
-  // Screenshot capture via HTML5 canvas
+  // Screenshot capture & direct download
   function capturePlayerScreenshot() {
     const video = document.querySelector('video');
     if (!video) return;
@@ -752,10 +711,21 @@
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       const dataUrl = canvas.toDataURL('image/jpeg');
 
+      // Add to preview container
       screenshotList.unshift(dataUrl);
       if (screenshotList.length > 5) screenshotList.pop();
-
       renderScreenshotsList();
+
+      // Download directly to Downloads folder
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      const title = document.querySelector('h1.ytd-watch-metadata yt-formatted-string')?.innerText || "youtube";
+      const cleanTitle = title.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+      const time = video ? Math.floor(video.currentTime) : 0;
+      a.download = `screenshot_${cleanTitle}_${time}s.jpg`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
     } catch (e) {
       console.error("Failed to capture frame screenshot", e);
     }
@@ -795,7 +765,6 @@
     }
   }
 
-  // Format double precision time to MM:SS.hh (including fractional seconds)
   function formatTime(secs) {
     const h = Math.floor(secs / 3600);
     const m = Math.floor((secs % 3600) / 60);
@@ -812,11 +781,11 @@
   // Storage and Notes Management
   function saveNote(videoId, time, text) {
     const key = `sc_notes_${videoId}`;
-    chrome.storage.local.get([key], (data) => {
+    storage.get([key], (data) => {
       const notes = data[key] || [];
       notes.push({ id: Date.now().toString(), time, text });
       notes.sort((a, b) => a.time - b.time);
-      chrome.storage.local.set({ [key]: notes }, () => {
+      storage.set({ [key]: notes }, () => {
         renderNotesList();
         injectTimelineMarkers();
       });
@@ -825,12 +794,12 @@
 
   function updateNote(noteId, newText) {
     const key = `sc_notes_${currentVideoId}`;
-    chrome.storage.local.get([key], (data) => {
+    storage.get([key], (data) => {
       const notes = data[key] || [];
       const note = notes.find(n => n.id === noteId);
       if (note) {
         note.text = newText || "[Marker Only]";
-        chrome.storage.local.set({ [key]: notes }, () => {
+        storage.set({ [key]: notes }, () => {
           renderNotesList();
           injectTimelineMarkers();
         });
@@ -840,10 +809,10 @@
 
   function deleteNote(noteId) {
     const key = `sc_notes_${currentVideoId}`;
-    chrome.storage.local.get([key], (data) => {
+    storage.get([key], (data) => {
       let notes = data[key] || [];
       notes = notes.filter(n => n.id !== noteId);
-      chrome.storage.local.set({ [key]: notes }, () => {
+      storage.set({ [key]: notes }, () => {
         renderNotesList();
         injectTimelineMarkers();
       });
@@ -855,10 +824,9 @@
     if (!listContainer) return;
 
     const key = `sc_notes_${currentVideoId}`;
-    chrome.storage.local.get([key], (data) => {
+    storage.get([key], (data) => {
       const notes = data[key] || [];
       
-      // Filter notes
       const filtered = notes.filter(n => 
         n.text.toLowerCase().includes(notesSearchQuery.toLowerCase())
       );
@@ -881,7 +849,6 @@
         </div>
       `).join('');
 
-      // Add listeners
       listContainer.querySelectorAll('.sc-note-timestamp').forEach(el => {
         el.addEventListener('click', (e) => {
           seekTo(parseFloat(e.target.dataset.time));
@@ -929,7 +896,7 @@
     });
   }
 
-  // Inject markers directly on the YouTube timeline
+  // Inject timeline markers
   function injectTimelineMarkers() {
     const progressBar = document.querySelector('.ytp-progress-bar');
     if (!progressBar) return;
@@ -937,7 +904,7 @@
     document.querySelectorAll('.sc-timeline-marker').forEach(m => m.remove());
 
     const key = `sc_notes_${currentVideoId}`;
-    chrome.storage.local.get([key], (data) => {
+    storage.get([key], (data) => {
       const notes = data[key] || [];
       const video = document.querySelector('video');
       const duration = video ? video.duration : 0;
@@ -965,48 +932,40 @@
     });
   }
 
-  // Fetch YouTube Captions directly & Scrape Native Panel Fallback
+  // Fetch transcript: script parsing + DOM clicker fallback
   function fetchYouTubeTranscript() {
     ytCaptions = [];
-    const scriptId = 'sc-yt-injected-script';
-    let script = document.getElementById(scriptId);
-    if (!script) {
-      script = document.createElement('script');
-      script.id = scriptId;
-      script.textContent = `
-        (function() {
-          function getCaptions() {
-            try {
-              const resp = window.ytInitialPlayerResponse;
-              if (resp && resp.captions && resp.captions.playerCaptionsTracklistRenderer && resp.captions.playerCaptionsTracklistRenderer.captionTracks) {
-                const tracks = resp.captions.playerCaptionsTracklistRenderer.captionTracks;
-                window.postMessage({ type: 'SC_YT_TRACKS', tracks }, '*');
-              } else {
-                window.postMessage({ type: 'SC_YT_TRACKS', tracks: [] }, '*');
-              }
-            } catch(e) {}
-          }
-          getCaptions();
-          document.addEventListener('yt-navigate-finish', getCaptions);
-        })();
-      `;
-      document.documentElement.appendChild(script);
+    
+    // First attempt: Scrape ytInitialPlayerResponse directly from script tags
+    const playerResponse = getPlayerResponseFromScripts();
+    if (playerResponse && playerResponse.captions && playerResponse.captions.playerCaptionsTracklistRenderer && playerResponse.captions.playerCaptionsTracklistRenderer.captionTracks) {
+      const tracks = playerResponse.captions.playerCaptionsTracklistRenderer.captionTracks;
+      loadTranscriptFromTracks(tracks);
+    } else {
+      // Fallback: Scrape native transcript DOM
+      scrapeNativeYouTubeTranscript();
     }
-
-    window.removeEventListener('message', handleTranscriptMessage);
-    window.addEventListener('message', handleTranscriptMessage);
   }
 
-  async function handleTranscriptMessage(event) {
-    if (event.source !== window || event.data?.type !== 'SC_YT_TRACKS') return;
-    const tracks = event.data.tracks || [];
-
-    if (tracks.length === 0) {
-      // Fallback: Trigger native transcript scraper
-      scrapeNativeYouTubeTranscript();
-      return;
+  function getPlayerResponseFromScripts() {
+    const scripts = document.querySelectorAll('script');
+    for (const script of scripts) {
+      const text = script.textContent;
+      if (text && text.includes('ytInitialPlayerResponse =')) {
+        const match = text.match(/ytInitialPlayerResponse\s*=\s*({.+?});/);
+        if (match) {
+          try {
+            return JSON.parse(match[1]);
+          } catch (e) {
+            console.error("Failed to parse script tag JSON", e);
+          }
+        }
+      }
     }
+    return null;
+  }
 
+  async function loadTranscriptFromTracks(tracks) {
     const englishTrack = tracks.find(t => t.languageCode === 'en') || tracks[0];
     try {
       const res = await fetch(englishTrack.baseUrl);
@@ -1024,19 +983,17 @@
 
       renderTranscript();
     } catch (e) {
-      console.error("Failed to parse caption tracks XML. Attempting scraping...", e);
       scrapeNativeYouTubeTranscript();
     }
   }
 
-  // Fallback: Click and scrape the native YouTube transcript panel
+  // Clicks native Show Transcript button and scrapes
   function scrapeNativeYouTubeTranscript() {
     const transcriptBox = document.getElementById('sc-transcript-box');
     if (transcriptBox) {
       transcriptBox.innerHTML = `<div style="color: var(--sc-text-muted-light); text-align: center; padding: 12px;">Attempting native transcript extraction...</div>`;
     }
 
-    // Look for native 'Show transcript' button
     const showBtn = document.querySelector('ytd-video-description-transcript-section-renderer button') || 
                     Array.from(document.querySelectorAll('button')).find(el => el.innerText.includes('Show transcript'));
     
@@ -1044,8 +1001,7 @@
       showBtn.click();
     }
 
-    // Poll for the transcript elements to appear
-    let retries = 10;
+    let retries = 12;
     const interval = setInterval(() => {
       const segments = document.querySelectorAll('ytd-transcript-segment-renderer');
       if (segments.length > 0) {
@@ -1055,7 +1011,6 @@
           const timeStr = seg.querySelector('.segment-timestamp')?.innerText.trim() || '0:00';
           const text = seg.querySelector('.segment-text')?.innerText.trim() || '';
           
-          // Convert timestamp (e.g. 1:23) to seconds
           const parts = timeStr.split(':').map(Number);
           let start = 0;
           if (parts.length === 3) start = parts[0]*3600 + parts[1]*60 + parts[2];
@@ -1070,7 +1025,7 @@
         if (retries <= 0) {
           clearInterval(interval);
           if (transcriptBox) {
-            transcriptBox.innerHTML = `<div style="color: var(--sc-text-muted-light); text-align: center; padding: 12px;">Failed to scrape native transcript. Open the transcript panel manually to assist scraping.</div>`;
+            transcriptBox.innerHTML = `<div style="color: var(--sc-text-muted-light); text-align: center; padding: 12px;">Failed to scrape native transcript automatically. Try clicking the "Show transcript" button in the description.</div>`;
           }
         }
       }
@@ -1188,7 +1143,18 @@
     const notesData = await chrome.storage.local.get([notesKey]);
     const notes = notesData[notesKey] || [];
 
-    let md = `---\n`;
+    // Personal notes are placed as the primary heading context at the top
+    let md = `# Personal Notes & Markers\n\n`;
+    if (notes.length === 0) {
+      md += `*No notes added yet.*\n\n`;
+    } else {
+      notes.forEach(n => {
+        md += `- **[${formatTime(n.time)}]**: ${n.text}\n`;
+      });
+      md += `\n`;
+    }
+
+    md += `---\n`;
     md += `Title: ${meta.title}\n`;
     md += `description: ${meta.description.substring(0, 150).replace(/\n/g, ' ')}...\n`;
     md += `Channel: ${meta.channel}\n`;
@@ -1199,16 +1165,6 @@
     md += `URL: ${meta.url}\n`;
     md += `thumbnail url: ${meta.thumbnail}\n`;
     md += `---\n\n`;
-
-    md += `# Notes & Markers\n\n`;
-    if (notes.length === 0) {
-      md += `*No notes added yet.*\n\n`;
-    } else {
-      notes.forEach(n => {
-        md += `- **[${formatTime(n.time)}]**: ${n.text}\n`;
-      });
-      md += `\n`;
-    }
 
     md += `# Transcript\n\n`;
     if (ytCaptions.length === 0) {
