@@ -1001,15 +1001,26 @@
       showBtn.click();
     }
 
-    let retries = 12;
+    let retries = 15;
     const interval = setInterval(() => {
-      const segments = document.querySelectorAll('ytd-transcript-segment-renderer');
+      const oldSegments = document.querySelectorAll('ytd-transcript-segment-renderer');
+      const newSegments = document.querySelectorAll('transcript-segment-view-model');
+      const segments = oldSegments.length > 0 ? oldSegments : newSegments;
+
       if (segments.length > 0) {
         clearInterval(interval);
         
         ytCaptions = Array.from(segments).map(seg => {
-          const timeStr = seg.querySelector('.segment-timestamp')?.innerText.trim() || '0:00';
-          const text = seg.querySelector('.segment-text')?.innerText.trim() || '';
+          let timeStr = '0:00';
+          let text = '';
+
+          if (seg.tagName.toLowerCase() === 'transcript-segment-view-model') {
+            timeStr = seg.querySelector('.ytwTranscriptSegmentViewModelTimestamp')?.innerText.trim() || '0:00';
+            text = seg.querySelector('.ytAttributedStringHost')?.innerText.trim() || '';
+          } else {
+            timeStr = seg.querySelector('.segment-timestamp')?.innerText.trim() || '0:00';
+            text = seg.querySelector('.segment-text')?.innerText.trim() || '';
+          }
           
           const parts = timeStr.split(':').map(Number);
           let start = 0;
@@ -1122,6 +1133,19 @@
       }
     });
 
+    // Playlist / Queue Detection
+    const urlParams = new URLSearchParams(window.location.search);
+    const playlistId = urlParams.get('list');
+    let playlistTitle = '';
+    let playlistUrl = '';
+    let playlistIndex = '';
+
+    if (playlistId) {
+      playlistTitle = document.querySelector('ytd-playlist-panel-renderer #title-container #title')?.innerText || 'Playlist/Queue';
+      playlistUrl = `https://www.youtube.com/playlist?list=${playlistId}`;
+      playlistIndex = urlParams.get('index') || '1';
+    }
+
     return {
       title,
       channel,
@@ -1133,7 +1157,11 @@
       description,
       url: window.location.href,
       thumbnail: `https://img.youtube.com/vi/${currentVideoId}/maxresdefault.jpg`,
-      recommendations: recVids
+      recommendations: recVids,
+      playlistId,
+      playlistTitle,
+      playlistUrl,
+      playlistIndex
     };
   }
 
@@ -1164,6 +1192,11 @@
     md += `tags: ${meta.tags}\n`;
     md += `URL: ${meta.url}\n`;
     md += `thumbnail url: ${meta.thumbnail}\n`;
+    if (meta.playlistId) {
+      md += `Playlist: ${meta.playlistTitle}\n`;
+      md += `Playlist URL: ${meta.playlistUrl}\n`;
+      md += `Playlist Index: ${meta.playlistIndex}\n`;
+    }
     md += `---\n\n`;
 
     md += `# Transcript\n\n`;
