@@ -764,11 +764,15 @@
     });
   }
 
+  let cachedMarkdown = '';
+
   async function updateExportPreview() {
     const preview = document.getElementById('sc-export-preview');
     if (preview) {
       try {
-        preview.textContent = await generateMarkdown();
+        const md = await generateMarkdown();
+        cachedMarkdown = md;
+        preview.textContent = md;
       } catch (err) {
         console.error("Failed to generate markdown preview:", err);
         preview.textContent = "Error generating preview: " + err.message;
@@ -1078,11 +1082,15 @@
       const xmlDoc = parser.parseFromString(text, 'text/xml');
       const textNodes = xmlDoc.getElementsByTagName('text');
       
+      const isNoise = (t) => /^\s*$/.test(t) ||
+        /^\d+\s+(second|seconds|minute|minutes|hour|hours)/.test(t) ||
+        /^\d+\s*,\s*\d+\s+(second|minute)/.test(t);
+
       ytCaptions = Array.from(textNodes).map(node => ({
         start: parseFloat(node.getAttribute('start')),
         duration: parseFloat(node.getAttribute('dur')) || 0.0,
         text: decodeHtmlEntities(node.textContent)
-      }));
+      })).filter(c => c.text.trim() !== '' && !isNoise(c.text));
 
       renderTranscript();
       // Persist transcript to storage for dashboard
@@ -1133,7 +1141,13 @@
         else start = parts[0]*60 + parts[1];
 
         return { start, text };
-      }).filter(c => c.text !== '');
+      }).filter(c => {
+        if (c.text === '') return false;
+        // Filter out YouTube accessibility duration labels like "7 seconds", "1 minute, 3 seconds"
+        if (/^\d+\s+(second|seconds|minute|minutes|hour|hours)/i.test(c.text)) return false;
+        if (/^\d+\s+minute/i.test(c.text)) return false;
+        return true;
+      });
 
       if (ytCaptions.length > 0) {
         renderTranscript();
@@ -1389,14 +1403,22 @@
     }, duration);
   }
 
-  async function copyCompleteMarkdown() {
-    try {
-      const md = await generateMarkdown();
-      scCopyText(md);
+  function copyCompleteMarkdown() {
+    // Use pre-cached markdown so clipboard fires synchronously inside the user gesture.
+    // If cache empty (tab opened but preview not yet loaded), refresh then copy.
+    if (cachedMarkdown) {
+      scCopyText(cachedMarkdown);
       showToast('📋 Markdown copied to clipboard!');
-    } catch (err) {
-      console.error('copyCompleteMarkdown error:', err);
-      showToast('❌ Copy failed: ' + err.message);
+    } else {
+      // Cache miss: generate, cache, then copy (next click will be instant)
+      generateMarkdown().then(md => {
+        cachedMarkdown = md;
+        scCopyText(md);
+        showToast('📋 Markdown copied to clipboard!');
+      }).catch(err => {
+        console.error('copyCompleteMarkdown error:', err);
+        showToast('❌ Copy failed — try clicking Download instead');
+      });
     }
   }
 

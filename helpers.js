@@ -4,16 +4,15 @@
  */
 
 function formatTime(secs) {
-  const h = Math.floor(secs / 3600);
-  const m = Math.floor((secs % 3600) / 60);
-  const s = Math.floor(secs % 60);
-  const ms = Math.floor((secs % 1) * 100);
-  
-  const msStr = ms.toString().padStart(2, '0');
+  if (!secs && secs !== 0) return '0:00';
+  const total = Math.floor(secs);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
   if (h > 0) {
-    return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${msStr}`;
+    return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   }
-  return `${m}:${s.toString().padStart(2, '0')}.${msStr}`;
+  return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
 function escapeHtml(text) {
