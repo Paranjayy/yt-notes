@@ -1,0 +1,19 @@
+{
+  "name": "social-companion-extension",
+  "version": "1.0.0",
+  "description": "Premium companion for YouTube, X (Twitter), and Reddit.",
+  "main": "background.js",
+  "scripts": {
+    "test:unit": "vitest run",
+    "test:unit:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test": "npm run test:unit && npm run test:e2e"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "jsdom": "^25.0.0",
+    "vitest": "^2.1.5"
+  },
+  "type": "commonjs"
+}
