@@ -474,6 +474,20 @@
       } else {
         fallbackSet(items, callback);
       }
+    },
+    getAsync: (keys) => {
+      return new Promise((resolve) => {
+        storage.get(keys, (data) => {
+          resolve(data);
+        });
+      });
+    },
+    setAsync: (items) => {
+      return new Promise((resolve) => {
+        storage.set(items, () => {
+          resolve();
+        });
+      });
     }
   };
 
@@ -729,7 +743,12 @@
   async function updateExportPreview() {
     const preview = document.getElementById('sc-export-preview');
     if (preview) {
-      preview.textContent = await generateMarkdown();
+      try {
+        preview.textContent = await generateMarkdown();
+      } catch (err) {
+        console.error("Failed to generate markdown preview:", err);
+        preview.textContent = "Error generating preview: " + err.message;
+      }
     }
   }
 
@@ -1194,7 +1213,7 @@
   async function generateMarkdown() {
     const meta = extractYouTubeMetadata();
     const notesKey = `sc_notes_${currentVideoId}`;
-    const notesData = await chrome.storage.local.get([notesKey]);
+    const notesData = await storage.getAsync([notesKey]);
     const notes = notesData[notesKey] || [];
 
     // Personal notes are placed as the primary heading context at the top
