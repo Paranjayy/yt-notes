@@ -15,17 +15,17 @@
       --sc-primary: #8b5cf6;
       --sc-primary-hover: #7c3aed;
       --sc-secondary: #ec4899;
-      --sc-bg-light: rgba(255, 255, 255, 0.85);
+      --sc-bg-light: rgba(24, 24, 37, 0.95); /* Enforce dark theme by default */
       --sc-bg-dark: rgba(24, 24, 37, 0.95);
-      --sc-text-light: #0f172a;
+      --sc-text-light: #f8fafc; /* Dark mode colors by default */
       --sc-text-dark: #f8fafc;
-      --sc-text-muted-light: #64748b;
+      --sc-text-muted-light: #94a3b8;
       --sc-text-muted-dark: #94a3b8;
-      --sc-border-light: rgba(0, 0, 0, 0.08);
+      --sc-border-light: rgba(255, 255, 255, 0.08);
       --sc-border-dark: rgba(255, 255, 255, 0.08);
       --sc-accent-red: #f43f5e;
       --sc-accent-green: #10b981;
-      --sc-glass-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
+      --sc-glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
       --sc-glass-blur: blur(12px);
     }
 
@@ -35,9 +35,9 @@
       margin-bottom: 20px;
       border-radius: 16px;
       overflow: hidden;
-      border: 1px solid var(--sc-border-light);
-      background: var(--sc-bg-light);
-      color: var(--sc-text-light);
+      border: 1px solid var(--sc-border-dark);
+      background: var(--sc-bg-dark);
+      color: var(--sc-text-dark);
       backdrop-filter: var(--sc-glass-blur);
       -webkit-backdrop-filter: var(--sc-glass-blur);
       box-shadow: var(--sc-glass-shadow);
@@ -79,8 +79,8 @@
 
     .sc-tabs {
       display: flex;
-      background: rgba(0,0,0,0.02);
-      border-bottom: 1px solid var(--sc-border-light);
+      background: rgba(0,0,0,0.2);
+      border-bottom: 1px solid var(--sc-border-dark);
       padding: 4px;
       gap: 4px;
     }
@@ -100,7 +100,7 @@
       font-weight: 700;
       cursor: pointer;
       border-radius: 8px;
-      color: var(--sc-text-muted-light);
+      color: var(--sc-text-muted-dark);
       transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     }
     html[theme="dark"] .sc-tab,
@@ -138,8 +138,8 @@
       box-sizing: border-box;
       padding: 12px;
       border-radius: 10px;
-      border: 1px solid var(--sc-border-light);
-      background: rgba(0,0,0,0.02);
+      border: 1px solid var(--sc-border-dark);
+      background: rgba(255,255,255,0.02);
       color: inherit;
       resize: vertical;
       min-height: 70px;
@@ -190,9 +190,9 @@
       background: var(--sc-primary-hover);
     }
     .sc-btn-secondary {
-      background: rgba(0,0,0,0.05);
+      background: rgba(255,255,255,0.05);
       color: inherit;
-      border: 1px solid var(--sc-border-light);
+      border: 1px solid var(--sc-border-dark);
     }
     html[theme="dark"] .sc-btn-secondary,
     @media (prefers-color-scheme: dark) {
@@ -202,7 +202,7 @@
       }
     }
     .sc-btn-secondary:hover {
-      background: rgba(0,0,0,0.08);
+      background: rgba(255,255,255,0.08);
     }
     html[theme="dark"] .sc-btn-secondary:hover,
     @media (prefers-color-scheme: dark) {
@@ -216,7 +216,7 @@
       align-items: center;
       gap: 8px;
       font-size: 12px;
-      color: var(--sc-text-muted-light);
+      color: var(--sc-text-muted-dark);
     }
 
     .sc-note-item {
@@ -224,8 +224,8 @@
       flex-direction: column;
       padding: 12px;
       border-radius: 10px;
-      background: rgba(0,0,0,0.01);
-      border: 1px solid var(--sc-border-light);
+      background: rgba(255,255,255,0.01);
+      border: 1px solid var(--sc-border-dark);
       margin-bottom: 10px;
       transition: all 0.2s;
     }
@@ -244,7 +244,7 @@
       cursor: pointer;
       align-self: flex-start;
       margin-bottom: 6px;
-      background: rgba(139, 92, 246, 0.1);
+      background: rgba(139, 92, 246, 0.15);
       padding: 2px 6px;
       border-radius: 4px;
     }
@@ -260,7 +260,7 @@
       gap: 12px;
       justify-content: flex-end;
       margin-top: 8px;
-      border-top: 1px solid var(--sc-border-light);
+      border-top: 1px solid var(--sc-border-dark);
       padding-top: 6px;
     }
     html[theme="dark"] .sc-note-actions,
@@ -276,7 +276,7 @@
       border: none;
       cursor: pointer;
       font-weight: 600;
-      color: var(--sc-text-muted-light);
+      color: var(--sc-text-muted-dark);
     }
     .sc-note-action-btn:hover {
       color: var(--sc-primary);
@@ -324,8 +324,8 @@
       width: 100%;
       padding: 8px 12px;
       border-radius: 8px;
-      border: 1px solid var(--sc-border-light);
-      background: rgba(0,0,0,0.02);
+      border: 1px solid var(--sc-border-dark);
+      background: rgba(255,255,255,0.02);
       color: inherit;
       font-size: 12.5px;
       outline: none;
@@ -343,7 +343,7 @@
     .sc-transcript-list {
       max-height: 280px;
       overflow-y: auto;
-      border: 1px solid var(--sc-border-light);
+      border: 1px solid var(--sc-border-dark);
       border-radius: 10px;
       padding: 10px;
       font-size: 12.5px;
@@ -369,7 +369,7 @@
       color: var(--sc-primary);
       cursor: pointer;
       min-width: 50px;
-      background: rgba(139, 92, 246, 0.08);
+      background: rgba(139, 92, 246, 0.15);
       padding: 0px 4px;
       border-radius: 4px;
       text-align: center;
@@ -389,7 +389,7 @@
       height: 50px;
       object-fit: cover;
       border-radius: 6px;
-      border: 1px solid var(--sc-border-light);
+      border: 1px solid var(--sc-border-dark);
       cursor: pointer;
     }
 
@@ -427,9 +427,9 @@
       width: 380px;
       height: 520px;
       border-radius: 16px;
-      border: 1px solid var(--sc-border-light);
-      background: var(--sc-bg-light);
-      color: var(--sc-text-light);
+      border: 1px solid var(--sc-border-dark);
+      background: var(--sc-bg-dark);
+      color: var(--sc-text-dark);
       box-shadow: var(--sc-glass-shadow);
       z-index: 9999;
       display: flex;
@@ -505,9 +505,16 @@
   let activeTabName = 'notes';
   let ytCaptions = [];
   let screenshotList = [];
-  let autoPauseOnType = true;
+  let autoPauseOnType = false;
   let notesSearchQuery = '';
   let transcriptSearchQuery = '';
+
+  // Load user auto-pause preference from storage
+  storage.get(['sc_preference_autopause'], (data) => {
+    if (data && data.sc_preference_autopause !== undefined) {
+      autoPauseOnType = data.sc_preference_autopause;
+    }
+  });
 
   // Initialize script depending on host
   const host = location.hostname;
@@ -662,6 +669,7 @@
 
     autoPauseChk.addEventListener('change', (e) => {
       autoPauseOnType = e.target.checked;
+      storage.set({ 'sc_preference_autopause': autoPauseOnType });
     });
 
     noteInput.addEventListener('focus', () => {
