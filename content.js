@@ -564,6 +564,23 @@
       injectYouTubeWidget();
       injectTimelineMarkers();
       fetchYouTubeTranscript();
+      // Save metadata after a delay so page elements have time to render
+      setTimeout(() => {
+        try {
+          const meta = extractYouTubeMetadata();
+          if (meta && meta.title && meta.title !== document.title) {
+            storage.set({ [`sc_meta_${videoId}`]: meta });
+          } else {
+            // Retry once more at 5s
+            setTimeout(() => {
+              try {
+                const m2 = extractYouTubeMetadata();
+                storage.set({ [`sc_meta_${videoId}`]: m2 });
+              } catch {}
+            }, 4000);
+          }
+        } catch (e) { console.warn('Failed to save metadata', e); }
+      }, 3000);
     } else {
       const existing = document.getElementById('sc-youtube-widget');
       if (existing) existing.remove();
@@ -728,6 +745,13 @@
       scrapeNativeYouTubeTranscript(true);
     });
 
+    // Load screenshots from storage
+    const ssKey = `sc_screenshots_${currentVideoId}`;
+    storage.get([ssKey], (data) => {
+      screenshotList = data[ssKey] || [];
+      renderScreenshotsList();
+    });
+
     renderNotesList();
     renderTranscript();
     updateExportPreview();
@@ -765,17 +789,16 @@
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       const dataUrl = canvas.toDataURL('image/jpeg');
 
-      // Add to preview container
-      screenshotList.unshift(dataUrl);
-      if (screenshotList.length > 5) screenshotList.pop();
-      renderScreenshotsList();
+      const timestamp = video ? video.currentTime : 0;
+      // Add to preview container and save to storage with timestamp
+      saveScreenshot(currentVideoId, dataUrl, timestamp);
 
       // Download directly to Downloads folder
       const a = document.createElement('a');
       a.href = dataUrl;
       const title = document.querySelector('h1.ytd-watch-metadata yt-formatted-string')?.innerText || "youtube";
       const cleanTitle = title.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-      const time = video ? Math.floor(video.currentTime) : 0;
+      const time = Math.floor(timestamp);
       a.download = `screenshot_${cleanTitle}_${time}s.jpg`;
       document.body.appendChild(a);
       a.click();
@@ -785,29 +808,67 @@
     }
   }
 
+  function saveScreenshot(videoId, dataUrl, timestamp) {
+    const key = `sc_screenshots_${videoId}`;
+    const frameUrl = `https://www.youtube.com/watch?v=${videoId}&t=${Math.floor(timestamp || 0)}s`;
+    const ssObj = { dataUrl, timestamp: timestamp || 0, timestampUrl: frameUrl };
+    storage.get([key], (data) => {
+      const list = data[key] || [];
+      list.unshift(ssObj);
+      if (list.length > 5) list.pop();
+      storage.set({ [key]: list }, () => {
+        screenshotList = list;
+        renderScreenshotsList();
+        showToast('📸 Screenshot saved!');
+      });
+    });
+  }
+
   function renderScreenshotsList() {
     const container = document.getElementById('sc-screenshots-row');
     if (!container) return;
     container.innerHTML = '';
 
-    screenshotList.forEach((src) => {
+    if (screenshotList.length === 0) return;
+
+    screenshotList.forEach((ss) => {
+      const ssData = (typeof ss === 'object' && ss.dataUrl) ? ss : { dataUrl: ss, timestamp: 0 };
+      const frameUrl = ssData.timestampUrl || `https://www.youtube.com/watch?v=${currentVideoId}&t=${Math.floor(ssData.timestamp || 0)}s`;
+
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'position:relative; display:inline-block; border-radius:8px; overflow:hidden; border:1px solid rgba(255,255,255,0.1); cursor:pointer;';
+
       const img = document.createElement('img');
-      img.src = src;
+      img.src = ssData.dataUrl;
       img.className = 'sc-screenshot-thumbnail';
-      img.title = "Click to copy image";
+      img.title = 'Click to download | Right-click to copy';
+
+      const timeTag = document.createElement('div');
+      timeTag.style.cssText = 'position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.65);color:#fff;font-size:10px;font-weight:700;padding:3px 6px;display:flex;justify-content:space-between;align-items:center;';
+      timeTag.innerHTML = `<span>${formatTime(ssData.timestamp || 0)}</span><a href="${frameUrl}" target="_blank" rel="noreferrer" style="color:#06b6d4;font-size:9px;text-decoration:none;" onclick="event.stopPropagation()">⧉ Open</a>`;
+
       img.addEventListener('click', async () => {
+        // Try clipboard first, fall back to download
         try {
-          const res = await fetch(src);
+          const res = await fetch(ssData.dataUrl);
           const blob = await res.blob();
-          await navigator.clipboard.write([
-            new ClipboardItem({ [blob.type]: blob })
-          ]);
-          alert("Screenshot copied to clipboard!");
-        } catch (e) {
-          console.error("Failed to copy image blob", e);
+          await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+          showToast('📋 Screenshot copied to clipboard!');
+        } catch {
+          // Fallback: trigger download
+          const a = document.createElement('a');
+          a.href = ssData.dataUrl;
+          a.download = `sc_screenshot_${Math.floor(ssData.timestamp || 0)}s.jpg`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          showToast('📥 Screenshot downloaded!');
         }
       });
-      container.appendChild(img);
+
+      wrap.appendChild(img);
+      wrap.appendChild(timeTag);
+      container.appendChild(wrap);
     });
   }
 
@@ -1024,6 +1085,10 @@
       }));
 
       renderTranscript();
+      // Persist transcript to storage for dashboard
+      if (ytCaptions.length > 0 && currentVideoId) {
+        storage.set({ [`sc_transcript_${currentVideoId}`]: ytCaptions });
+      }
     } catch (e) {
       scrapeNativeYouTubeTranscript();
     }
@@ -1222,21 +1287,21 @@
       md += `*No notes added yet.*\n\n`;
     } else {
       notes.forEach(n => {
-        md += `- **[${formatTime(n.time)}]**: ${n.text}\n`;
+        md += `- **[${formatTime(n.time)}]** (https://www.youtube.com/watch?v=${currentVideoId}&t=${Math.floor(n.time)}s): ${n.text}\n`;
       });
       md += `\n`;
     }
 
     md += `---\n`;
     md += `Title: ${meta.title}\n`;
-    md += `description: ${meta.description.substring(0, 150).replace(/\n/g, ' ')}...\n`;
+    if (meta.description) md += `Description: ${meta.description.substring(0, 200).replace(/\n/g, ' ')}...\n`;
     md += `Channel: ${meta.channel}\n`;
     md += `Subscribers: ${meta.subCount}\n`;
     md += `Views: ${meta.views}\n`;
-    md += `Comments: ${meta.commentsCount}\n`;
-    md += `tags: ${meta.tags}\n`;
+    md += `Comments Count: ${meta.commentsCount}\n`;
+    md += `Tags: ${meta.tags}\n`;
     md += `URL: ${meta.url}\n`;
-    md += `thumbnail url: ${meta.thumbnail}\n`;
+    md += `Thumbnail: ${meta.thumbnail}\n`;
     if (meta.playlistId) {
       md += `Playlist: ${meta.playlistTitle}\n`;
       md += `Playlist URL: ${meta.playlistUrl}\n`;
@@ -1246,7 +1311,7 @@
 
     md += `# Transcript\n\n`;
     if (ytCaptions.length === 0) {
-      md += `*Transcript not loaded.*\n\n`;
+      md += `*Transcript not loaded. Click "Sync" in the Transcript tab.*\n\n`;
     } else {
       ytCaptions.forEach(c => {
         md += `[${formatTime(c.start)}] ${c.text}\n`;
@@ -1254,7 +1319,7 @@
       md += `\n`;
     }
 
-    md += `# comments\n\n`;
+    md += `# Comments\n\n`;
     if (meta.comments.length === 0) {
       md += `*No comments visible on screen (scroll down to load comments).*\n\n`;
     } else {
@@ -1264,33 +1329,95 @@
       md += `\n`;
     }
 
-    md += `# recommodations topic & recommodation vids\n\n`;
-    if (meta.recommendations.length > 0) {
+    md += `# Recommendations\n\n`;
+    if (meta.recommendations && meta.recommendations.length > 0) {
       meta.recommendations.forEach(r => {
-        md += `- **${r.title}** by ${r.channel} (${r.views}) - ${r.url}\n  Thumbnail: ${r.thumbnail}\n`;
+        md += `- **${r.title}** by ${r.channel} (${r.views})\n  URL: ${r.url}\n`;
       });
+    } else {
+      md += `*No recommendations scraped (they appear on the right sidebar).*\n`;
     }
 
     return md;
   }
 
+  function scCopyText(text) {
+    // Use clipboard API with fallback to textarea execCommand
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      navigator.clipboard.writeText(text).catch(() => scCopyFallback(text));
+    } else {
+      scCopyFallback(text);
+    }
+  }
+
+  function scCopyFallback(text) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0;pointer-events:none;';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    try { document.execCommand('copy'); } catch (e) { console.error('Copy failed', e); }
+    ta.remove();
+  }
+
+  function showToast(msg, duration = 2600) {
+    let t = document.getElementById('sc-toast-notif');
+    if (!t) {
+      t = document.createElement('div');
+      t.id = 'sc-toast-notif';
+      t.style.cssText = `
+        position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(10px);
+        background: rgba(30,30,45,0.97); border: 1px solid rgba(139,92,246,0.5);
+        color: #f1f5f9; padding: 11px 22px; border-radius: 50px;
+        font-size: 13px; font-weight: 600; z-index: 2147483647;
+        opacity: 0; transition: opacity 0.2s ease, transform 0.2s ease;
+        pointer-events: none; white-space: nowrap;
+        backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+        box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      `;
+      document.body.appendChild(t);
+    }
+    t.textContent = msg;
+    t.style.opacity = '1';
+    t.style.transform = 'translateX(-50%) translateY(0)';
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => {
+      t.style.opacity = '0';
+      t.style.transform = 'translateX(-50%) translateY(10px)';
+    }, duration);
+  }
+
   async function copyCompleteMarkdown() {
-    const md = await generateMarkdown();
-    navigator.clipboard.writeText(md);
-    alert("Note, info, and transcript copied as Markdown!");
+    try {
+      const md = await generateMarkdown();
+      scCopyText(md);
+      showToast('📋 Markdown copied to clipboard!');
+    } catch (err) {
+      console.error('copyCompleteMarkdown error:', err);
+      showToast('❌ Copy failed: ' + err.message);
+    }
   }
 
   async function downloadMarkdownFile() {
-    const md = await generateMarkdown();
-    const meta = extractYouTubeMetadata();
-    const blob = new Blob([md], { type: 'text/markdown' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${meta.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_notes.md`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+    try {
+      const md = await generateMarkdown();
+      const meta = extractYouTubeMetadata();
+      const blob = new Blob([md], { type: 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${(meta.title || 'video').replace(/[^a-z0-9]/gi, '_').toLowerCase()}_notes.md`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      showToast('📥 Markdown file downloaded!');
+    } catch (err) {
+      console.error('downloadMarkdownFile error:', err);
+      showToast('❌ Download failed: ' + err.message);
+    }
   }
 
   async function sendToLLM(target) {

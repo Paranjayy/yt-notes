@@ -1,10 +1,13 @@
 {
   "manifest_version": 3,
   "name": "Social Companion & YT Note-Taker",
-  "version": "1.0.0",
-  "description": "Premium companion for YouTube, X (Twitter), and Reddit. Take timestamped notes, extract transcripts/comments/recommendations with metadata, capture screenshots, and export to markdown/LLMs.",
+  "version": "1.1.0",
+  "description": "Premium companion for YouTube, X (Twitter), and Reddit. Take timestamped notes, extract transcripts, capture screenshots with frame URLs, and export to markdown.",
   "permissions": [
-    "storage"
+    "storage",
+    "clipboardWrite",
+    "clipboardRead",
+    "tabs"
   ],
   "host_permissions": [
     "https://*.youtube.com/*",
@@ -28,6 +31,12 @@
     }
   ],
   "action": {
-    "default_title": "Social Companion"
-  }
+    "default_title": "Social Companion — Open Dashboard"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["dashboard.html", "dashboard.js"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }
