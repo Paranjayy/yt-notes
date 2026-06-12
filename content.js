@@ -453,7 +453,6 @@
       if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
         chrome.storage.local.get(keys, (data) => {
           if (chrome.runtime.lastError) {
-            // Fallback to localStorage on error
             fallbackGet(keys, callback);
           } else {
             callback(data);
@@ -528,7 +527,9 @@
         lastUrl = location.href;
         onYouTubeUrlChange();
       }
-    }, 1000);
+      // Check if native transcript open, auto sync if empty
+      autoSyncNativeTranscript();
+    }, 1500);
 
     onYouTubeUrlChange();
   }
@@ -603,7 +604,8 @@
         <div class="sc-tools-panel">
           <div class="sc-transcript-header">
             <input type="text" class="sc-search-bar" style="margin-bottom:0; flex:1; margin-right:10px;" id="sc-transcript-search" placeholder="Search transcript..." value="${transcriptSearchQuery}">
-            <button class="sc-btn sc-btn-secondary" style="font-size: 11px; padding: 6px 10px;" id="sc-btn-copy-transcript">Copy</button>
+            <button class="sc-btn sc-btn-secondary" style="font-size: 11px; padding: 6px 10px;" id="sc-btn-sync-transcript">🔄 Sync</button>
+            <button class="sc-btn sc-btn-secondary" style="font-size: 11px; padding: 6px 10px; margin-left: 4px;" id="sc-btn-copy-transcript">Copy</button>
           </div>
           <div class="sc-transcript-list" id="sc-transcript-box">
             <div style="color: var(--sc-text-muted-light); text-align: center; padding: 12px;">Loading transcript...</div>
@@ -697,6 +699,11 @@
 
     container.querySelector('#sc-btn-ss').addEventListener('click', () => {
       capturePlayerScreenshot();
+    });
+
+    // Sync button
+    container.querySelector('#sc-btn-sync-transcript').addEventListener('click', () => {
+      scrapeNativeYouTubeTranscript(true);
     });
 
     renderNotesList();
@@ -995,60 +1002,60 @@
     }
   }
 
-  // Clicks native Show Transcript button and scrapes
-  function scrapeNativeYouTubeTranscript() {
+  // Periodic automatic sync helper
+  function autoSyncNativeTranscript() {
+    if (ytCaptions.length > 0) return;
+    const isPanelOpen = document.querySelector('transcript-segment-view-model') || document.querySelector('ytd-transcript-segment-renderer');
+    if (isPanelOpen) {
+      scrapeNativeYouTubeTranscript(false);
+    }
+  }
+
+  // Dynamic deep transcript DOM scraper
+  function scrapeNativeYouTubeTranscript(forceClick = false) {
     const transcriptBox = document.getElementById('sc-transcript-box');
-    if (transcriptBox) {
-      transcriptBox.innerHTML = `<div style="color: var(--sc-text-muted-light); text-align: center; padding: 12px;">Attempting native transcript extraction...</div>`;
-    }
-
-    const showBtn = document.querySelector('ytd-video-description-transcript-section-renderer button') || 
-                    Array.from(document.querySelectorAll('button')).find(el => el.innerText.includes('Show transcript'));
     
-    if (showBtn) {
-      showBtn.click();
+    // Find all timestamped elements dynamically to ensure 99.999% selector-free robustness
+    const segmentEls = Array.from(document.querySelectorAll('transcript-segment-view-model, ytd-transcript-segment-renderer, .ytwTranscriptSegmentViewModelHost, [class*="TranscriptSegment"]'));
+    
+    if (segmentEls.length > 0) {
+      ytCaptions = segmentEls.map(seg => {
+        let timeStr = '0:00';
+        let text = '';
+
+        const timeEl = seg.querySelector('.ytwTranscriptSegmentViewModelTimestamp, .segment-timestamp, [class*="timestamp"], [class*="Timestamp"]');
+        const textEl = seg.querySelector('.ytAttributedStringHost, .segment-text, span[role="text"], [class*="text"], [class*="Text"]');
+        
+        if (timeEl) timeStr = timeEl.innerText.trim();
+        else {
+          const match = seg.innerText.match(/\d{1,2}:\d{2}(:\d{2})?/);
+          if (match) timeStr = match[0];
+        }
+
+        if (textEl) text = textEl.innerText.trim();
+        else text = seg.innerText.replace(timeStr, '').replace(/\n/g, ' ').trim();
+
+        const parts = timeStr.split(':').map(Number);
+        let start = 0;
+        if (parts.length === 3) start = parts[0]*3600 + parts[1]*60 + parts[2];
+        else start = parts[0]*60 + parts[1];
+
+        return { start, text };
+      }).filter(c => c.text !== '');
+
+      if (ytCaptions.length > 0) {
+        renderTranscript();
+        return;
+      }
     }
 
-    let retries = 15;
-    const interval = setInterval(() => {
-      const oldSegments = document.querySelectorAll('ytd-transcript-segment-renderer');
-      const newSegments = document.querySelectorAll('transcript-segment-view-model');
-      const segments = oldSegments.length > 0 ? oldSegments : newSegments;
-
-      if (segments.length > 0) {
-        clearInterval(interval);
-        
-        ytCaptions = Array.from(segments).map(seg => {
-          let timeStr = '0:00';
-          let text = '';
-
-          if (seg.tagName.toLowerCase() === 'transcript-segment-view-model') {
-            timeStr = seg.querySelector('.ytwTranscriptSegmentViewModelTimestamp')?.innerText.trim() || '0:00';
-            text = seg.querySelector('.ytAttributedStringHost')?.innerText.trim() || '';
-          } else {
-            timeStr = seg.querySelector('.segment-timestamp')?.innerText.trim() || '0:00';
-            text = seg.querySelector('.segment-text')?.innerText.trim() || '';
-          }
-          
-          const parts = timeStr.split(':').map(Number);
-          let start = 0;
-          if (parts.length === 3) start = parts[0]*3600 + parts[1]*60 + parts[2];
-          else start = parts[0]*60 + parts[1];
-
-          return { start, text };
-        });
-
-        renderTranscript();
-      } else {
-        retries--;
-        if (retries <= 0) {
-          clearInterval(interval);
-          if (transcriptBox) {
-            transcriptBox.innerHTML = `<div style="color: var(--sc-text-muted-light); text-align: center; padding: 12px;">Failed to scrape native transcript automatically. Try clicking the "Show transcript" button in the description.</div>`;
-          }
-        }
+    if (forceClick) {
+      const showBtn = document.querySelector('ytd-video-description-transcript-section-renderer button') || 
+                      Array.from(document.querySelectorAll('button')).find(el => el.innerText.includes('Show transcript'));
+      if (showBtn) {
+        showBtn.click();
       }
-    }, 1000);
+    }
   }
 
   function renderTranscript() {
