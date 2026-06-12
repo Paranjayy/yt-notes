@@ -522,6 +522,7 @@
   let autoPauseOnType = false;
   let notesSearchQuery = '';
   let transcriptSearchQuery = '';
+  let cachedMarkdown = ''; // pre-cached export markdown for sync clipboard copy
 
   // Load user auto-pause preference from storage
   storage.get(['sc_preference_autopause'], (data) => {
@@ -564,6 +565,7 @@
 
     if (videoId) {
       currentVideoId = videoId;
+      cachedMarkdown = ''; // reset cache for new video
       injectYouTubeWidget();
       injectTimelineMarkers();
       fetchYouTubeTranscript();
@@ -786,7 +788,6 @@
     });
   }
 
-  let cachedMarkdown = '';
 
   async function updateExportPreview() {
     const preview = document.getElementById('sc-export-preview');
