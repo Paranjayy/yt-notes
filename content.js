@@ -4,6 +4,9 @@
 (function () {
   'use strict';
 
+  // Destructure helpers from global scope
+  const { formatTime, escapeHtml, decodeHtmlEntities } = window;
+
   // Inject CSS styles into the page (Glassmorphism, High Aesthetics)
   const styleEl = document.createElement('style');
   styleEl.textContent = `
@@ -614,6 +617,11 @@
           <button class="sc-btn sc-btn-primary" style="width: 100%; justify-content: center;" id="sc-btn-copy-all">Copy Notes & Info Markdown</button>
           <button class="sc-btn sc-btn-secondary" style="width: 100%; justify-content: center;" id="sc-btn-dl-md">Download Markdown File</button>
           
+          <div style="margin-top: 12px;">
+            <strong style="font-size: 13px;">Markdown Preview:</strong>
+            <pre id="sc-export-preview" style="font-size: 11px; white-space: pre-wrap; background: rgba(0,0,0,0.05); padding: 8px; border-radius: 6px; margin-top: 6px; max-height: 180px; overflow-y: auto;"></pre>
+          </div>
+
           <div style="margin-top: 16px;">
             <strong style="font-size: 13px;">Send context to AI chatbot:</strong>
             <div class="sc-llm-routing">
@@ -637,6 +645,10 @@
         
         e.target.classList.add('active');
         container.querySelector(`#sc-panel-${selectedTab}`).classList.add('active');
+
+        if (selectedTab === 'export') {
+          updateExportPreview();
+        }
       });
     });
 
@@ -689,6 +701,7 @@
 
     renderNotesList();
     renderTranscript();
+    updateExportPreview();
 
     // Export operations
     container.querySelector('#sc-btn-copy-all').addEventListener('click', () => copyCompleteMarkdown());
@@ -696,6 +709,13 @@
     container.querySelectorAll('.sc-llm-routing button').forEach(btn => {
       btn.addEventListener('click', (e) => sendToLLM(e.target.dataset.llm));
     });
+  }
+
+  async function updateExportPreview() {
+    const preview = document.getElementById('sc-export-preview');
+    if (preview) {
+      preview.textContent = await generateMarkdown();
+    }
   }
 
   // Screenshot capture & direct download
@@ -763,19 +783,6 @@
       video.currentTime = parseFloat(seconds);
       video.play().catch(() => {});
     }
-  }
-
-  function formatTime(secs) {
-    const h = Math.floor(secs / 3600);
-    const m = Math.floor((secs % 3600) / 60);
-    const s = Math.floor(secs % 60);
-    const ms = Math.floor((secs % 1) * 100);
-    
-    const msStr = ms.toString().padStart(2, '0');
-    if (h > 0) {
-      return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${msStr}`;
-    }
-    return `${m}:${s.toString().padStart(2, '0')}.${msStr}`;
   }
 
   // Storage and Notes Management
@@ -867,6 +874,7 @@
           enterNoteEditMode(noteId);
         });
       });
+      updateExportPreview();
     });
   }
 
@@ -1049,6 +1057,7 @@
 
     if (ytCaptions.length === 0) {
       transcriptBox.innerHTML = `<div style="color: var(--sc-text-muted-light); text-align: center; padding: 12px;">No transcript loaded.</div>`;
+      updateExportPreview();
       return;
     }
 
@@ -1058,6 +1067,7 @@
 
     if (filtered.length === 0) {
       transcriptBox.innerHTML = `<div style="color: var(--sc-text-muted-light); text-align: center; padding: 12px;">No matching transcript lines.</div>`;
+      updateExportPreview();
       return;
     }
 
@@ -1082,6 +1092,7 @@
         alert("Transcript copied to clipboard!");
       };
     }
+    updateExportPreview();
   }
 
   // Extract page metadata
@@ -1404,23 +1415,6 @@
       md += `**Stats**: ${data.stats}\n`;
     }
     return md;
-  }
-
-  function escapeHtml(text) {
-    const map = {
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#039;'
-    };
-    return text.replace(/[&<>"']/g, m => map[m]);
-  }
-
-  function decodeHtmlEntities(str) {
-    const txt = document.createElement('textarea');
-    txt.innerHTML = str;
-    return txt.value;
   }
 
 })();
