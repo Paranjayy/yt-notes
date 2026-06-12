@@ -555,6 +555,9 @@
     onYouTubeUrlChange();
   }
 
+  // Tracks the sidebar observer so we can disconnect on video change
+  let _recoObserver = null;
+
   function onYouTubeUrlChange() {
     const urlParams = new URLSearchParams(window.location.search);
     const videoId = urlParams.get('v');
@@ -564,24 +567,43 @@
       injectYouTubeWidget();
       injectTimelineMarkers();
       fetchYouTubeTranscript();
-      // Save metadata after a delay so page elements have time to render
-      setTimeout(() => {
+
+      // Disconnect any previous sidebar observer
+      if (_recoObserver) { _recoObserver.disconnect(); _recoObserver = null; }
+
+      // Save initial metadata (title/channel loads fast)
+      const _saveMetaNow = () => {
         try {
           const meta = extractYouTubeMetadata();
-          if (meta && meta.title && meta.title !== document.title) {
-            storage.set({ [`sc_meta_${videoId}`]: meta });
-          } else {
-            // Retry once more at 5s
-            setTimeout(() => {
-              try {
-                const m2 = extractYouTubeMetadata();
-                storage.set({ [`sc_meta_${videoId}`]: m2 });
-              } catch {}
-            }, 4000);
+          if (meta.title) storage.set({ [`sc_meta_${videoId}`]: meta });
+        } catch {}
+      };
+
+      setTimeout(_saveMetaNow, 2500);
+
+      // Watch the sidebar for ytd-compact-video-renderer to appear,
+      // then save metadata again with fresh recommendations
+      const sidebarTarget = document.querySelector('#secondary-inner, #secondary, #related');
+      if (sidebarTarget) {
+        let _recoSaveTimer = null;
+        _recoObserver = new MutationObserver(() => {
+          const hasRecs = sidebarTarget.querySelectorAll('ytd-compact-video-renderer').length > 0;
+          if (hasRecs) {
+            // Debounce: wait 600ms after last mutation to let batch render finish
+            clearTimeout(_recoSaveTimer);
+            _recoSaveTimer = setTimeout(() => {
+              _saveMetaNow();
+              // Update export preview with fresh recs
+              updateExportPreview();
+            }, 600);
           }
-        } catch (e) { console.warn('Failed to save metadata', e); }
-      }, 3000);
+        });
+        _recoObserver.observe(sidebarTarget, { childList: true, subtree: true });
+        // Auto-disconnect after 30s to avoid memory leak if page never loads recs
+        setTimeout(() => { if (_recoObserver) { _recoObserver.disconnect(); _recoObserver = null; } }, 30000);
+      }
     } else {
+      if (_recoObserver) { _recoObserver.disconnect(); _recoObserver = null; }
       const existing = document.getElementById('sc-youtube-widget');
       if (existing) existing.remove();
     }
@@ -1210,60 +1232,123 @@
 
   // Extract page metadata
   function extractYouTubeMetadata() {
-    const title = document.querySelector('h1.ytd-watch-metadata yt-formatted-string')?.innerText || document.title;
+    const title = document.querySelector('h1.ytd-watch-metadata yt-formatted-string')?.innerText ||
+                  document.querySelector('h1.ytd-watch-metadata')?.innerText ||
+                  document.title;
     const channel = document.querySelector('ytd-video-owner-renderer #channel-name a')?.innerText || 'Unknown';
-    const subCount = document.querySelector('ytd-video-owner-renderer #owner-sub-count')?.innerText || 'Unknown';
-    const views = document.querySelector('#info-container #info span, ytd-watch-info-text #info span')?.innerText || 'Unknown views';
-    
-    const descEl = document.querySelector('ytd-text-inline-expander span, #description-inline-expander span');
-    const description = descEl ? descEl.innerText : '';
+    const subCount = document.querySelector('ytd-video-owner-renderer #owner-sub-count')?.innerText || '';
+    const views = document.querySelector('#info-container #info span, ytd-watch-info-text #info span')?.innerText || '';
 
-    const commentsCount = document.querySelector('ytd-comments #title')?.innerText || 'Unknown comments';
+    // Full description
+    const descEl = document.querySelector(
+      '#description-inline-expander yt-attributed-string, ' +
+      '#description-inline-expander .ytd-text-inline-expander, ' +
+      'ytd-text-inline-expander yt-attributed-string, ' +
+      'ytd-text-inline-expander span'
+    );
+    const description = descEl ? descEl.innerText.trim() : '';
 
-    const tagsList = [];
+    // Comments count — split off any 'Sort by' junk
+    const commentsTitleEl = document.querySelector('ytd-comments #title yt-formatted-string, ytd-comments #title span');
+    const commentsCount = commentsTitleEl
+      ? commentsTitleEl.innerText.trim().split('\n')[0].trim()
+      : (document.querySelector('ytd-comments #title')?.innerText.trim().split('\n')[0] || '');
+
+    // Hashtags — deduplicated
+    const tagSet = new Set();
     document.querySelectorAll('a[href*="/hashtag/"]').forEach(el => {
-      tagsList.push(el.innerText.trim());
+      const t = el.innerText.trim();
+      if (t) tagSet.add(t);
     });
-    const tags = tagsList.join(', ') || 'None';
+    const tags = [...tagSet].join(', ') || '';
 
+    // Sidebar topic/filter chips (the white strip)
+    const topicChips = [];
+    document.querySelectorAll(
+      'ytd-feed-filter-chip-bar-renderer yt-chip-cloud-chip-renderer, ' +
+      'ytd-watch-next-secondary-results-renderer yt-chip-cloud-chip-renderer'
+    ).forEach(chip => {
+      const label = chip.querySelector('yt-formatted-string, span')?.innerText.trim();
+      if (label && label !== 'All') topicChips.push(label);
+    });
+
+    // Comments — up to 10, with reply count
     const comments = [];
     document.querySelectorAll('ytd-comment-thread-renderer').forEach((el, idx) => {
-      if (idx < 5) {
-        const author = el.querySelector('#author-text span')?.innerText.trim() || 'Anonymous';
-        const text = el.querySelector('#content-text')?.innerText.trim() || '';
-        const likes = el.querySelector('#vote-count-middle')?.innerText.trim() || '0';
-        const pfp = el.querySelector('#author-thumbnail img')?.src || '';
-        comments.push({ author, text, likes, pfp });
-      }
-    });
+      if (idx >= 10) return;
+      const author = el.querySelector('#author-text span')?.innerText.trim() || 'Anonymous';
+      const text = el.querySelector('#content-text')?.innerText.trim() || '';
+      const likes = el.querySelector('#vote-count-middle')?.innerText.trim() || '0';
+      const pfp = el.querySelector('#author-thumbnail img')?.src || '';
 
-    const recVids = [];
-    document.querySelectorAll('ytd-compact-video-renderer').forEach((el, idx) => {
-      if (idx < 5) {
-        const titleEl = el.querySelector('#video-title');
-        const channelEl = el.querySelector('#byline-container #text, ytd-channel-name yt-formatted-string');
-        const metaEl = el.querySelector('#metadata-line span');
-        const linkEl = el.querySelector('a#thumbnail');
-        const imgEl = el.querySelector('img');
-        if (titleEl && linkEl) {
-          recVids.push({
-            title: titleEl.innerText.trim(),
-            channel: channelEl ? channelEl.innerText.trim() : '',
-            views: metaEl ? metaEl.innerText.trim() : '',
-            url: linkEl.href,
-            thumbnail: imgEl ? imgEl.src : ''
-          });
+      // Reply count: look for the replies expander button text like "View 3 replies"
+      let replyCount = '';
+      const repliesSection = el.querySelector('#replies');
+      if (repliesSection) {
+        // Try multiple selectors for the reply count text
+        const replyEl =
+          repliesSection.querySelector('#more-replies yt-formatted-string') ||
+          repliesSection.querySelector('#reply-count-text yt-formatted-string') ||
+          repliesSection.querySelector('ytd-button-renderer yt-formatted-string') ||
+          repliesSection.querySelector('tp-yt-paper-button yt-formatted-string') ||
+          repliesSection.querySelector('[class*="reply"]');
+        if (replyEl) {
+          const raw = replyEl.innerText.trim();
+          if (raw && /\d/.test(raw)) replyCount = raw; // only keep if has a number
+        }
+        // Fallback: check if replies are already expanded and count them
+        if (!replyCount) {
+          const expandedReplies = repliesSection.querySelectorAll('ytd-comment-renderer').length;
+          if (expandedReplies > 0) replyCount = `${expandedReplies} repl${expandedReplies === 1 ? 'y' : 'ies'} (expanded)`;
         }
       }
+
+      comments.push({ author, text, likes, pfp, replyCount });
     });
 
-    // Playlist / Queue Detection
+    // Recommendations — up to 15, multi-fallback selectors
+    const recVids = [];
+    const recEls = document.querySelectorAll(
+      '#secondary-inner ytd-compact-video-renderer, ' +
+      '#related ytd-compact-video-renderer, ' +
+      'ytd-watch-next-secondary-results-renderer ytd-compact-video-renderer'
+    );
+    recEls.forEach((el, idx) => {
+      if (idx >= 15) return;
+      const titleEl = el.querySelector('#video-title, #title');
+      const linkEl = el.querySelector('a#thumbnail, a[href*="/watch"]');
+      if (!titleEl || !linkEl) return;
+
+      const channelEl =
+        el.querySelector('ytd-channel-name #text a') ||
+        el.querySelector('ytd-channel-name yt-formatted-string a') ||
+        el.querySelector('ytd-channel-name #text') ||
+        el.querySelector('ytd-channel-name yt-formatted-string');
+
+      const metaSpans = el.querySelectorAll('#metadata-line span:not(.ytd-separator), .ytd-video-meta-block span');
+      const viewsText = metaSpans[0]?.innerText.trim() || '';
+      const ageText = metaSpans[1]?.innerText.trim() || '';
+      const imgEl = el.querySelector('img');
+      const href = linkEl.href || '';
+
+      const titleText = titleEl.innerText.trim();
+      const channelText = channelEl ? channelEl.innerText.trim() : '';
+      if (!titleText) return; // skip empty
+
+      recVids.push({
+        title: titleText,
+        channel: channelText,
+        views: viewsText,
+        age: ageText,
+        url: href.startsWith('http') ? href : `https://www.youtube.com${href}`,
+        thumbnail: imgEl ? (imgEl.src || imgEl.getAttribute('data-thumb') || '') : ''
+      });
+    });
+
+    // Playlist / Queue detection
     const urlParams = new URLSearchParams(window.location.search);
     const playlistId = urlParams.get('list');
-    let playlistTitle = '';
-    let playlistUrl = '';
-    let playlistIndex = '';
-
+    let playlistTitle = '', playlistUrl = '', playlistIndex = '';
     if (playlistId) {
       playlistTitle = document.querySelector('ytd-playlist-panel-renderer #title-container #title')?.innerText || 'Playlist/Queue';
       playlistUrl = `https://www.youtube.com/playlist?list=${playlistId}`;
@@ -1271,21 +1356,11 @@
     }
 
     return {
-      title,
-      channel,
-      subCount,
-      views,
-      commentsCount,
-      tags,
-      comments,
-      description,
+      title, channel, subCount, views, commentsCount, tags, topicChips, comments, description,
       url: window.location.href,
       thumbnail: `https://img.youtube.com/vi/${currentVideoId}/maxresdefault.jpg`,
       recommendations: recVids,
-      playlistId,
-      playlistTitle,
-      playlistUrl,
-      playlistIndex
+      playlistId, playlistTitle, playlistUrl, playlistIndex
     };
   }
 
@@ -1295,7 +1370,14 @@
     const notesData = await storage.getAsync([notesKey]);
     const notes = notesData[notesKey] || [];
 
-    // Personal notes are placed as the primary heading context at the top
+    // Use live captions, fall back to cached in storage
+    let captions = ytCaptions;
+    if (captions.length === 0) {
+      const transcriptKey = `sc_transcript_${currentVideoId}`;
+      const cached = await storage.getAsync([transcriptKey]);
+      captions = cached[transcriptKey] || [];
+    }
+
     let md = `# Personal Notes & Markers\n\n`;
     if (notes.length === 0) {
       md += `*No notes added yet.*\n\n`;
@@ -1306,14 +1388,14 @@
       md += `\n`;
     }
 
+    // Metadata block
     md += `---\n`;
     md += `Title: ${meta.title}\n`;
-    if (meta.description) md += `Description: ${meta.description.substring(0, 200).replace(/\n/g, ' ')}...\n`;
     md += `Channel: ${meta.channel}\n`;
-    md += `Subscribers: ${meta.subCount}\n`;
-    md += `Views: ${meta.views}\n`;
-    md += `Comments Count: ${meta.commentsCount}\n`;
-    md += `Tags: ${meta.tags}\n`;
+    if (meta.subCount) md += `Subscribers: ${meta.subCount}\n`;
+    if (meta.views) md += `Views: ${meta.views}\n`;
+    if (meta.commentsCount) md += `Comments: ${meta.commentsCount}\n`;
+    if (meta.tags) md += `Tags: ${meta.tags}\n`;
     md += `URL: ${meta.url}\n`;
     md += `Thumbnail: ${meta.thumbnail}\n`;
     if (meta.playlistId) {
@@ -1321,35 +1403,46 @@
       md += `Playlist URL: ${meta.playlistUrl}\n`;
       md += `Playlist Index: ${meta.playlistIndex}\n`;
     }
+    if (meta.description) {
+      md += `\nDescription:\n${meta.description.substring(0, 500).trim()}\n`;
+    }
     md += `---\n\n`;
 
+    // Transcript
     md += `# Transcript\n\n`;
-    if (ytCaptions.length === 0) {
+    if (captions.length === 0) {
       md += `*Transcript not loaded. Click "Sync" in the Transcript tab.*\n\n`;
     } else {
-      ytCaptions.forEach(c => {
+      captions.forEach(c => {
         md += `[${formatTime(c.start)}] ${c.text}\n`;
       });
       md += `\n`;
     }
 
+    // Comments
     md += `# Comments\n\n`;
     if (meta.comments.length === 0) {
-      md += `*No comments visible on screen (scroll down to load comments).*\n\n`;
+      md += `*No comments visible (scroll down on the page to load comments first).*\n\n`;
     } else {
       meta.comments.forEach((c, idx) => {
-        md += `${idx + 1}. **${c.author}** (Likes: ${c.likes}): ${c.text}\n`;
+        const replyNote = c.replyCount ? ` — ${c.replyCount}` : '';
+        md += `${idx + 1}. **${c.author}** (👍 ${c.likes}${replyNote}): ${c.text}\n`;
       });
       md += `\n`;
     }
 
+    // Recommendations — with sidebar topic chips
     md += `# Recommendations\n\n`;
+    if (meta.topicChips && meta.topicChips.length > 0) {
+      md += `**Topics:** ${meta.topicChips.join(' · ')}\n\n`;
+    }
     if (meta.recommendations && meta.recommendations.length > 0) {
-      meta.recommendations.forEach(r => {
-        md += `- **${r.title}** by ${r.channel} (${r.views})\n  URL: ${r.url}\n`;
+      meta.recommendations.forEach((r, i) => {
+        const age = r.age ? ` · ${r.age}` : '';
+        md += `${i + 1}. **${r.title}** — ${r.channel} (${r.views}${age})\n   ${r.url}\n`;
       });
     } else {
-      md += `*No recommendations scraped (they appear on the right sidebar).*\n`;
+      md += `*Recommendations load as you scroll. Re-open Export tab after scrolling the sidebar.*\n`;
     }
 
     return md;
