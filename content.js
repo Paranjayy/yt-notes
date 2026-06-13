@@ -1172,6 +1172,9 @@
       });
 
       if (ytCaptions.length > 0) {
+        if (currentVideoId) {
+          storage.set({ [`sc_transcript_${currentVideoId}`]: ytCaptions });
+        }
         renderTranscript();
         return;
       }
