@@ -589,13 +589,12 @@
       if (sidebarTarget) {
         let _recoSaveTimer = null;
         _recoObserver = new MutationObserver(() => {
-          const hasRecs = sidebarTarget.querySelectorAll('ytd-compact-video-renderer').length > 0;
+          // yt-lockup-view-model is the new recommendation card element (replaces ytd-compact-video-renderer)
+          const hasRecs = sidebarTarget.querySelectorAll('yt-lockup-view-model').length > 0;
           if (hasRecs) {
-            // Debounce: wait 600ms after last mutation to let batch render finish
             clearTimeout(_recoSaveTimer);
             _recoSaveTimer = setTimeout(() => {
               _saveMetaNow();
-              // Update export preview with fresh recs
               updateExportPreview();
             }, 600);
           }
@@ -1263,13 +1262,10 @@
     });
     const tags = [...tagSet].join(', ') || '';
 
-    // Sidebar topic/filter chips (the white strip)
+    // Sidebar topic/filter chips — exact DOM: chip-shape button > div.ytChipShapeChip > div
     const topicChips = [];
-    document.querySelectorAll(
-      'ytd-feed-filter-chip-bar-renderer yt-chip-cloud-chip-renderer, ' +
-      'ytd-watch-next-secondary-results-renderer yt-chip-cloud-chip-renderer'
-    ).forEach(chip => {
-      const label = chip.querySelector('yt-formatted-string, span')?.innerText.trim();
+    document.querySelectorAll('yt-chip-cloud-chip-renderer chip-shape button').forEach(btn => {
+      const label = btn.innerText.trim();
       if (label && label !== 'All') topicChips.push(label);
     });
 
@@ -1307,43 +1303,55 @@
       comments.push({ author, text, likes, pfp, replyCount });
     });
 
-    // Recommendations — up to 15, multi-fallback selectors
+    // Recommendations — YouTube new lockup-view-model DOM (replaces ytd-compact-video-renderer)
     const recVids = [];
-    const recEls = document.querySelectorAll(
-      '#secondary-inner ytd-compact-video-renderer, ' +
-      '#related ytd-compact-video-renderer, ' +
-      'ytd-watch-next-secondary-results-renderer ytd-compact-video-renderer'
+    const lockupEls = document.querySelectorAll(
+      '#secondary-inner yt-lockup-view-model, ' +
+      '#related yt-lockup-view-model, ' +
+      'ytd-watch-next-secondary-results-renderer yt-lockup-view-model'
     );
-    recEls.forEach((el, idx) => {
+    lockupEls.forEach((el, idx) => {
       if (idx >= 15) return;
-      const titleEl = el.querySelector('#video-title, #title');
-      const linkEl = el.querySelector('a#thumbnail, a[href*="/watch"]');
-      if (!titleEl || !linkEl) return;
 
-      const channelEl =
-        el.querySelector('ytd-channel-name #text a') ||
-        el.querySelector('ytd-channel-name yt-formatted-string a') ||
-        el.querySelector('ytd-channel-name #text') ||
-        el.querySelector('ytd-channel-name yt-formatted-string');
+      // Title: h3 title attribute is most reliable (populated even before text renders)
+      const h3 = el.querySelector('h3.ytLockupMetadataViewModelHeadingReset, h3[title]');
+      const titleText = h3?.getAttribute('title') || h3?.querySelector('span')?.innerText.trim() || '';
+      if (!titleText) return;
 
-      const metaSpans = el.querySelectorAll('#metadata-line span:not(.ytd-separator), .ytd-video-meta-block span');
-      const viewsText = metaSpans[0]?.innerText.trim() || '';
-      const ageText = metaSpans[1]?.innerText.trim() || '';
-      const imgEl = el.querySelector('img');
-      const href = linkEl.href || '';
+      // Link: thumbnail anchor is always present
+      const linkEl = el.querySelector('a.ytLockupViewModelContentImage, a.ytLockupMetadataViewModelTitle');
+      const href = linkEl?.getAttribute('href') || '';
 
-      const titleText = titleEl.innerText.trim();
-      const channelText = channelEl ? channelEl.innerText.trim() : '';
-      if (!titleText) return; // skip empty
+      // Channel: first metadata row (no leading icon), first text span
+      const metaRows = el.querySelectorAll('.ytContentMetadataViewModelMetadataRow');
+      let channelText = '';
+      let viewsText = '';
+      let ageText = '';
 
-      recVids.push({
-        title: titleText,
-        channel: channelText,
-        views: viewsText,
-        age: ageText,
-        url: href.startsWith('http') ? href : `https://www.youtube.com${href}`,
-        thumbnail: imgEl ? (imgEl.src || imgEl.getAttribute('data-thumb') || '') : ''
+      metaRows.forEach((row, rowIdx) => {
+        if (rowIdx === 0) {
+          // Channel row — first attributedString span that isn’t an icon wrapper
+          channelText = row.querySelector('span.ytAttributedStringHost')?.innerText.trim() || '';
+        } else if (rowIdx === 1) {
+          // Views + age row — use aria-labels for reliable extraction
+          row.querySelectorAll('span[aria-label]').forEach(span => {
+            const label = span.getAttribute('aria-label') || '';
+            if (label.includes('view')) viewsText = span.innerText.trim();
+            if (label.includes('ago') || label.includes('hour') || label.includes('day') || label.includes('week') || label.includes('month') || label.includes('year')) ageText = span.innerText.trim();
+          });
+        }
       });
+
+      // Duration badge
+      const durationEl = el.querySelector('.ytBadgeShapeText');
+      const duration = durationEl?.innerText.trim() || '';
+
+      // Thumbnail
+      const imgEl = el.querySelector('img.ytCoreImageHost');
+
+      const fullUrl = href.startsWith('http') ? href : `https://www.youtube.com${href}`;
+
+      recVids.push({ title: titleText, channel: channelText, views: viewsText, age: ageText, duration, url: fullUrl, thumbnail: imgEl?.src || '' });
     });
 
     // Playlist / Queue detection
@@ -1432,7 +1440,7 @@
       md += `\n`;
     }
 
-    // Recommendations — with sidebar topic chips
+    // Recommendations — with sidebar topic chips and duration
     md += `# Recommendations\n\n`;
     if (meta.topicChips && meta.topicChips.length > 0) {
       md += `**Topics:** ${meta.topicChips.join(' · ')}\n\n`;
@@ -1440,10 +1448,11 @@
     if (meta.recommendations && meta.recommendations.length > 0) {
       meta.recommendations.forEach((r, i) => {
         const age = r.age ? ` · ${r.age}` : '';
-        md += `${i + 1}. **${r.title}** — ${r.channel} (${r.views}${age})\n   ${r.url}\n`;
+        const dur = r.duration ? ` [${r.duration}]` : '';
+        md += `${i + 1}. **${r.title}**${dur} — ${r.channel} (${r.views}${age})\n   ${r.url}\n`;
       });
     } else {
-      md += `*Recommendations load as you scroll. Re-open Export tab after scrolling the sidebar.*\n`;
+      md += `*No recommendations found. Scroll the sidebar to load them, then re-open the Export tab.*\n`;
     }
 
     return md;
