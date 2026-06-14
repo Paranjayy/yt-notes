@@ -523,6 +523,7 @@
   let notesSearchQuery = '';
   let transcriptSearchQuery = '';
   let cachedMarkdown = ''; // pre-cached export markdown for sync clipboard copy
+  let hasAttemptedAutoClick = false; // flag to prevent duplicate auto-clicks per video
 
   // Load user auto-pause preference from storage
   storage.get(['sc_preference_autopause'], (data) => {
@@ -566,6 +567,7 @@
     if (videoId) {
       currentVideoId = videoId;
       cachedMarkdown = ''; // reset cache for new video
+      hasAttemptedAutoClick = false; // reset auto-trigger state
       injectYouTubeWidget();
       injectTimelineMarkers();
       fetchYouTubeTranscript();
@@ -783,7 +785,7 @@
     container.querySelector('#sc-btn-copy-all').addEventListener('click', () => copyCompleteMarkdown());
     container.querySelector('#sc-btn-dl-md').addEventListener('click', () => downloadMarkdownFile());
     container.querySelectorAll('.sc-llm-routing button').forEach(btn => {
-      btn.addEventListener('click', (e) => sendToLLM(e.target.dataset.llm));
+      btn.addEventListener('click', () => sendToLLM(btn.dataset.llm));
     });
   }
 
@@ -1127,9 +1129,12 @@
   // Periodic automatic sync helper
   function autoSyncNativeTranscript() {
     if (ytCaptions.length > 0) return;
-    const isPanelOpen = document.querySelector('transcript-segment-view-model') || document.querySelector('ytd-transcript-segment-renderer');
+    const isPanelOpen = document.querySelector('transcript-segment-view-model') || document.querySelector('ytd-transcript-segment-renderer') || document.querySelector('.ytwTranscriptSegmentViewModelHost');
     if (isPanelOpen) {
       scrapeNativeYouTubeTranscript(false);
+    } else if (!hasAttemptedAutoClick) {
+      hasAttemptedAutoClick = true;
+      scrapeNativeYouTubeTranscript(true);
     }
   }
 
@@ -1390,17 +1395,9 @@
       captions = cached[transcriptKey] || [];
     }
 
-    let md = `# Personal Notes & Markers\n\n`;
-    if (notes.length === 0) {
-      md += `*No notes added yet.*\n\n`;
-    } else {
-      notes.forEach(n => {
-        md += `- **[${formatTime(n.time)}]** (https://www.youtube.com/watch?v=${currentVideoId}&t=${Math.floor(n.time)}s): ${n.text}\n`;
-      });
-      md += `\n`;
-    }
+    let md = '';
 
-    // Metadata block
+    // Metadata block (YAML Frontmatter must be at the very top for Obsidian/parsers)
     md += `---\n`;
     md += `Title: ${meta.title}\n`;
     md += `Channel: ${meta.channel}\n`;
@@ -1419,6 +1416,17 @@
       md += `\nDescription:\n${meta.description.substring(0, 500).trim()}\n`;
     }
     md += `---\n\n`;
+
+    // Personal Notes & Markers
+    md += `# Personal Notes & Markers\n\n`;
+    if (notes.length === 0) {
+      md += `*No notes added yet.*\n\n`;
+    } else {
+      notes.forEach(n => {
+        md += `- **[${formatTime(n.time)}]** (https://www.youtube.com/watch?v=${currentVideoId}&t=${Math.floor(n.time)}s): ${n.text}\n`;
+      });
+      md += `\n`;
+    }
 
     // Transcript
     md += `# Transcript\n\n`;
@@ -1651,8 +1659,8 @@
     });
 
     panel.querySelectorAll('.sc-llm-routing button').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        const target = e.target.dataset.llm;
+      btn.addEventListener('click', () => {
+        const target = btn.dataset.llm;
         const promptText = encodeURIComponent(`Summarize or answer questions based on this post/thread content:\n\n${md}`);
         let targetUrl = '';
         if (target === 'chatgpt') targetUrl = `https://chatgpt.com/?q=${promptText}`;

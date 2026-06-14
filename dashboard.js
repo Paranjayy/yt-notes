@@ -119,15 +119,7 @@ function thumbUrl(videoId) {
 // ─── Generate Markdown for a single video ────────────────────────────────────
 function generateMarkdownForVideo({ videoId, notes, screenshots, transcript, meta }) {
   const m = meta || {};
-  let md = `# Personal Notes & Markers\n\n`;
-  if (!notes || notes.length === 0) {
-    md += `*No notes added yet.*\n\n`;
-  } else {
-    notes.forEach(n => {
-      md += `- **[${formatTime(n.time)}]** (${ytUrl(videoId, n.time)}): ${n.text}\n`;
-    });
-    md += '\n';
-  }
+  let md = '';
 
   md += `---\n`;
   md += `Title: ${m.title || 'Unknown'}\n`;
@@ -145,6 +137,16 @@ function generateMarkdownForVideo({ videoId, notes, screenshots, transcript, met
     md += `Playlist Index: ${m.playlistIndex}\n`;
   }
   md += `---\n\n`;
+
+  md += `# Personal Notes & Markers\n\n`;
+  if (!notes || notes.length === 0) {
+    md += `*No notes added yet.*\n\n`;
+  } else {
+    notes.forEach(n => {
+      md += `- **[${formatTime(n.time)}]** (${ytUrl(videoId, n.time)}): ${n.text}\n`;
+    });
+    md += '\n';
+  }
 
   if (transcript && transcript.length > 0) {
     md += `# Transcript\n\n`;
