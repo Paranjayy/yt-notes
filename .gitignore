@@ -3,3 +3,6 @@ test-results/
 playwright-report/
 .last-run.json
 .DS_Store
+dist/
+safari/
+*.zip
