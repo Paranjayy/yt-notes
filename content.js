@@ -767,7 +767,7 @@
 
     // Sync button
     container.querySelector('#sc-btn-sync-transcript').addEventListener('click', () => {
-      scrapeNativeYouTubeTranscript(true);
+      forceSyncTranscript();
     });
 
     // Load screenshots from storage
@@ -1063,13 +1063,36 @@
     });
   }
 
+  // Force sync / clear stale data and reload transcript
+  function forceSyncTranscript() {
+    ytCaptions = [];
+    hasAttemptedAutoClick = false;
+    
+    if (currentVideoId) {
+      storage.set({ [`sc_transcript_${currentVideoId}`]: [] });
+    }
+    
+    // Update the UI to show loading
+    const transcriptBox = document.getElementById('sc-transcript-box');
+    if (transcriptBox) {
+      transcriptBox.innerHTML = `<div style="color: var(--sc-text-muted-light); text-align: center; padding: 12px;">Syncing transcript...</div>`;
+    }
+    
+    fetchYouTubeTranscript();
+    scrapeNativeYouTubeTranscript(true);
+  }
+
   // Fetch transcript: script parsing + DOM clicker fallback
   function fetchYouTubeTranscript() {
     ytCaptions = [];
     
     // First attempt: Scrape ytInitialPlayerResponse directly from script tags
     const playerResponse = getPlayerResponseFromScripts();
-    if (playerResponse && playerResponse.captions && playerResponse.captions.playerCaptionsTracklistRenderer && playerResponse.captions.playerCaptionsTracklistRenderer.captionTracks) {
+    const isResponseValidForCurrentVideo = playerResponse && 
+                                           playerResponse.videoDetails && 
+                                           playerResponse.videoDetails.videoId === currentVideoId;
+                                           
+    if (isResponseValidForCurrentVideo && playerResponse.captions && playerResponse.captions.playerCaptionsTracklistRenderer && playerResponse.captions.playerCaptionsTracklistRenderer.captionTracks) {
       const tracks = playerResponse.captions.playerCaptionsTracklistRenderer.captionTracks;
       loadTranscriptFromTracks(tracks);
     } else {
@@ -1243,9 +1266,15 @@
     const title = document.querySelector('h1.ytd-watch-metadata yt-formatted-string')?.innerText ||
                   document.querySelector('h1.ytd-watch-metadata')?.innerText ||
                   document.title;
-    const channel = document.querySelector('ytd-video-owner-renderer #channel-name a')?.innerText || 'Unknown';
-    const subCount = document.querySelector('ytd-video-owner-renderer #owner-sub-count')?.innerText || '';
-    const views = document.querySelector('#info-container #info span, ytd-watch-info-text #info span')?.innerText || '';
+    const channelEl = document.querySelector('ytd-watch-metadata ytd-video-owner-renderer #channel-name a') ||
+                      document.querySelector('ytd-video-owner-renderer #channel-name a') ||
+                      document.querySelector('#upload-info #channel-name a') ||
+                      document.querySelector('#channel-name a');
+    const channel = channelEl ? channelEl.innerText.trim() : 'Unknown';
+    const subCount = document.querySelector('ytd-watch-metadata ytd-video-owner-renderer #owner-sub-count')?.innerText ||
+                     document.querySelector('ytd-video-owner-renderer #owner-sub-count')?.innerText || '';
+    const views = document.querySelector('ytd-watch-metadata #info-container #info span')?.innerText ||
+                  document.querySelector('#info-container #info span, ytd-watch-info-text #info span')?.innerText || '';
 
     // Full description
     const descEl = document.querySelector(
