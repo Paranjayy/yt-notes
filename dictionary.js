@@ -225,44 +225,50 @@
   }
 
   /* ═══════════════════════════════════════════════════════════════
-     IFRAME LOADER — loads a URL in a hidden iframe, returns its doc
+     PAGE-CONTEXT FETCH — injects a script into the page to fetch
+     with proper cookies (content script fetch lacks auth in Safari)
      ═══════════════════════════════════════════════════════════════ */
-  function loadInIframe(url, timeout = 15000) {
+  function pageFetch(url) {
     return new Promise((resolve, reject) => {
-      const iframe = document.createElement("iframe");
-      iframe.style.cssText =
-        "position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;border:none;";
-      iframe.src = url;
+      const cbName = `_cdFetchCB_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 
-      const timer = setTimeout(() => {
-        iframe.remove();
-        reject(new Error(`iframe timeout after ${timeout}ms for ${url}`));
-      }, timeout);
-
-      iframe.onload = () => {
-        clearTimeout(timer);
-        try {
-          const doc = iframe.contentDocument || iframe.contentWindow.document;
-          // Small delay to let AMP finish rendering
-          setTimeout(() => {
-            const result = doc;
-            iframe.remove();
-            resolve(result);
-          }, 800);
-        } catch (e) {
-          iframe.remove();
-          reject(new Error(`iframe access error: ${e.message}`));
+      window[cbName] = (html) => {
+        delete window[cbName];
+        script.remove();
+        if (html === null) {
+          reject(new Error(`pageFetch failed for ${url}`));
+        } else {
+          resolve(html);
         }
       };
 
-      iframe.onerror = () => {
-        clearTimeout(timer);
-        iframe.remove();
-        reject(new Error(`iframe load error for ${url}`));
-      };
+      const script = document.createElement("script");
+      script.textContent = `
+        (async () => {
+          try {
+            const r = await fetch(${JSON.stringify(url)}, { credentials: 'include' });
+            if (!r.ok) { ${cbName}(null); return; }
+            const html = await r.text();
+            ${cbName}(html);
+          } catch(e) { ${cbName}(null); }
+        })();
+      `;
+      document.head.appendChild(script);
 
-      document.body.appendChild(iframe);
+      // Timeout fallback
+      setTimeout(() => {
+        if (window[cbName]) {
+          delete window[cbName];
+          script.remove();
+          reject(new Error(`pageFetch timeout for ${url}`));
+        }
+      }, 20000);
     });
+  }
+
+  async function fetchDoc(url) {
+    const html = await pageFetch(url);
+    return new DOMParser().parseFromString(html, "text/html");
   }
 
   /* ═══════════════════════════════════════════════════════════════
@@ -292,7 +298,7 @@
         if (url === location.href) {
           doc = document;
         } else {
-          doc = await loadInIframe(url, 10000);
+          doc = await fetchDoc(url);
         }
         const rows = parseListRows(doc);
         log(`  → Found ${rows.length} lists from`, url);
@@ -331,7 +337,7 @@
 
       try {
         logCb(`[${i + 1}/${total}] Loading: ${list.name}`);
-        const doc = await loadInIframe(list.url, 15000);
+        const doc = await fetchDoc(list.url);
 
         // Debug: check what we got
         const hasEntries = doc.querySelectorAll("li.wordlistentry-row").length;
