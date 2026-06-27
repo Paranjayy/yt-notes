@@ -1,14 +1,18 @@
 /**
  * Cambridge Dictionary Word List Scraper
- * Deep scrape: fetches list metadata + every word with POS, grammar, usage, domain, CEFR, definition
+ * Deep scrape via iframes (proper cookie auth) + full word metadata
  */
 (function () {
   "use strict";
 
-  // Run on wordlist index OR individual wordlist pages
   const isIndex = /\/plus\/wordlist\/?$/.test(location.pathname);
   const isWordlistPage = /\/plus\/wordlist\/\d+/.test(location.pathname);
   if (!isIndex && !isWordlistPage) return;
+
+  const log = (...a) =>
+    console.log("%c[CD Scraper]", "color:#0d9488;font-weight:bold", ...a);
+  const warn = (...a) => console.warn("[CD Scraper]", ...a);
+  log("Content script loaded on", location.pathname);
 
   /* ═══════════════════════════════════════════════════════════════
      STYLES
@@ -41,8 +45,8 @@
       .cd-btn-p{background:#0d9488;border-color:#0d9488;color:#fff}
       .cd-btn-p:hover{background:#0f766e;border-color:#0f766e}
       .cd-btn:disabled{opacity:.5;cursor:not-allowed}
-      .cd-tabs{display:flex;padding:0 16px;border-bottom:1px solid rgba(255,255,255,.06);flex-shrink:0}
-      .cd-tab{padding:10px 14px;font-size:12px;font-weight:600;color:#64748b;border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;font-family:inherit}
+      .cd-tabs{display:flex;padding:0 16px;border-bottom:1px solid rgba(255,255,255,.06);flex-shrink:0;overflow-x:auto}
+      .cd-tab{padding:10px 14px;font-size:12px;font-weight:600;color:#64748b;border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;font-family:inherit;white-space:nowrap}
       .cd-tab:hover{color:#94a3b8}
       .cd-tab-a{color:#2dd4bf;border-bottom-color:#2dd4bf}
       .cd-area{flex:1;overflow-y:auto;padding:8px 16px 16px;min-height:0}
@@ -71,15 +75,17 @@
       .cd-sect::after{content:'';flex:1;height:1px;background:rgba(255,255,255,.06)}
       .cd-empty{text-align:center;padding:40px 20px;color:#64748b}
       .cd-empty-i{font-size:40px;margin-bottom:12px;opacity:.4}
-      .cd-empty-t{font-size:13px;line-height:1.5}
       .cd-prog{padding:0 16px 12px;flex-shrink:0}
       .cd-prog-bar{height:4px;background:rgba(255,255,255,.06);border-radius:2px;overflow:hidden}
       .cd-prog-fill{height:100%;background:linear-gradient(90deg,#0d9488,#06b6d4);border-radius:2px;transition:width .3s ease;width:0%}
-      .cd-prog-txt{font-size:11px;color:#64748b;margin-top:6px;text-align:center}
+      .cd-prog-txt{font-size:11px;color:#64748b;margin-top:6px;text-align:center;min-height:16px}
+      .cd-log{padding:0 16px 12px;flex-shrink:0;max-height:120px;overflow-y:auto;font-size:10px;font-family:monospace;color:#64748b;background:rgba(0,0,0,.2);border-radius:8px;margin:0 16px 12px}
+      .cd-log::-webkit-scrollbar{width:3px}
+      .cd-log::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1)}
+      .cd-log-ok{color:#4ade80}
+      .cd-log-err{color:#f87171}
       .cd-toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(20px);z-index:2147483647;background:#0d9488;color:#fff;padding:10px 20px;border-radius:10px;font-size:13px;font-weight:600;font-family:inherit;box-shadow:0 8px 32px rgba(0,0,0,.4);opacity:0;transition:all .3s ease;pointer-events:none}
       .cd-toast-s{opacity:1;transform:translateX(-50%) translateY(0)}
-      .cd-spinner{width:20px;height:20px;border:2px solid rgba(255,255,255,.15);border-top-color:#2dd4bf;border-radius:50%;animation:cds .6s linear infinite}
-      @keyframes cds{to{transform:rotate(360deg)}}
       @media(max-width:500px){.cd-panel{right:8px;left:8px;width:auto;bottom:88px}.cd-fab{bottom:16px;right:16px}}
     `;
     document.head.appendChild(s);
@@ -122,7 +128,7 @@
   }
 
   /* ═══════════════════════════════════════════════════════════════
-     INDEX PAGE — parse wordlist rows
+     INDEX PAGE — parse wordlist rows from DOM
      ═══════════════════════════════════════════════════════════════ */
   function parseListRows(doc) {
     return [...doc.querySelectorAll("li.wordlist-row")].map((row) => {
@@ -148,47 +154,45 @@
   }
 
   /* ═══════════════════════════════════════════════════════════════
-     INDIVIDUAL WORDLIST PAGE — extract words with full metadata
+     WORDLIST PAGE — extract words from DOM with full metadata
      ═══════════════════════════════════════════════════════════════ */
-  function parseWordsFromPage(doc, listUrl) {
+  function parseWords(doc, sourceUrl) {
     const entries = doc.querySelectorAll("li.wordlistentry-row");
     const words = [];
     const seen = new Set();
 
     entries.forEach((entry) => {
       const id = entry.dataset.wordId || "";
-
-      // Word text
       const phraseEl = entry.querySelector("a .phrase");
       const word = clean(phraseEl?.textContent);
       if (!word) return;
 
-      // Part of speech
       const pos = clean(entry.querySelector("a .pos")?.textContent);
 
-      // Grammar labels: [ I ], [ T ], [ C ], [ U ], [ I or T ], etc.
-      const grammarSpans = entry.querySelectorAll("a .gram .gc");
-      const grammar = grammarSpans.length
-        ? grammarSpans.length === 1
-          ? clean(grammarSpans[0].textContent)
-          : [...grammarSpans].map((s) => clean(s.textContent)).join(" or ")
-        : "";
+      // Grammar: [ I ], [ T ], [ C ], [ U ], [ I or T ], etc.
+      const gcSpans = entry.querySelectorAll("a .gram .gc");
+      const grammar =
+        gcSpans.length === 1
+          ? clean(gcSpans[0].textContent)
+          : gcSpans.length > 1
+            ? [...gcSpans].map((s) => clean(s.textContent)).join(" or ")
+            : "";
 
-      // Usage labels: "informal", "formal", "humorous or specialized", "old-fashioned informal", "disapproving", "US", "UK"
+      // Usage labels
       const usageEls = entry.querySelectorAll("a .usage, a .dusage");
       const usage = [...usageEls]
         .map((e) => clean(e.textContent))
         .filter(Boolean)
         .join(", ");
 
-      // Domain labels: "BIOLOGY", "LANGUAGE", "PUBLISHING", "LITERATURE"
+      // Domain labels
       const domainEls = entry.querySelectorAll("a .domain, a .ddomain");
       const domain = [...domainEls]
         .map((e) => clean(e.textContent))
         .filter(Boolean)
         .join(", ");
 
-      // CEFR level: A1, A2, B1, B2, C1, C2
+      // CEFR level
       const cefrEl = entry.querySelector("a .epp-xref, a .dxref");
       const cefr = clean(cefrEl?.textContent);
 
@@ -196,21 +200,9 @@
       const defEl = entry.querySelector(".def");
       const definition = clean(defEl?.textContent);
 
-      // Dictionary source (from the label at bottom)
+      // Dictionary source
       const dictEl = entry.querySelector(".h6, .lm-0");
       const dictionary = clean(dictEl?.textContent);
-
-      // Audio URLs
-      const ukAudio =
-        entry
-          .querySelector('amp-audio source[type="audio/mpeg"]')
-          ?.getAttribute("src") || "";
-      // Get US audio (second amp-audio)
-      const audioSources = entry.querySelectorAll(
-        'amp-audio source[type="audio/mpeg"]',
-      );
-      const usAudio =
-        audioSources.length > 1 ? audioSources[1].getAttribute("src") : "";
 
       const key = `${id}-${word}`;
       if (seen.has(key)) return;
@@ -225,8 +217,6 @@
         cefr,
         definition,
         dictionary,
-        ukAudio,
-        usAudio,
         id,
       });
     });
@@ -235,22 +225,51 @@
   }
 
   /* ═══════════════════════════════════════════════════════════════
-     FETCH HELPER
+     IFRAME LOADER — loads a URL in a hidden iframe, returns its doc
      ═══════════════════════════════════════════════════════════════ */
-  async function fetchDoc(url) {
-    const resp = await fetch(url, { credentials: "include" });
-    if (!resp.ok) throw new Error(`${resp.status} for ${url}`);
-    const html = await resp.text();
-    return new DOMParser().parseFromString(html, "text/html");
+  function loadInIframe(url, timeout = 15000) {
+    return new Promise((resolve, reject) => {
+      const iframe = document.createElement("iframe");
+      iframe.style.cssText =
+        "position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;border:none;";
+      iframe.src = url;
+
+      const timer = setTimeout(() => {
+        iframe.remove();
+        reject(new Error(`iframe timeout after ${timeout}ms for ${url}`));
+      }, timeout);
+
+      iframe.onload = () => {
+        clearTimeout(timer);
+        try {
+          const doc = iframe.contentDocument || iframe.contentWindow.document;
+          // Small delay to let AMP finish rendering
+          setTimeout(() => {
+            const result = doc;
+            iframe.remove();
+            resolve(result);
+          }, 800);
+        } catch (e) {
+          iframe.remove();
+          reject(new Error(`iframe access error: ${e.message}`));
+        }
+      };
+
+      iframe.onerror = () => {
+        clearTimeout(timer);
+        iframe.remove();
+        reject(new Error(`iframe load error for ${url}`));
+      };
+
+      document.body.appendChild(iframe);
+    });
   }
 
   /* ═══════════════════════════════════════════════════════════════
-     INDEX PAGE DISCOVERY — find all index URLs
+     DISCOVER ALL LISTS from index pages
      ═══════════════════════════════════════════════════════════════ */
   async function discoverAllLists() {
     const urls = new Set([location.href]);
-
-    // Known "See all" links
     const linkSelectors = [
       'a[href*="/plus/myWordlists"]',
       'a[href*="/plus/cambridgeWordlists"]',
@@ -261,8 +280,6 @@
       const href = document.querySelector(sel)?.href;
       if (href) urls.add(abs(href));
     });
-
-    // Filter URLs for all list types
     urls.add(abs("/plus/wordlist?type=personal"));
     urls.add(abs("/plus/wordlist?type=cup"));
     urls.add(abs("/plus/wordlist?type=community_default"));
@@ -270,40 +287,85 @@
     const allRows = [];
     for (const url of urls) {
       try {
-        const doc = url === location.href ? document : await fetchDoc(url);
-        allRows.push(...parseListRows(doc));
+        log("Fetching index:", url);
+        let doc;
+        if (url === location.href) {
+          doc = document;
+        } else {
+          doc = await loadInIframe(url, 10000);
+        }
+        const rows = parseListRows(doc);
+        log(`  → Found ${rows.length} lists from`, url);
+        allRows.push(...rows);
         await sleep(200);
       } catch (e) {
-        console.warn("Index fetch failed:", url, e);
+        warn("Index failed:", url, e.message);
       }
     }
 
-    // Deduplicate by id
+    // Deduplicate
     const map = new Map();
     allRows.forEach((r) => {
       const key = r.id || r.url || r.name;
       if (!map.has(key)) map.set(key, r);
     });
-    return [...map.values()];
+    const deduped = [...map.values()];
+    log("Total unique lists:", deduped.length);
+    return deduped;
   }
 
   /* ═══════════════════════════════════════════════════════════════
-     DEEP SCRAPE — fetch each wordlist and extract words
+     DEEP SCRAPE — load each wordlist in iframe, extract words
      ═══════════════════════════════════════════════════════════════ */
-  async function deepScrape(progressCb) {
+  async function deepScrape(progressCb, logCb) {
     const lists = await discoverAllLists();
     const total = lists.length;
 
     for (let i = 0; i < total; i++) {
       const list = lists[i];
       progressCb(i, total, list.name);
-      if (!list.url) continue;
+      if (!list.url) {
+        logCb(`Skipping ${list.name} — no URL`, "warn");
+        continue;
+      }
+
       try {
-        const doc = await fetchDoc(list.url);
-        list.words = parseWordsFromPage(doc, list.url);
-        await sleep(400);
+        logCb(`[${i + 1}/${total}] Loading: ${list.name}`);
+        const doc = await loadInIframe(list.url, 15000);
+
+        // Debug: check what we got
+        const hasEntries = doc.querySelectorAll("li.wordlistentry-row").length;
+        const hasLogout = doc.body?.textContent?.includes("Logout successful");
+        const bodyLen = doc.body?.innerHTML?.length || 0;
+
+        logCb(
+          `  DOM body: ${bodyLen} chars, entries: ${hasEntries}, logout: ${hasLogout}`,
+        );
+
+        if (hasLogout) {
+          logCb(`  ⚠ Auth issue — page shows "Logout successful"`, "err");
+        }
+
+        list.words = parseWords(doc, list.url);
+        logCb(
+          `  ✓ Scraped ${list.words.length}/${list.count} words`,
+          list.words.length > 0 ? "ok" : "warn",
+        );
+
+        // Debug: show first few words
+        if (list.words.length > 0) {
+          logCb(
+            `  Sample: ${list.words
+              .slice(0, 3)
+              .map((w) => w.word)
+              .join(", ")}...`,
+          );
+        }
+
+        await sleep(500);
       } catch (e) {
-        console.warn("Wordlist fetch failed:", list.name, e);
+        warn("Wordlist failed:", list.name, e.message);
+        logCb(`  ✗ Error: ${e.message}`, "err");
         list.words = [];
         list.error = String(e.message || e);
       }
@@ -314,18 +376,62 @@
   }
 
   /* ═══════════════════════════════════════════════════════════════
-     STORAGE
+     STORAGE — trim data to avoid quota issues
      ═══════════════════════════════════════════════════════════════ */
   function save(lists) {
-    chrome.storage.local.set({
-      cd_wordlists: {
-        scrapedAt: new Date().toISOString(),
-        url: location.href,
-        totalLists: lists.length,
-        totalWords: lists.reduce((s, l) => s + l.words.length, 0),
-        lists,
-      },
-    });
+    // Trim: only keep essential word fields, no audio URLs
+    const trimmed = lists.map((l) => ({
+      ...l,
+      words: l.words.map((w) => ({
+        word: w.word,
+        pos: w.pos,
+        grammar: w.grammar,
+        usage: w.usage,
+        domain: w.domain,
+        cefr: w.cefr,
+        definition: w.definition,
+        // Skip: dictionary, id, ukAudio, usAudio (saves lots of space)
+      })),
+    }));
+
+    const payload = {
+      scrapedAt: new Date().toISOString(),
+      url: location.href,
+      totalLists: trimmed.length,
+      totalWords: trimmed.reduce((s, l) => s + l.words.length, 0),
+      lists: trimmed,
+    };
+
+    try {
+      chrome.storage.local.set({ cd_wordlists: payload });
+      log(
+        "Saved to storage:",
+        payload.totalLists,
+        "lists,",
+        payload.totalWords,
+        "words",
+      );
+    } catch (e) {
+      warn("Storage save failed:", e.message);
+      // Fallback: save minimal data
+      try {
+        const minimal = {
+          scrapedAt: payload.scrapedAt,
+          totalLists: trimmed.length,
+          lists: trimmed.map((l) => ({
+            ...l,
+            words: l.words.map((w) => ({
+              word: w.word,
+              definition: w.definition,
+            })),
+          })),
+        };
+        chrome.storage.local.set({ cd_wordlists: minimal });
+        log("Saved minimal version to storage");
+      } catch (e2) {
+        warn("Even minimal storage failed:", e2.message);
+      }
+    }
   }
 
   /* ═══════════════════════════════════════════════════════════════
@@ -333,7 +439,7 @@
      ═══════════════════════════════════════════════════════════════ */
   function toCSV(lists) {
     const h =
-      "list_id,list_name,list_type,list_level,list_count,list_url,word,word_id,pos,grammar,usage,domain,cefr,definition,dictionary";
+      "list_id,list_name,list_type,list_level,list_count,list_url,word,pos,grammar,usage,domain,cefr,definition";
     const rows = lists.flatMap((l) =>
       l.words.length
         ? l.words.map((w) =>
@@ -345,14 +451,12 @@
               l.count,
               l.url,
               `"${w.word}"`,
-              w.id,
               w.pos,
               `"${w.grammar}"`,
               `"${w.usage}"`,
               `"${w.domain}"`,
               w.cefr,
               `"${w.definition}"`,
-              `"${w.dictionary}"`,
             ].join(","),
           )
         : [
@@ -363,8 +467,6 @@
               l.level || "",
               l.count,
               l.url,
-              "",
-              "",
               "",
               "",
               "",
@@ -398,19 +500,22 @@
     lists.forEach((l) => {
       md += `## ${l.name}\n\n`;
       md += `**Type:** ${l.type} | **Level:** ${l.level || "—"} | **Expected:** ${l.count} | **Scraped:** ${l.words.length}\n\n`;
-      md += `| # | Word | POS | Grammar | Usage | Domain | CEFR | Definition |\n`;
-      md += `|---|------|-----|----------|-------|--------|------|------------|\n`;
-      l.words.forEach((w, i) => {
-        md += `| ${i + 1} | ${w.word} | ${w.pos} | ${w.grammar} | ${w.usage} | ${w.domain} | ${w.cefr || "—"} | ${w.definition} |\n`;
-        tw++;
-      });
+      if (l.words.length > 0) {
+        md += `| # | Word | POS | Grammar | Usage | Domain | CEFR | Definition |\n`;
+        md += `|---|------|-----|----------|-------|--------|------|------------|\n`;
+        l.words.forEach((w, i) => {
+          md += `| ${i + 1} | ${w.word} | ${w.pos} | ${w.grammar} | ${w.usage} | ${w.domain} | ${w.cefr || "—"} | ${w.definition} |\n`;
+          tw++;
+        });
+      } else {
+        md += `_No words scraped_\n`;
+      }
       md += `\n`;
     });
     md += `---\n\n**Total:** ${lists.length} lists, ${tw} words\n`;
     return md;
   }
 
-  // Anki-friendly: one word per line, tab-separated: word\tdefinition\tpos
   function toAnki(lists) {
     const lines = [];
     const seen = new Set();
@@ -426,7 +531,7 @@
   }
 
   /* ═══════════════════════════════════════════════════════════════
-     UI HELPERS
+     UI
      ═══════════════════════════════════════════════════════════════ */
   const LVLC = {
     Beginner: "cd-lv-be",
@@ -447,10 +552,9 @@
     let html = "";
     const grouped = {};
     filtered.forEach((l) => {
-      const key = l.type;
-      if (!grouped[key]) grouped[key] = [];
-      grouped[key].push(l);
+      (grouped[l.type] ||= []).push(l);
     });
+
     Object.entries(grouped).forEach(([type, items]) => {
       const [emoji] = ICO[type] || ICO.unknown;
       html += `<div class="cd-sect">${emoji} ${items.length} list${items.length !== 1 ? "s" : ""}</div>`;
@@ -458,20 +562,20 @@
         const lvl = l.level
           ? `<span class="cd-lvl ${LVLC[l.level] || ""}">${l.level}</span>`
           : "";
-        const wordCount = l.words.length || l.count;
+        const wc = l.words.length || l.count;
         html += `
           <div class="cd-item">
             <div class="cd-ico ${ICO[type]?.[1] || "cd-ico-u"}">${emoji}</div>
             <div class="cd-info">
               <div class="cd-name"><a href="${l.url}" target="_blank" rel="noopener">${l.name}</a></div>
-              <div class="cd-meta">${lvl}<span>${l.words.length ? `${l.words.length} words scraped` : `${l.count} words`}</span><span>${l.id}</span></div>
+              <div class="cd-meta">${lvl}<span>${l.words.length ? `${l.words.length} scraped` : `${l.count} words`}</span><span>${l.id}</span></div>
             </div>
-            <div class="cd-cnt">${wordCount}</div>
+            <div class="cd-cnt">${wc}</div>
           </div>`;
       });
     });
     if (!html)
-      html = `<div class="cd-empty"><div class="cd-empty-i">📭</div><div class="cd-empty-t">No lists found.</div></div>`;
+      html = `<div class="cd-empty"><div class="cd-empty-i">📭</div><div>No lists found.</div></div>`;
     return html;
   }
 
@@ -479,15 +583,12 @@
      PANEL
      ═══════════════════════════════════════════════════════════════ */
   function createPanel(lists) {
-    const myCount = lists.filter((l) => l.type === "my").length;
-    const camCount = lists.filter((l) => l.type === "cambridge").length;
-    const comCount = lists.filter((l) => l.type === "community").length;
-    const unkCount = lists.filter((l) => l.type === "unknown").length;
-    const totalWords = lists.reduce(
-      (s, l) => s + (l.words.length || l.count),
-      0,
-    );
-    const scrapedWords = lists.reduce((s, l) => s + l.words.length, 0);
+    const myC = lists.filter((l) => l.type === "my").length;
+    const camC = lists.filter((l) => l.type === "cambridge").length;
+    const comC = lists.filter((l) => l.type === "community").length;
+    const unkC = lists.filter((l) => l.type === "unknown").length;
+    const tw = lists.reduce((s, l) => s + (l.words.length || l.count), 0);
+    const sw = lists.reduce((s, l) => s + l.words.length, 0);
 
     const panel = document.createElement("div");
     panel.className = "cd-panel";
@@ -501,12 +602,12 @@
       </div>
       <div class="cd-stats">
         <div class="cd-stat"><div class="cd-stat-n">${lists.length}</div><div class="cd-stat-l">Lists</div></div>
-        <div class="cd-stat"><div class="cd-stat-n">${totalWords.toLocaleString()}</div><div class="cd-stat-l">Total Words</div></div>
-        <div class="cd-stat"><div class="cd-stat-n">${scrapedWords.toLocaleString()}</div><div class="cd-stat-l">Scraped</div></div>
-        <div class="cd-stat"><div class="cd-stat-n">${myCount}</div><div class="cd-stat-l">Mine</div></div>
+        <div class="cd-stat"><div class="cd-stat-n">${tw.toLocaleString()}</div><div class="cd-stat-l">Total Words</div></div>
+        <div class="cd-stat"><div class="cd-stat-n">${sw.toLocaleString()}</div><div class="cd-stat-l">Scraped</div></div>
+        <div class="cd-stat"><div class="cd-stat-n">${myC}</div><div class="cd-stat-l">Mine</div></div>
       </div>
       <div class="cd-acts">
-        <button class="cd-btn cd-btn-p" id="cd-scrape">🔍 Deep Scrape Words</button>
+        <button class="cd-btn cd-btn-p" id="cd-scrape">🔍 Deep Scrape</button>
         <button class="cd-btn" id="cd-copy-json">📋 JSON</button>
         <button class="cd-btn" id="cd-copy-csv">📊 CSV</button>
         <button class="cd-btn" id="cd-copy-md">📝 MD</button>
@@ -515,15 +616,14 @@
       </div>
       <div class="cd-tabs">
         <button class="cd-tab cd-tab-a" data-f="all">All (${lists.length})</button>
-        <button class="cd-tab" data-f="my">Mine (${myCount})</button>
-        <button class="cd-tab" data-f="cambridge">Cambridge (${camCount})</button>
-        <button class="cd-tab" data-f="community">Community (${comCount})</button>
-        ${unkCount ? `<button class="cd-tab" data-f="unknown">Other (${unkCount})</button>` : ""}
+        <button class="cd-tab" data-f="my">Mine (${myC})</button>
+        <button class="cd-tab" data-f="cambridge">Cambridge (${camC})</button>
+        <button class="cd-tab" data-f="community">Community (${comC})</button>
+        ${unkC ? `<button class="cd-tab" data-f="unknown">Other (${unkC})</button>` : ""}
       </div>
       <div class="cd-area" id="cd-area">${renderList(lists, "all")}</div>
     `;
 
-    // Close
     panel
       .querySelector(".cd-close")
       .addEventListener("click", () => panel.remove());
@@ -548,7 +648,7 @@
       btn.disabled = true;
       btn.textContent = "⏳ Scraping...";
 
-      // Add progress bar
+      // Add progress + log panel
       let progEl = panel.querySelector(".cd-prog");
       if (!progEl) {
         progEl = document.createElement("div");
@@ -556,50 +656,58 @@
         progEl.innerHTML = `<div class="cd-prog-bar"><div class="cd-prog-fill" id="cd-fill"></div></div><div class="cd-prog-txt" id="cd-ptxt">Starting...</div>`;
         btn.parentElement.after(progEl);
       }
+      let logEl = panel.querySelector(".cd-log");
+      if (!logEl) {
+        logEl = document.createElement("div");
+        logEl.className = "cd-log";
+        logEl.id = "cd-log";
+        progEl.after(logEl);
+      }
+
       const fill = panel.querySelector("#cd-fill");
       const ptxt = panel.querySelector("#cd-ptxt");
+      const logArea = panel.querySelector("#cd-log");
+
+      const addLog = (msg, type) => {
+        const line = document.createElement("div");
+        line.className =
+          type === "ok" ? "cd-log-ok" : type === "err" ? "cd-log-err" : "";
+        line.textContent = msg;
+        logArea.appendChild(line);
+        logArea.scrollTop = logArea.scrollHeight;
+        log(msg); // also console.log
+      };
 
       try {
         const scraped = await deepScrape((done, total, name) => {
-          const pct = total > 0 ? (done / total) * 100 : 0;
-          fill.style.width = pct + "%";
+          fill.style.width = (total > 0 ? (done / total) * 100 : 0) + "%";
           ptxt.textContent =
-            done < total
-              ? `[${done}/${total}] ${name}...`
-              : `✅ Done — ${total} lists scraped`;
-        });
+            done < total ? `[${done}/${total}] ${name}` : `✅ Done`;
+        }, addLog);
 
-        // Update lists in-place
         lists.length = 0;
         scraped.forEach((l) => lists.push(l));
         save(lists);
 
-        // Refresh UI
-        const totalWords2 = lists.reduce(
-          (s, l) => s + (l.words.length || l.count),
-          0,
-        );
-        const scrapedWords2 = lists.reduce((s, l) => s + l.words.length, 0);
-        panel.querySelectorAll(".cd-stat-n")[1].textContent =
-          totalWords2.toLocaleString();
+        const newSW = lists.reduce((s, l) => s + l.words.length, 0);
         panel.querySelectorAll(".cd-stat-n")[2].textContent =
-          scrapedWords2.toLocaleString();
-
+          newSW.toLocaleString();
         const activeTab = panel.querySelector(".cd-tab-a");
         panel.querySelector("#cd-area").innerHTML = renderList(
           lists,
           activeTab?.dataset.f || "all",
         );
-        toast(`✅ Scraped ${scrapedWords2} words from ${lists.length} lists`);
+        toast(`✅ ${newSW} words from ${lists.length} lists`);
       } catch (e) {
-        ptxt.textContent = "❌ Error: " + e.message;
+        ptxt.textContent = "❌ Error";
+        addLog(`FATAL: ${e.message}`, "err");
       }
 
       btn.disabled = false;
-      btn.textContent = "🔍 Deep Scrape Words";
+      btn.textContent = "🔍 Deep Scrape";
     });
 
-    // Export buttons
+    // Exports
     panel.querySelector("#cd-copy-json").addEventListener("click", () => {
       navigator.clipboard
         .writeText(toJSON(lists))
@@ -638,17 +746,17 @@
         `cambridge-wordlists-${ts}.txt`,
         "text/tab-separated-values",
       );
-      toast("✅ Downloaded JSON + CSV + MD + Anki");
+      toast("✅ Downloaded all formats");
     });
 
     return panel;
   }
 
   /* ═══════════════════════════════════════════════════════════════
-     SINGLE WORDLIST PAGE MODE
+     SINGLE WORDLIST PAGE — scrape from live DOM
      ═══════════════════════════════════════════════════════════════ */
   function scrapeCurrentPage() {
-    const words = parseWordsFromPage(document, location.href);
+    const words = parseWords(document, location.href);
     const title =
       document.querySelector("#word-list-name")?.value ||
       document.querySelector("h1")?.textContent?.trim() ||
@@ -657,6 +765,7 @@
       document.querySelector("#word-list-name")?.dataset?.wordlistSize ||
       words.length
     );
+    log("Scraped current page:", words.length, "words from", title);
     return {
       type: "my",
       id: document.querySelector("#word-list-name")?.dataset?.wordlistId || "",
@@ -675,15 +784,11 @@
     if (document.querySelector(".cd-fab")) return;
 
     let lists = [];
-
     if (isWordlistPage) {
-      // On a single wordlist page — just scrape this page's words
       lists = [scrapeCurrentPage()];
     } else {
-      // On the index page — get all list metadata first (fast)
       lists = await discoverAllLists();
     }
-
     save(lists);
 
     const fab = document.createElement("button");
