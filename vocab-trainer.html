@@ -176,6 +176,23 @@
   .word-btn:hover { color: var(--text); border-color: var(--border2); }
   .word-btn.known { color: var(--success); border-color: var(--success); }
   .word-btn.learning { color: var(--warning); border-color: var(--warning); }
+  .word-domain {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    background: rgba(139,92,246,0.15);
+    color: #a78bfa;
+  }
+  .domain-thinking { background: rgba(59,130,246,0.15); color: #60a5fa; }
+  .domain-psychology { background: rgba(236,72,153,0.15); color: #f472b6; }
+  .domain-ai { background: rgba(139,92,246,0.15); color: #a78bfa; }
+  .domain-economics { background: rgba(245,158,11,0.15); color: #fbbf24; }
+  .domain-writing { background: rgba(16,185,129,0.15); color: #34d399; }
+  .domain-philosophy { background: rgba(239,68,68,0.15); color: #f87171; }
+  .domain-everyday { background: rgba(100,116,139,0.15); color: #94a3b8; }
 
   /* ── Flashcard ── */
   .flashcard-container {
@@ -368,9 +385,19 @@
 
   <!-- Words Panel -->
   <div class="panel" id="panel-words">
-    </div><div class="flex gap-12 mb-16" style="flex-wrap:wrap">
-      </div><select id="list-filter" class="btn" style="flex:1">
-        </select><option value="all">All</option> Lists</option>
+    <div class="flex gap-12 mb-16" style="flex-wrap:wrap">
+      <select id="list-filter" class="btn" style="flex:1">
+        <option value="all">All Lists</option>
+      </select>
+      <select id="domain-filter" class="btn" style="flex:1">
+        <option value="all">All Domains</option>
+        <option value="thinking">🧠 Thinking</option>
+        <option value="psychology">💜 Psychology</option>
+        <option value="ai">🤖 AI & Tech</option>
+        <option value="economics">💰 Economics</option>
+        <option value="writing">✍️ Writing</option>
+        <option value="philosophy">📜 Philosophy</option>
+        <option value="everyday">📖 Everyday</option>
       </select>
       <input type="text" id="word-search" placeholder="Search words..." class="btn" style="flex:2">
     </div>
@@ -565,7 +592,7 @@ function parseCSV(text) {
     const trimmed = line.trim();
     if (!trimmed) continue;
 
-    // Detect list header: "Word list: Cool,,,"
+    // Detect list header: "Word list: Cool,,," or "Word list: Thinking & Epistemology,,,"
     if (trimmed.startsWith('Word list:')) {
       currentList = trimmed.replace('Word list:', '').replace(/,+/g, '').trim() || 'Unknown';
       continue;
@@ -580,11 +607,25 @@ function parseCSV(text) {
     const definition = (parts[2] || '').trim();
 
     if (!word || word.length > 80) continue;
-    if (/^(Word</2> list|word,pos)/i.test(word)) continue;
+    if (/^(Word list|word,pos)/i.test(word)) continue;
 
-    words.push({ word, pos, definition, listName: currentList });
+    // Auto-detect domain from list name
+    const domain = detectDomain(currentList);
+
+    words.push({ word, pos, definition, listName: currentList, domain });
   }
   return words;
+}
+
+function detectDomain(listName) {
+  const lower = listName.toLowerCase();
+  if (/think|epistem|reason|logic|deduc|induc|infer/.test(lower)) return 'thinking';
+  if (/psycho|cogni|emot|behav|mind/.test(lower)) return 'psychology';
+  if (/ai|tech|machine|comput|neural|model/.test(lower)) return 'ai';
+  if (/econ|financ|market|business|invest/.test(lower)) return 'economics';
+  if (/writ|rhetor|essay|prose|style|languag/.test(lower)) return 'writing';
+  if (/philo|moral|ethic|exist|logic/.test(lower)) return 'philosophy';
+  return 'everyday';
 }
 
 function parseCSVLine(line) {
@@ -614,30 +655,34 @@ function parseCSVLine(line) {
 function renderWords() {
   const grid = document.getElementById('word-grid');
   const filter = document.getElementById('list-filter').value;
+  const domainFilter = document.getElementById('domain-filter').value;
   const search = document.getElementById('word-search').value.toLowerCase();
 
   let filtered = allWords;
   if (filter !== 'all') filtered = filtered.filter(w => w.listName === filter);
+  if (domainFilter !== 'all') filtered = filtered.filter(w => (w.domain || 'everyday') === domainFilter);
   if (search) filtered = filtered.filter(w => w.word.toLowerCase().includes(search) || w.definition.toLowerCase().includes(search));
 
   grid.innerHTML = filtered.map(w => {
-    const status =</line.length> wordStatus[w.word] || 'new';
-    const statusIcon = status === 'known' ? '✅' : status === 'learning' ? '🔄' : '🆕';
+    const status = wordStatus[w.word] || 'new';
+    const domain = w.domain || 'everyday';
     return `
       <div class="word-row">
         <div class="word-main">
-         </div></div> <div></div>
-            <span class="word-text">${</span>w.word}</span>
-            <span class="word-pos">${w.pos}</span></span>
+          <div>
+            <span class="word-text">${w.word}</span>
+            <span class="word-pos">${w.pos}</span>
+            <span class="word-domain domain-${domain}">${domain}</span>
           </div>
-          <div class="word-def">${w.definition</div>}</div>
+          <div class="word-def">${w.definition}</div>
         </div>
         <div class="word-actions">
-         </div> <button class="audio-btn" onclick="playAudio('${w.word.replace(/'/g, "\\'")}')">🔊</button>
-          </button><button class="word-btn ${status === 'known' ? 'known' : ''}" onclick="toggleStatus('${w.word.replace(/'/g, "\\'")}','known')" title="Mark known">✅</button>
-          </button><button class="word-btn ${status === 'learning' ? 'learning' : ''}" onclick="toggleStatus('${w.word.replace(/'/g, "\\'")}','learning')" title="Mark learning">🔄</button>
+          <button class="audio-btn" onclick="playAudio('${w.word.replace(/'/g, "\\'")}')">🔊</button>
+          <button class="word-btn ${status === 'known' ? 'known' : ''}" onclick="toggleStatus('${w.word.replace(/'/g, "\\'")}','known')" title="Mark known">✅</button>
+          <button class="word-btn ${status === 'learning' ? 'learning' : ''}" onclick="toggleStatus('${w.word.replace(/'/g, "\\'")}','learning')" title="Mark learning">🔄</button>
         </div>
       </div>`;
+  }).join('');
   }).</button>join('');
 
   if (filtered.length === 0) {
@@ -645,7 +690,8 @@ function renderWords() {
   }
 }
 
-document.getElementById('list-filter').addEventListener('change'</div>, renderWords);
+document.getElementById('list-filter').addEventListener('change', renderWords);
+document.getElementById('domain-filter').addEventListener('change', renderWords);
 document.getElementById('word-search').addEventListener('input', renderWords);
 
 function toggleStatus(word, status) {
