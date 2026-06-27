@@ -271,6 +271,22 @@
     return new DOMParser().parseFromString(html, "text/html");
   }
 
+  // Try the export endpoint — returns simpler HTML (no AMP) with word entries
+  async function fetchExportDoc(wordlistId) {
+    const exportUrl = abs(`/plus/wordlist/${wordlistId}/export`);
+    try {
+      const html = await pageFetch(exportUrl);
+      if (!html || html.includes("Logout successful")) return null;
+      const doc = new DOMParser().parseFromString(html, "text/html");
+      const entries = doc.querySelectorAll("li.wordlistentry-row");
+      if (entries.length > 0) return doc;
+      // Try the main wordlist page as fallback
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
   /* ═══════════════════════════════════════════════════════════════
      DISCOVER ALL LISTS from index pages
      ═══════════════════════════════════════════════════════════════ */
@@ -321,7 +337,7 @@
   }
 
   /* ═══════════════════════════════════════════════════════════════
-     DEEP SCRAPE — load each wordlist in iframe, extract words
+     DEEP SCRAPE — tries export endpoint → main page → open-in-tab
      ═══════════════════════════════════════════════════════════════ */
   async function deepScrape(progressCb, logCb) {
     const lists = await discoverAllLists();
@@ -336,42 +352,56 @@
       }
 
       try {
-        logCb(`[${i + 1}/${total}] Loading: ${list.name}`);
-        const doc = await fetchDoc(list.url);
+        logCb(`[${i + 1}/${total}] ${list.name}...`);
+        let words = [];
+        let method = "";
 
-        // Debug: check what we got
-        const hasEntries = doc.querySelectorAll("li.wordlistentry-row").length;
-        const hasLogout = doc.body?.textContent?.includes("Logout successful");
-        const bodyLen = doc.body?.innerHTML?.length || 0;
-
-        logCb(
-          `  DOM body: ${bodyLen} chars, entries: ${hasEntries}, logout: ${hasLogout}`,
-        );
-
-        if (hasLogout) {
-          logCb(`  ⚠ Auth issue — page shows "Logout successful"`, "err");
+        // Strategy 1: Try export endpoint (cleaner HTML, no AMP)
+        if (list.id) {
+          const exportDoc = await fetchExportDoc(list.id);
+          if (exportDoc) {
+            words = parseWords(exportDoc, list.url);
+            if (words.length > 0) method = "export";
+          }
         }
 
-        list.words = parseWords(doc, list.url);
-        logCb(
-          `  ✓ Scraped ${list.words.length}/${list.count} words`,
-          list.words.length > 0 ? "ok" : "warn",
-        );
+        // Strategy 2: Try main wordlist page
+        if (words.length === 0) {
+          const doc = await fetchDoc(list.url);
+          const entries = doc.querySelectorAll("li.wordlistentry-row").length;
+          const hasLogout =
+            doc.body?.textContent?.includes("Logout successful");
+          logCb(`  page: ${entries} entries, logout: ${hasLogout}`);
+          words = parseWords(doc, list.url);
+          if (words.length > 0) method = "page";
+        }
 
-        // Debug: show first few words
-        if (list.words.length > 0) {
+        // Strategy 3: Open in a new tab and scrape live DOM
+        if (words.length === 0) {
+          logCb(`  Trying open-in-tab...`);
+          words = await scrapeViaTab(list.url);
+          if (words.length > 0) method = "tab";
+        }
+
+        list.words = words;
+        const status = words.length > 0 ? "ok" : "warn";
+        logCb(
+          `  → ${words.length}/${list.count} words [${method || "none"}]`,
+          status,
+        );
+        if (words.length > 0) {
           logCb(
-            `  Sample: ${list.words
+            `  e.g. ${words
               .slice(0, 3)
               .map((w) => w.word)
               .join(", ")}...`,
           );
         }
 
-        await sleep(500);
+        await sleep(300);
       } catch (e) {
         warn("Wordlist failed:", list.name, e.message);
-        logCb(`  ✗ Error: ${e.message}`, "err");
+        logCb(`  ✗ ${e.message}`, "err");
         list.words = [];
         list.error = String(e.message || e);
       }
@@ -379,6 +409,19 @@
 
     progressCb(total, total, "Done");
     return lists;
+  }
+
+  /* ═══════════════════════════════════════════════════════════════
+     TAB SCRAPE — opens URL in a new tab, injects scraper, returns words
+     ═══════════════════════════════════════════════════════════════ */
+  function scrapeViaTab(url) {
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => resolve([]), 25000);
+      chrome.runtime.sendMessage({ type: "cd_scrape_tab", url }, (response) => {
+        clearTimeout(timeout);
+        resolve(response?.words || []);
+      });
+    });
   }
 
   /* ═══════════════════════════════════════════════════════════════
