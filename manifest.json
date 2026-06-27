@@ -56,7 +56,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["dashboard.html", "dashboard.js"],
+      "resources": ["dashboard.html", "dashboard.js", "vocab-trainer.html"],
       "matches": ["<all_urls>"]
     }
   ]

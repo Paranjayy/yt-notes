@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"></head></html>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>V</title>ocab Trainer — Cambridge Words</title>
+<style></style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0a0a0f;
+    --bg2: #111118;
+    --bg3: #1a1a24;
+    --bg4: #22222e;
+    --border: rgba(255,255,255,0.06);
+    --border2: rgba(255,255,255,0.1);
+    --text: #e2e8f0;
+    --text2: #94a3b8;
+    --text3: #64748b;
+    --primary: #0d9488;
+    --primary-light: #2dd4bf;
+    --primary-glow: rgba(13,148,136,0.3);
+    --accent: #8b5cf6;
+    --success: #10b981;
+    --warning: #f59e0b;
+    --danger: #ef4444;
+    --radius: 12px;
+    --radius-sm: 8px;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── Layout ── */
+  .app { max-width: 800px; margin: 0 auto; padding: 20px; }
+
+  /* ── Header ── */
+  .header {
+    text-align: center;
+    padding: 40px 20px 30px;
+  }
+  .header h1 {
+    font-size: 28px;
+    font-weight: 800;
+    background: linear-gradient(135deg, var(--primary-light), var(--accent));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 8px;
+  }
+  .header p { color: var(--text3); font-size: 14px; }
+
+  /* ── Stats Bar ── */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .stat {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    text-align: center;
+  }
+  .stat-num { font-size: 24px; font-weight: 800; color: var(--primary-light); }
+  .stat-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text3); margin-top: 4px; }
+
+  /* ── Tabs ── */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    background: var(--bg2);
+    border-radius: var(--radius);
+    padding: 4px;
+    margin-bottom: 24px;
+    border: 1px solid var(--border);
+  }
+  .tab {
+    flex: 1;
+    padding: 10px;
+    border: none;
+    background: none;
+    color: var(--text3);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    transition: all 0.2s;
+    font-family: inherit;
+  }
+  .tab:hover { color: var(--text2); }
+  .tab-active { background: var(--primary); color: #fff; }
+
+  /* ── Panels ── */
+  .panel { display: none; }
+  .panel-active { display: block; }
+
+  /* ── Buttons ── */
+  .btn {
+    padding: 10px 20px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border2);
+    background: var(--bg3);
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: inherit;
+  }
+  .btn:hover { background: var(--bg4); border-color: rgba(255,255,255,0.15); }
+  .btn-primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .btn-primary:hover { background: #0f766e; }
+  .btn-success { background: var(--success); border-color: var(--success); color: #fff; }
+  .btn-danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-lg { padding: 14px 28px; font-size: 16px; }
+
+  /* ── Import Panel ── */
+  .import-area {
+    border: 2px dashed var(--border2);
+    border-radius: var(--radius);
+    padding: 40px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .import-area:hover { border-color: var(--primary); background: rgba(13,148,136,0.05); }
+  .import-area.dragover { border-color: var(--primary); background: rgba(13,148,136,0.1); }
+  .import-icon { font-size: 48px; margin-bottom: 12px; }
+  .import-text { color: var(--text2); font-size: 14px; }
+  .import-text strong { color: var(--primary-light); }
+
+  /* ── Word List ── */
+  .word-grid {
+    display: grid;
+    gap: 8px;
+  }
+  .word-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    transition: all 0.15s;
+  }
+  .word-row:hover { border-color: var(--border2); }
+  .word-main { flex: 1; }
+  .word-text { font-size: 16px; font-weight: 600; }
+  .word-pos { font-size: 12px; color: var(--primary-light); margin-left: 8px; }
+  .word-def { font-size: 13px; color: var(--text3); margin-top: 2px; line-height: 1.4; }
+  .word-actions { display: flex; gap: 6px; }
+  .word-btn {
+    width: 32px; height: 32px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg3);
+    color: var(--text3);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    transition: all 0.15s;
+  }
+  .word-btn:hover { color: var(--text); border-color: var(--border2); }
+  .word-btn.known { color: var(--success); border-color: var(--success); }
+  .word-btn.learning { color: var(--warning); border-color: var(--warning); }
+
+  /* ── Flashcard ── */
+  .flashcard-container {
+    perspective: 1200px;
+    margin: 20px 0;
+  }
+  .flashcard {
+    width: 100%;
+    min-height: 300px;
+    position: relative;
+    transition: transform 0.6s;
+    transform-style: preserve-3d;
+    cursor: pointer;
+  }
+  .flashcard.flipped { transform: rotateY(180deg); }
+  .flashcard-face {
+    position: absolute;
+    inset: 0;
+    backface-visibility: hidden;
+    border-radius: var(--radius);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    text-align: center;
+  }
+  .flashcard-front {
+    background: linear-gradient(135deg, var(--bg2), var(--bg3));
+    border: 1px solid var(--border2);
+  }
+  .flashcard-back {
+    background: linear-gradient(135deg, #0f172a, #1e1b4b);
+    border: 1px solid rgba(139,92,246,0.3);
+    transform: rotateY(180deg);
+  }
+  .flashcard-word { font-size: 36px; font-weight: 800; margin-bottom: 8px; }
+  .flashcard-pos { font-size: 16px; color: var(--primary-light); margin-bottom: 16px; }
+  .flashcard-hint { font-size: 13px; color: var(--text3); }
+  .flashcard-def { font-size: 18px; line-height: 1.5; color: var(--text); }
+  .flashcard-audio { margin-top: 16px; font-size: 24px; cursor: pointer; }
+  .flashcard-audio:hover { opacity: 0.8; }
+  .flashcard-counter { text-align: center; color: var(--text3); font-size: 13px; margin-top: 12px; }
+
+  /* ── Quiz ── */
+  .quiz-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 32px;
+    margin-bottom: 16px;
+  }
+  .quiz-progress {
+    height: 4px;
+    background: var(--bg4);
+    border-radius: 2px;
+    margin-bottom: 24px;
+    overflow: hidden;
+  }
+  .quiz-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--primary), var(--accent));
+    border-radius: 2px;
+    transition: width 0.3s;
+  }
+  .quiz-question { font-size: 14px; color: var(--text3); margin-bottom: 8px; }
+  .quiz-word { font-size: 32px; font-weight: 800; margin-bottom: 24px; }
+  .quiz-options { display: grid; gap: 10px; }
+  .quiz-option {
+    padding: 14px 20px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 14px;
+    color: var(--text);
+    text-align: left;
+    transition: all 0.15s;
+    font-family: inherit;
+  }
+  .quiz-option:hover { border-color: var(--primary); background: rgba(13,148,136,0.05); }
+  .quiz-option.correct { border-color: var(--success); background: rgba(16,185,129,0.1); color: var(--success); }
+  .quiz-option.wrong { border-color: var(--danger); background: rgba(239,68,68,0.1); color: var(--danger); }
+  .quiz-option:disabled { cursor: default; }
+  .quiz-input {
+    width: 100%;
+    padding: 14px 20px;
+    background: var(--bg3);
+    border: 2px solid var(--border2);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-size: 18px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .quiz-input:focus { border-color: var(--primary); }
+  .quiz-input.correct { border-color: var(--success); }
+  .quiz-input.wrong { border-color: var(--danger); }
+  .quiz-result {
+    text-align: center;
+    padding: 40px;
+    background: var(--bg2);
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+  }
+  .quiz-result h2 { font-size: 32px; margin-bottom: 12px; }
+  .quiz-result p { color: var(--text3); margin-bottom: 24px; }
+
+  /* ── Section headers ── */
+  .section-title {
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* ── Audio ── */
+  .audio-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 18px;
+    padding: 4px;
+    transition: transform 0.15s;
+  }
+  .audio-btn:hover { transform: scale(1.2); }
+
+  /* ── Utilities ── */
+  .flex { display: flex; }
+  .gap-8 { gap: 8px; }
+  .gap-12 { gap: 12px; }
+  .mb-16 { margin-bottom: 16px; }
+  .mb-24 { margin-bottom: 24px; }
+  .text-center { text-align: center; }
+  .text-muted { color: var(--text3); }
+  .hidden { display: none !important; }
+
+  @media (max-width: 600px) {
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .flashcard-word { font-size: 28px; }
+    .quiz-word { font-size: 24px; }
+  }
+</style>
+</head>
+<body>
+</body>
+<div class="app">
+  </div><div class="header"></div>
+    <h1>🧠</h1> Vocab Trainer</h1>
+    <p>Cam</p>bridge Dictionary — Learn your word lists</p>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats" id="stats">
+    </div><div class="stat"></div><div class="stat-num" id="stat-total">0</div></div><div class="stat-label">Total Words</div></div>
+    <div class="stat"><div class=</div></div>"stat-num" id="stat-known" style="color:#10b981">0</div><div class="stat-label">Known</div></div</div>>
+    <div class="stat"></div><div class="stat-num" id="stat-learning" style="color:#f59e0b">0</div></div><div class="stat-label">Learning</div></div></div>
+    <div class="stat"></div><div class="stat-num" id="stat-new" style="color:#64748b">0</div></div><div class="stat-label">New</div></div></div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    </div><button class="tab tab-active" data-tab="import">📁</button> Import</button>
+    <button class="tab" data-tab="words">📖 Words</button>
+    <button class="tab" data-tab="flashcards">🃏 Flash</button></button>cards</button>
+    <button class="tab" data-tab="quiz">❓ Quiz</button</button>>
+  </div>
+
+  <!-- Import Panel -->
+  <div class="panel panel-active" id="panel-import">
+    <div class="import-area" id="import-area">
+      </div></div><div class="import-icon"></div>📄</div>
+      <div class="import-text"></div>
+        <strong></strong>Click or drag</strong> a CSV file here<br>
+        <span style="font-size:12px;color:var(--text3)"></span>Cambridge export format or generic word,definition CSV</span>
+      </div>
+      <input type="file" id="file-input" accept=".csv,.txt" style="display:none">
+    </div>
+    <div id="import-status" class="hidden" style="margin-top:16px"></div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:16px">
+       </div> <div style="font-weight:600;margin-bottom:8px">✅ Loaded:</div> <span id="import-name"></span></span></div>
+        <div style="font-size:13px;color:var(--text3)"></div><span id="import-count"></span></span> words from <span id="import-lists"></span></span> lists</div>
+        <button class="btn btn-primary" style="margin-top:12px" onclick="switchTab('words')">Start Learning</button> →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Words Panel -->
+  <div class="panel" id="panel-words">
+    </div><div class="flex gap-12 mb-16" style="flex-wrap:wrap">
+      </div><select id="list-filter" class="btn" style="flex:1">
+        </select><option value="all">All</option> Lists</option>
+      </select>
+      <input type="text" id="word-search" placeholder="Search words..." class="btn" style="flex:2">
+    </div>
+    <div class="word-grid" id="word-grid"></div></div>
+  </div>
+
+  <!-- Flashcards Panel -->
+  <div class="panel" id="panel-flashcards">
+    </div><div class="text-center mb-24">
+      </div><select id="fc-list-select" class="btn mb-16" style="min-width:200px">
+        </select><option value="all">All</option> Words</option>
+        <option value="new">New Words</option> Only</option>
+        <option value="learning">Learning</option></option>
+        <option value="known">Known</option></option>
+      </select>
+    </div>
+    <div class="flashcard-container">
+      </div><div class="flashcard" id="flashcard" onclick="flipCard()">
+        </div><div class="flashcard-face flashcard-front">
+          </div><div class="flashcard-word" id="fc-word">—</div></div>
+          <div class="flashcard-pos" id="fc-pos"></div>
+          </div><button class="audio-btn" id="fc-audio-btn" onclick="event.stopPropagation();playAudio()">🔊</button>
+          </button><div class="flashcard-hint">tap</div> to reveal</div>
+        </div>
+        <div class="flashcard-face flashcard-back">
+          </div><div class="flashcard-def" id="fc-def">—</div>
+       </div> </div>
+      </div>
+    </div>
+    <div class="flashcard-counter" id="fc-counter">0 / 0</div></div>
+    <div class="flex gap-12 mb-16" style="justify-content:center;margin-top:16px">
+      <button class="btn btn-danger" onclick="markCard('learning</div>')">🔄 Still Learning</button>
+      <button class="btn btn-success" onclick="markCard('known')">✅ Got It</button>
+      <button class="btn" onclick="nextCard()">⏭ Skip</button>
+    </div>
+  </div>
+
+  <!-- Quiz Panel -->
+  <div class="panel" id="panel-quiz">
+    <div id="quiz-setup" class="text-center" style="padding:40px">
+      <</button>div class="section-title"</button></button></div></div> style="justify-content:center;margin-bottom:24px">Choose Quiz Type</div>
+      <div class="flex gap-12" style="justify-content:center;flex-wrap:wrap">
+        <button class="btn btn-primary btn-lg" onclick="startQuiz('mc</div>')">🎯 Multiple Choice</button>
+        <button class="btn btn-lg" onclick="startQuiz('type')">⌨️ Type Answer</button>
+      </div>
+      <div style="margin-top:16px"</button></button>>
+        <select id="quiz-count" class="btn">
+          <option value="10">10 questions</option></select></option>
+          <option value="20">20 questions</option>
+          </option><option value="50">50</option> questions</option>
+          <option value="0">All</option> words</option>
+        </select>
+      </div>
+    </div>
+    <div id="quiz-active" class="hidden"></div>
+    </div><div id="quiz-result" class="hidden"></div>
+  </div></div>
+</div>
+
+<script>
+// </script>═══════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════
+let allWords = []; // [{word, pos, definition, listName}]
+let wordStatus = {}; // {word: 'new'|'learning'|'known'}
+let fcDeck = [];
+let fcIndex = 0;
+let quizState = null;
+
+// Load from localStorage
+try {
+  const saved = localStorage.getItem('vt_words');
+  if (saved) allWords = JSON.parse(saved);
+  const savedStatus = localStorage.getItem('vt_status');
+  if (savedStatus) wordStatus = JSON.parse(savedStatus);
+} catch(e) {}
+
+function save() {
+  localStorage.setItem('vt_words', JSON.stringify(allWords));
+  localStorage.setItem('vt_status', JSON.stringify(wordStatus));
+}
+
+// ═══════════════════════════════════════════════════════════════
+// AUDIO — Cambridge pronunciation from CDN
+// ═══════════════════════════════════════════════════════════════
+function playAudio(word) {
+  if (!word) word = fcDeck[fcIndex]?.word;
+  if (!word) return;
+  // Try Cambridge CDN pattern
+  const slug = word.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_');
+  const audio = new Audio(`https://dictionary.cambridge.org/media/english/us_pron/${slug[0]}/${slug.substring(0,3)}/${slug}/${slug}.mp3`);
+  audio.onerror = () => {
+    // Fallback: try the word directly
+    const a2 = new Audio(`https://dictionary.cambridge.org/media/english/us_pron/${word.toLowerCase()}.mp3`);
+    a2.onerror = () => {}; // silently fail
+    a2.play().catch(() => {});
+  };
+  audio.play().catch(() => {});
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TABS
+// ═══════════════════════════════════════════════════════════════
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => switchTab(tab.dataset.tab));
+});
+
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('tab-active', t.dataset.tab === name));
+  document.querySelectorAll('.panel').forEach(p => p.classList.toggle('panel-active', p.id === 'panel-' + name));
+  if (name === 'words') renderWords();
+  if (name === 'flashcards') initFlashcards();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// STATS
+// ═══════════════════════════════════════════════════════════════
+function updateStats() {
+  const total = allWords.length;
+  const known = allWords.filter(w => wordStatus[w.word] === 'known').length;
+  const learning = allWords.filter(w => wordStatus[w.word] === 'learning').length;
+  document.getElementById('stat-total').textContent = total;
+  document.getElementById('stat-known').textContent = known;
+  document.getElementById('stat-learning').textContent = learning;
+  document.getElementById('stat-new').textContent = total - known - learning;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// IMPORT
+// ═══════════════════════════════════════════════════════════════
+const importArea = document.getElementById('import-area');
+const fileInput = document.getElementById('file-input');
+
+importArea.addEventListener('click', () => fileInput.click());
+importArea.addEventListener('dragover', e => { e.preventDefault(); importArea.classList.add('dragover'); });
+importArea.addEventListener('dragleave', () => importArea.classList.remove('dragover'));
+importArea.addEventListener('drop', e => {
+  e.preventDefault();
+  importArea.classList.remove('dragover');
+  if (e.dataTransfer.files[0]) parseFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', () => {
+  if (fileInput.files[0]) parseFile(fileInput.files[0]);
+});
+
+function parseFile(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    const text = reader.result;
+    const words = parseCSV(text);
+    if (words.length === 0) {
+      alert('No words found. Expected format:\nword,pos,definition');
+      return;
+    }
+    // Merge with existing
+    const existingWords = new Set(allWords.map(w => w.word));
+    let added = 0;
+    words.forEach(w => {
+      if (!existingWords.has(w.word)) {
+        allWords.push(w);
+        existingWords.add(w.word);
+        if (!wordStatus[w.word]) wordStatus[w.word] = 'new';
+        added++;
+      }
+    });
+    save();
+    updateStats();
+
+    // Show status
+    document.getElementById('import-status').classList.remove('hidden');
+    document.getElementById('import-name').textContent = file.name;
+    document.getElementById('import-count').textContent = `${added} new (${allWords.length} total)`;
+    const lists = [...new Set(allWords.map(w => w.listName))];
+    document.getElementById('import-lists').textContent = lists.length;
+
+    // Update list filter
+    const filter = document.getElementById('list-filter');
+    filter.innerHTML = '<option value="all">All Lists</option></option>';
+    lists.forEach(l => {
+      filter.innerHTML += `<option value="${l}">${l}</option></option>`;
+    });
+  };
+  reader.readAsText(file);
+}
+
+function parseCSV(text) {
+  const words = [];
+  let currentList = 'Unknown';
+  const lines = text.split('\n');
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    // Detect list header: "Word list: Cool,,,"
+    if (trimmed.startsWith('Word list:')) {
+      currentList = trimmed.replace('Word list:', '').replace(/,+/g, '').trim() || 'Unknown';
+      continue;
+    }
+
+    // Parse CSV row (handle quoted fields)
+    const parts = parseCSVLine(trimmed);
+    if (parts.length < 2) continue;
+
+    const word = (parts[0] || '').trim();
+    const pos = (parts[1] || '').trim();
+    const definition = (parts[2] || '').trim();
+
+    if (!word || word.length > 80) continue;
+    if (/^(Word</2> list|word,pos)/i.test(word)) continue;
+
+    words.push({ word, pos, definition, listName: currentList });
+  }
+  return words;
+}
+
+function parseCSVLine(line) {
+  const result = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"' && line[i + 1] === '"') { current += '"'; i++; }
+      else if (ch === '"') { inQuotes = false; }
+      else { current += ch; }
+    } else {
+      if (ch === '"') { inQuotes = true; }
+      else if (ch === ',') { result.push(current); current = ''; }
+      else { current += ch; }
+    }
+  }
+  result.push(current);
+  return result;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// WORDS LIST
+// ═══════════════════════════════════════════════════════════════
+function renderWords() {
+  const grid = document.getElementById('word-grid');
+  const filter = document.getElementById('list-filter').value;
+  const search = document.getElementById('word-search').value.toLowerCase();
+
+  let filtered = allWords;
+  if (filter !== 'all') filtered = filtered.filter(w => w.listName === filter);
+  if (search) filtered = filtered.filter(w => w.word.toLowerCase().includes(search) || w.definition.toLowerCase().includes(search));
+
+  grid.innerHTML = filtered.map(w => {
+    const status =</line.length> wordStatus[w.word] || 'new';
+    const statusIcon = status === 'known' ? '✅' : status === 'learning' ? '🔄' : '🆕';
+    return `
+      <div class="word-row">
+        <div class="word-main">
+         </div></div> <div></div>
+            <span class="word-text">${</span>w.word}</span>
+            <span class="word-pos">${w.pos}</span></span>
+          </div>
+          <div class="word-def">${w.definition</div>}</div>
+        </div>
+        <div class="word-actions">
+         </div> <button class="audio-btn" onclick="playAudio('${w.word.replace(/'/g, "\\'")}')">🔊</button>
+          </button><button class="word-btn ${status === 'known' ? 'known' : ''}" onclick="toggleStatus('${w.word.replace(/'/g, "\\'")}','known')" title="Mark known">✅</button>
+          </button><button class="word-btn ${status === 'learning' ? 'learning' : ''}" onclick="toggleStatus('${w.word.replace(/'/g, "\\'")}','learning')" title="Mark learning">🔄</button>
+        </div>
+      </div>`;
+  }).</button>join('');
+
+  if (filtered.length === 0) {
+    grid.innerHTML = '<div class="text-center text-muted" style="padding:40px">No words found. Import a CSV first!</div>';
+  }
+}
+
+document.getElementById('list-filter').addEventListener('change'</div>, renderWords);
+document.getElementById('word-search').addEventListener('input', renderWords);
+
+function toggleStatus(word, status) {
+  wordStatus[word] = wordStatus[word] === status ? 'new' : status;
+  save();
+  updateStats();
+  renderWords();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// FLASHCARDS
+// ═══════════════════════════════════════════════════════════════
+function initFlashcards() {
+  const filter = document.getElementById('fc-list-select').value;
+  let pool = [...allWords];
+  if (filter === 'new') pool = pool.filter(w => !wordStatus[w.word] || wordStatus[w.word] === 'new');
+  else if (filter === 'learning') pool = pool.filter(w => wordStatus[w.word] === 'learning');
+  else if (filter === 'known') pool = pool.filter(w => wordStatus[w.word] === 'known');
+
+  // Shuffle
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+
+  fcDeck = pool;
+  fcIndex = 0;
+  showCard();
+}
+
+document.getElementById('fc-list-select').addEventListener('change', initFlashcards);
+
+function showCard() {
+  if (fcDeck.length === 0) {
+    document.getElementById('fc-word').textContent = 'No words';
+    document.getElementById('fc-pos').textContent = 'Import a CSV first';
+    document.getElementById('fc-counter').textContent = '0 / 0';
+    return;
+  }
+  const card = fcDeck[fcIndex];
+  document.getElementById('fc-word').textContent = card.word;
+  document.getElementById('fc-pos').textContent = card.pos;
+  document.getElementById('fc-def').textContent = card.definition;
+  document.getElementById('fc-counter').textContent = `${fcIndex + 1} / ${fcDeck.length}`;
+  document.getElementById('flashcard').classList.remove('flipped');
+}
+
+function flipCard() {
+  document.getElementById('flashcard').classList.toggle('flipped');
+}
+
+function nextCard() {
+  fcIndex = (fcIndex + 1) % fcDeck.length;
+  showCard();
+}
+
+function markCard(status) {
+  if (fcDeck[fcIndex]) {
+    wordStatus[fcDeck[fcIndex].word] = status;
+    save();
+    updateStats();
+  }
+  nextCard();
+}
+
+// Keyboard shortcuts for flashcards
+document.addEventListener('keydown', e => {
+  if (document.getElementById('panel-flashcards').classList.contains('panel-active')) {
+    if (e.code === 'Space') { e.preventDefault(); flipCard(); }
+    if (e.code === 'ArrowRight') nextCard();
+    if (e.code === 'Digit1') markCard('learning');
+    if (e.code === 'Digit2') markCard('known');
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// QUIZ
+// ═══════════════════════════════════════════════════════════════
+function startQuiz(type) {
+  if (allWords.length < 4) { alert('Need at least 4 words to quiz.'); return; }
+
+  const count = +document.getElementById('quiz-count').value || 10;
+  let pool = [...allWords];
+  // Shuffle
+  for (let i = pool.length - 1; i > 0; i--) {
+   </4> const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  const questions = pool.slice(0, count || pool.length);
+
+  quizState = {
+    type,
+    questions,
+    current: 0,
+    correct: 0,
+    answers: [],
+  };
+
+  document.getElementById('quiz-setup').classList.add('hidden');
+  document.getElementById('quiz-result').classList.add('hidden');
+  document.getElementById('quiz-active').classList.remove('hidden');
+  showQuizQuestion();
+}
+
+function showQuizQuestion() {
+  const q = quizState.questions[quizState.current];
+  const total = quizState.questions.length;
+  const idx = quizState.current;
+  const pct = ((idx) / total * 100);
+
+  const container = document.getElementById('quiz-active');
+
+  if (quizState.type === 'mc') {
+    // Generate 4 options (including correct)
+    const correct = q.definition;
+    const others = allWords
+      .filter(w => w.word !== q.word)
+      .sort(() => Math.random() - 0.5)
+      .slice(0, 3)
+      .map(w => w.definition);
+    const options = [correct, ...others].sort(() => Math.random() - 0.5);
+
+    container.innerHTML = `
+      <div class="quiz-card">
+        </div><div class="quiz-progress"></div><div class="quiz-progress-fill" style="width:${pct}%"></div></div></div>
+        <div class="quiz-question">What</div> does this word mean? (${idx + 1}/${total})</div>
+        <div class="quiz-word">${q</div>.word} <span style="font-size:16px;color:var(--primary-light)">${</span>q.pos}</span>
+          <button class="audio-btn" onclick="playAudio('${q.word.replace(/'/g, "\\'")}')">🔊</button>
+        </div>
+        </button><div class="quiz-options">
+          ${options</div>.map((opt, i) => `
+            <button class="quiz-option" onclick="answerMC(this, ${opt === correct})">${opt}</button></button>
+          `).join('')}
+        </div>
+      </div>`;
+  } else {
+    // Type answer
+    container.innerHTML = `
+      <div class="quiz-card">
+        </div><div class="quiz-progress"></div><div class="quiz-progress-fill" style="width:${pct}%"></div></div>
+        </div><div class="quiz-question">Type the definition for</div>: (${idx + 1}/${total})</div>
+        <div class="quiz-word">${q.word</div>} <span style="font-size:16px;color:var(--primary-light)">${q</span>.pos}</span>
+          <button class="audio-btn" onclick="playAudio('${q.word.replace(/'/g, "\\'")}')">🔊</button>
+        </div>
+        </button><input class="quiz-input" id="quiz-type-input" placeholder="Start typing the definition..." autofocus>
+        <div style="margin-top:12px;text-align:right"></div>
+          <button class="btn btn-primary" onclick="answerType()">Submit</button>
+         </button> <button class="btn" onclick="answerType(true)">Skip</button></button>
+        </div>
+        <div id="quiz-type-answer" class="hidden" style="margin-top:12px;padding:12px;background:var(--bg3);border-radius:var(--radius-sm);font-size:14px;color:var(--text2)"></div>
+      </div>`;</div>
+    document.getElementById('quiz-type-input').focus();
+    document.getElementById('quiz-type-input').addEventListener('keydown', e => {
+      if (e.key === 'Enter') answerType();
+    });
+  }
+}
+
+function answerMC(btn, correct) {
+  document.querySelectorAll('.quiz-option').forEach(b => {
+    b.disabled = true;
+    if (b.textContent === quizState.questions[quizState.current].definition) b.classList.add('correct');
+  });
+  if (!correct) btn.classList.add('wrong');
+  if (correct) quizState.correct++;
+  quizState.answers.push(correct);
+
+  setTimeout(() => {
+    quizState.current++;
+    if (quizState.current >= quizState.questions.length) showQuizResult();
+    else showQuizQuestion();
+  }, 1000);
+}
+
+function answerType(skip) {
+  const input = document.getElementById('quiz-type-input');
+  const answer = document.getElementById('quiz-type-answer');
+  const q = quizState.questions[quizState.current];
+
+  answer.classList.remove('hidden');
+
+  if (skip) {
+    answer.innerHTML = `<strong style="color:var(--danger)">Sk</strong>ipped</strong> — ${q.definition}`;
+    quizState.answers.push(false);
+  } else {
+    const userAnswer = input.value.toLowerCase().trim();
+    const correctAnswer = q.definition.toLowerCase();
+    const isCorrect = userAnswer && (correctAnswer.includes(userAnswer) || userAnswer.includes(correctAnswer.substring(0, 20)));
+    if (isCorrect) {
+      answer.innerHTML = `<strong style="color:var(--success)"></strong>✓ Correct!</strong>`;
+      quizState.correct++;
+      quizState.answers.push(true);
+    } else {
+      answer.innerHTML = `<strong style="color:var(--danger)"></strong>✗ Wrong</strong> — ${q.definition}`;
+      quizState.answers.push(false);
+    }
+  }
+
+  input.disabled = true;
+  setTimeout(() => {
+    quizState.current++;
+    if (quizState.current >= quizState.questions.length) showQuizResult();
+    else showQuizQuestion();
+  }, 1500);
+}
+
+function showQuizResult() {
+  document.getElementById('quiz-active').classList.add('hidden');
+  const r = document.getElementById('quiz-result');
+  r.classList.remove('hidden');
+  const total = quizState.questions.length;
+  const pct = Math.round(quizState.correct / total * 100);
+  const emoji = pct >= 80 ? '🎉' : pct >= 50 ? '👍' : '💪';
+  const color = pct >= 80 ? 'var(--success)' : pct >= 50 ? 'var(--warning)' : 'var(--danger)';
+
+  r.innerHTML = `
+    <div class="quiz-result">
+      <div style="font-size:48px;margin-bottom:16px">${emoji}</div>
+      <h2 style="color:${color}">${pct}%</h2>
+      <p>${quizState.correct} / ${total} correct</p>
+      <div class="flex gap-12" style="justify-content:center">
+        <button class="btn btn-primary" onclick="startQuiz('${quizState.type}')">Try Again</button>
+        <button class="btn" onclick="quizReset()">Back to Setup</button>
+      </div>
+    </div>`;
+}
+
+function quizReset() {
+  document.getElementById('quiz-setup').classList.remove('hidden');
+  document.getElementById('quiz-active').classList.add('hidden');
+  document.getElementById('quiz-result').classList.add('hidden');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════════
+updateStats();
+if (allWords.length > 0) {
+  document.getElementById('import-status').classList.remove('hidden');
+  document.getElementById('import-name').textContent = 'Loaded from previous session';
+  document.getElementById('import-count').textContent = `${</div></div></h2></p>allWords.length} words`;
+  const lists = [...new Set(allWords.map(w => w.listName))];
+  document</div></button></button>.getElementById('import-lists').textContent = lists.length;
+  const filter = document.getElementById('list-filter');
+  filter.innerHTML = '<option value="all">All Lists</option>';
+  lists.forEach(l => { filter.innerHTML += `<option value="${l}">${l}</option>`; });
+}
+</script>
+</body>
+</html>
