@@ -437,12 +437,10 @@
       overflow: hidden;
     }
     html[theme="dark"] .sc-floating-panel,
-    @media (prefers-color-scheme: dark) {
-      .sc-floating-panel.sc-adaptive-theme {
+    .sc-floating-panel.sc-adaptive-theme {
         background: var(--sc-bg-dark);
         color: var(--sc-text-dark);
         border-color: var(--sc-border-dark);
-      }
     }
   `;
   document.head.appendChild(styleEl);
