@@ -59,6 +59,25 @@ Benefits: each file is small → less context needed per edit, easier to test, f
 
 ---
 
+---
+
+## Lexicon — Vocabulary Intelligence System
+> Separate project. Full PRD: `docs/PRD-lexicon.md`
+
+### Status: Planning
+- [x] PRD drafted
+- [x] Word database format designed
+- [x] Cambridge CSV import working (manual)
+- [x] Vocab trainer prototype (`vocab-trainer.html`)
+- [x] Extended word database with 7 domains (`vocab-extended.csv`)
+- [ ] Next.js app scaffold
+- [ ] Free API integration (Datamuse, Free Dictionary)
+- [ ] Vocabulary DNA engine
+- [ ] People graph
+- [ ] Browser extension
+
+---
+
 ## Completed (this session)
 - [x] Dashboard page with video cards, screenshots, notes modal
 - [x] Import / Export JSON
