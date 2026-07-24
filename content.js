@@ -1485,6 +1485,14 @@
     );
     const description = descEl ? descEl.innerText.trim() : "";
 
+    // Video like count
+    const likesEl =
+      document.querySelector('like-button-view-model button button') ||
+      document.querySelector('like-button-view-model button') ||
+      document.querySelector('#top-level-buttons-computed like-button-view-model button') ||
+      document.querySelector('#top-level-buttons-computed ytd-toggle-button-renderer button');
+    const likes = likesEl ? likesEl.getAttribute('aria-label') || likesEl.innerText.trim() : '';
+
     // Comments count — split off any 'Sort by' junk
     const commentsTitleEl = document.querySelector(
       "ytd-comments #title yt-formatted-string, ytd-comments #title span",
@@ -1667,6 +1675,7 @@
       topicChips,
       comments,
       description,
+      likes,
       url: window.location.href,
       thumbnail: `https://img.youtube.com/vi/${currentVideoId}/maxresdefault.jpg`,
       recommendations: recVids,
@@ -1708,8 +1717,9 @@
       md += `Playlist URL: ${meta.playlistUrl}\n`;
       md += `Playlist Index: ${meta.playlistIndex}\n`;
     }
+    if (meta.likes) md += `Likes: ${meta.likes}\n`;
     if (meta.description) {
-      md += `\nDescription:\n${meta.description.substring(0, 500).trim()}\n`;
+      md += `\nDescription:\n${meta.description.trim()}\n`;
     }
     md += `---\n\n`;
 
