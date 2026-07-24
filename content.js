@@ -1719,7 +1719,7 @@
     }
     if (meta.likes) md += `Likes: ${meta.likes}\n`;
     if (meta.description) {
-      md += `\nDescription:\n${meta.description.trim()}\n`;
+      md += `Description: ${meta.description.trim().replace(/\n/g, ' ')}\n`;
     }
     md += `---\n\n`;
 
