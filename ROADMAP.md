@@ -86,6 +86,36 @@ Benefits: each file is small → less context needed per edit, easier to test, f
 - [x] Single and multiple notes with sidebar navigation
 - [x] Dark mode, collapsible sections, editorial design
 - [x] Deploy via `vercel.json` — no npm install needed
+- [x] Live at https://website-sage-zeta-74.vercel.app
+
+---
+
+## Video Stats & Analytics
+> Extract and display interesting stats from the videos you watch.
+
+### Near-term
+- [ ] **Watch time tracker** — how many hours of video have you taken notes on?
+- [ ] **Channel breakdown** — which channels appear most in your notes?
+- [ ] **Topic clustering** — group notes by hashtag/topic chips for pattern recognition
+- [ ] **Comment sentiment** — simple positive/negative split on top comments
+- [ ] **Word cloud** from transcripts — most used words per video or across all videos
+
+### Longer-term
+- [ ] **Cross-video insights** — "3 videos mention NEET leaks", "2 videos discuss rent prices in London"
+- [ ] **Engagement heatmap** — which timestamps get the most notes/comments
+- [ ] **Channel loyalty score** — how often does a channel appear in your notes vs recommendations
+- [ ] **Export stats as CSV/JSON** for personal analysis
+
+---
+
+## Robustness & Quality
+- [ ] **Retry failed transcript fetches** — exponential backoff, UI indicator
+- [ ] **Storage quota handling** — warn before Chrome storage limit, offer cleanup
+- [ ] **Error boundaries** — catch and display errors gracefully in widget
+- [ ] **Offline support** — cached transcripts and notes work without network
+- [ ] **Safari parity** — test and fix Safari-specific DOM differences
+- [ ] **Unit tests for metadata extraction** — mock DOM, test each field
+- [ ] **E2E tests for full export flow** — paste → parse → render
 
 ---
 

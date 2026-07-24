@@ -2,11 +2,13 @@
 
 A simple, zero-dependency web viewer for YouTube video notes exported from the Social Companion browser extension.
 
+**Live:** https://website-sage-zeta-74.vercel.app
+
 ## How to Use
 
 1. Open the Social Companion extension on any YouTube video
 2. Go to the Export tab and click **Copy Markdown**
-3. Visit [your-deployment-url](https://your-deployment-url.vercel.app)
+3. Visit [website-sage-zeta-74.vercel.app](https://website-sage-zeta-74.vercel.app)
 4. Paste the markdown — your notes render instantly
 
 ## Features
