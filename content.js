@@ -1493,6 +1493,10 @@
       document.querySelector('#top-level-buttons-computed ytd-toggle-button-renderer button');
     const likes = likesEl ? likesEl.getAttribute('aria-label') || likesEl.innerText.trim() : '';
 
+    // Upload date — prefer meta tag, fallback to info text
+    const dateMeta = document.querySelector('meta[itemprop="datePublished"]');
+    const uploadDate = dateMeta ? dateMeta.getAttribute('content') || '' : '';
+
     // Comments count — split off any 'Sort by' junk
     const commentsTitleEl = document.querySelector(
       "ytd-comments #title yt-formatted-string, ytd-comments #title span",
@@ -1676,6 +1680,7 @@
       comments,
       description,
       likes,
+      uploadDate,
       url: window.location.href,
       thumbnail: `https://img.youtube.com/vi/${currentVideoId}/maxresdefault.jpg`,
       recommendations: recVids,
@@ -1718,6 +1723,8 @@
       md += `Playlist Index: ${meta.playlistIndex}\n`;
     }
     if (meta.likes) md += `Likes: ${meta.likes}\n`;
+    if (meta.uploadDate) md += `Published: ${meta.uploadDate}\n`;
+    md += `Copied: ${new Date().toISOString().slice(0, 10)}\n`;
     if (meta.description) {
       md += `Description: ${meta.description.trim().replace(/\n/g, ' ')}\n`;
     }
@@ -1766,7 +1773,7 @@
       meta.recommendations.forEach((r, i) => {
         const age = r.age ? ` · ${r.age}` : "";
         const dur = r.duration ? ` [${r.duration}]` : "";
-        md += `${i + 1}. **${r.title}**${dur} — ${r.channel} (${r.views}${age})\n   ${r.url}\n`;
+        md += `${i + 1}. **${r.title}**${dur} — ${r.channel} (${r.views}${age})\n   ${r.url}\n   ${r.thumbnail}\n`;
       });
     } else {
       md += `*No recommendations found. Scroll the sidebar to load them, then re-open the Export tab.*\n`;

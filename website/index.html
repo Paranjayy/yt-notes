@@ -42,6 +42,7 @@ textarea::placeholder{color:var(--fg-faint)}
 .meta-row{display:flex;flex-wrap:wrap;gap:8px 20px;font-size:13px;color:var(--fg-muted)}
 .meta-row span{display:flex;align-items:center;gap:5px}
 .meta-row svg{width:13px;height:13px;flex-shrink:0}
+.date-row{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:12px;color:var(--fg-faint);margin-top:8px}
 .open-link{display:inline-flex;align-items:center;gap:6px;margin-top:10px;font-size:13px;color:var(--accent);text-decoration:none;border-bottom:1px solid var(--border);transition:border-color .15s,color .15s}
 .open-link:hover{border-bottom-color:var(--accent)}
 .tags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:20px}
@@ -60,6 +61,13 @@ textarea::placeholder{color:var(--fg-faint)}
 .ts-line:hover{color:var(--fg)}
 .comment{border-left:2px solid var(--border);padding-left:14px;margin-bottom:16px;font-size:14px;line-height:1.6;transition:border-color .15s}
 .comment:hover{border-left-color:var(--accent)}
+.rec-card{display:flex;gap:12px;margin-bottom:16px;padding:10px;border-radius:8px;transition:background .12s;text-decoration:none;color:var(--fg)}
+.rec-card:hover{background:var(--surface-raised)}
+.rec-thumb{width:168px;min-width:168px;aspect-ratio:16/9;border-radius:6px;overflow:hidden;background:var(--surface)}
+.rec-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.rec-info{flex:1;min-width:0}
+.rec-title{font-size:14px;font-weight:500;line-height:1.4;margin-bottom:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.rec-meta{font-size:12px;color:var(--fg-faint);line-height:1.4}
 .rec-line{font-size:14px;line-height:1.6;color:var(--fg-muted);margin-bottom:4px}
 .rec-link{font-size:13px;color:var(--accent);text-decoration:none;border-bottom:1px solid var(--border);transition:border-color .15s,color .15s}
 .rec-link:hover{border-bottom-color:var(--accent)}
@@ -96,7 +104,60 @@ function parseSections(b){var s={};b.split(/^# /m).filter(Boolean).forEach(funct
 function parseMultipleNotes(md){var n=[];md.split(/(?=^---$)/m).filter(function(s){return s.trim()}).forEach(function(c){try{var r=parseFrontmatter(c);if(r[0].Title)n.push({frontmatter:r[0],sections:parseSections(r[1]),raw:c})}catch(e){}});return n}
 var ICO={eye:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>',like:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v12M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2h0a3.13 3.13 0 0 1 3 3.88Z"/></svg>',msg:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',usr:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',arr:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" x2="19" y1="12" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>'};
 function esc(t){var d=document.createElement('div');d.textContent=t;return d.innerHTML}
-function renderNote(note){var fm=note.frontmatter,s=note.sections;var v=(fm.URL||'').match(/v=([^&]+)/);var vid=v?v[1]:'';var th=fm.Thumbnail||(vid?'https://img.youtube.com/vi/'+vid+'/maxresdefault.jpg':'');var h='';if(th)h+='<div class="thumb"><img src="'+th+'" alt="'+esc(fm.Title||'')+'" loading="lazy"></div>';h+='<div class="meta"><h2>'+esc(fm.Title||'Untitled')+'</h2><div class="meta-row">';if(fm.Channel)h+='<span>'+ICO.usr+' '+esc(fm.Channel)+'</span>';if(fm.Subscribers)h+='<span>'+esc(fm.Subscribers)+'</span>';if(fm.Views)h+='<span>'+ICO.eye+' '+esc(fm.Views)+'</span>';if(fm.Likes)h+='<span>'+ICO.like+' '+esc(fm.Likes)+'</span>';if(fm.Comments)h+='<span>'+ICO.msg+' '+esc(fm.Comments)+'</span>';h+='</div>';if(fm.URL)h+='<a href="'+fm.URL+'" target="_blank" rel="noopener" class="open-link">Open on YouTube '+ICO.arr+'</a>';h+='</div>';if(fm.Tags){h+='<div class="tags">';fm.Tags.split(',').forEach(function(t){h+='<span class="tag">'+esc(t.trim())+'</span>'});h+='</div>'}var desc=fm.Description||fm.description||'';if(desc)h+='<details open style="margin-bottom:24px"><summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--fg-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">Description</summary><div class="desc-body">'+esc(desc)+'</div></details>';var pn=s['personal notes & markers']||'';if(pn&&pn.indexOf('No notes added yet')===-1)h+='<div class="notes-callout"><div class="nc-label">Personal Notes</div><div class="nc-body">'+esc(pn)+'</div></div>';if(s['transcript']){var tl=s['transcript'].split('\n').filter(Boolean);h+='<div style="margin-bottom:24px"><button class="section-toggle" onclick="toggle(this)"><span class="label">Transcript</span><span class="count">'+tl.length+' lines</span><span class="arrow open">&#9654;</span></button><div class="section-body">';tl.forEach(function(l){h+='<div class="ts-line">'+esc(l)+'</div>'});h+='</div></div>'}if(s['comments']){var cl=s['comments'].split('\n').filter(Boolean);h+='<div style="margin-bottom:24px"><button class="section-toggle" onclick="toggle(this)"><span class="label">Comments</span><span class="count">'+cl.length+'</span><span class="arrow open">&#9654;</span></button><div class="section-body">';cl.forEach(function(l){h+='<div class="comment">'+l.replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')+'</div>'});h+='</div></div>'}if(s['recommendations']){var rl=s['recommendations'].split('\n').filter(Boolean);h+='<div class="rec-section"><button class="section-toggle" onclick="toggle(this)"><span class="label">Recommendations</span><span class="arrow open">&#9654;</span></button><div class="section-body" style="background:transparent;border:none;padding:0;max-height:none">';rl.forEach(function(l){if(/^https?:\/\//.test(l))h+='<div><a href="'+l.trim()+'" target="_blank" rel="noopener" class="rec-link">'+esc(l.trim())+'</a></div>';else h+='<div class="rec-line">'+esc(l)+'</div>'});h+='</div></div>'}return '<article class="note-article" style="animation:fadeUp .4s ease-out both">'+h+'</article>'}
+function renderNote(note){
+  var fm=note.frontmatter,s=note.sections;
+  var v=(fm.URL||'').match(/v=([^&]+)/);var vid=v?v[1]:'';
+  var th=fm.Thumbnail||(vid?'https://img.youtube.com/vi/'+vid+'/maxresdefault.jpg':'');
+  var h='';
+  if(th)h+='<div class="thumb"><img src="'+th+'" alt="'+esc(fm.Title||'')+'" loading="lazy"></div>';
+  h+='<div class="meta"><h2>'+esc(fm.Title||'Untitled')+'</h2>';
+  h+='<div class="meta-row">';
+  if(fm.Channel)h+='<span>'+ICO.usr+' '+esc(fm.Channel)+'</span>';
+  if(fm.Subscribers)h+='<span>'+esc(fm.Subscribers)+'</span>';
+  if(fm.Views)h+='<span>'+ICO.eye+' '+esc(fm.Views)+'</span>';
+  if(fm.Likes)h+='<span>'+ICO.like+' '+esc(fm.Likes)+'</span>';
+  if(fm.Comments)h+='<span>'+ICO.msg+' '+esc(fm.Comments)+'</span>';
+  h+='</div>';
+  h+='<div class="date-row">';
+  if(fm.Published)h+='<span>Published: '+esc(fm.Published)+'</span>';
+  if(fm.Copied)h+='<span>Copied: '+esc(fm.Copied)+'</span>';
+  h+='</div>';
+  if(fm.URL)h+='<a href="'+fm.URL+'" target="_blank" rel="noopener" class="open-link">Open on YouTube '+ICO.arr+'</a>';
+  h+='</div>';
+  if(fm.Tags){h+='<div class="tags">';fm.Tags.split(',').forEach(function(t){h+='<span class="tag">'+esc(t.trim())+'</span>'});h+='</div>'}
+  var desc=fm.Description||fm.description||'';
+  if(desc)h+='<details open style="margin-bottom:24px"><summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--fg-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">Description</summary><div class="desc-body">'+esc(desc)+'</div></details>';
+  var pn=s['personal notes & markers']||'';
+  if(pn&&pn.indexOf('No notes added yet')===-1)h+='<div class="notes-callout"><div class="nc-label">Personal Notes</div><div class="nc-body">'+esc(pn)+'</div></div>';
+  if(s['transcript']){var tl=s['transcript'].split('\n').filter(Boolean);h+='<div style="margin-bottom:24px"><button class="section-toggle" onclick="toggle(this)"><span class="label">Transcript</span><span class="count">'+tl.length+' lines</span><span class="arrow open">&#9654;</span></button><div class="section-body">';tl.forEach(function(l){h+='<div class="ts-line">'+esc(l)+'</div>'});h+='</div></div>'}
+  if(s['comments']){var cl=s['comments'].split('\n').filter(Boolean);h+='<div style="margin-bottom:24px"><button class="section-toggle" onclick="toggle(this)"><span class="label">Comments</span><span class="count">'+cl.length+'</span><span class="arrow open">&#9654;</span></button><div class="section-body">';cl.forEach(function(l){h+='<div class="comment">'+l.replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')+'</div>'});h+='</div></div>'}
+  if(s['recommendations']){
+    var rl=s['recommendations'].split('\n').filter(Boolean);
+    h+='<div class="rec-section"><button class="section-toggle" onclick="toggle(this)"><span class="label">Recommendations</span><span class="arrow open">&#9654;</span></button><div style="max-height:none;overflow:visible">';
+    var recs=[];var cur=null;
+    rl.forEach(function(l){
+      if(/^\d+\./.test(l)){if(cur)recs.push(cur);cur={title:l.replace(/^\d+\.\s*\*\*/,'').replace(/\*\*.*$/,'').trim(),meta:'',url:'',thumb:'',raw:l}}
+      else if(/^https?:\/\/.*img\.youtube\.com/.test(l.trim())){if(cur)cur.thumb=l.trim()}
+      else if(/^https?:\/\//.test(l.trim())){if(cur)cur.url=l.trim()}
+      else if(cur){cur.meta+=(cur.meta?' ':'')+l.trim()}
+    });
+    if(cur)recs.push(cur);
+    recs.forEach(function(r){
+      if(r.url&&r.thumb){
+        h+='<a href="'+r.url+'" target="_blank" rel="noopener" class="rec-card">';
+        h+='<div class="rec-thumb"><img src="'+r.thumb+'" loading="lazy"></div>';
+        h+='<div class="rec-info"><div class="rec-title">'+esc(r.title)+'</div>';
+        if(r.meta)h+='<div class="rec-meta">'+esc(r.meta)+'</div>';
+        h+='</div></a>';
+      } else {
+        h+='<div class="rec-line">'+esc(r.raw||r.title)+'</div>';
+        if(r.url)h+='<div><a href="'+r.url+'" target="_blank" rel="noopener" class="rec-link">'+esc(r.url)+'</a></div>';
+      }
+    });
+    h+='</div></div>';
+  }
+  return '<article class="note-article" style="animation:fadeUp .4s ease-out both">'+h+'</article>';
+}
 function toggle(btn){var body=btn.nextElementSibling,arrow=btn.querySelector('.arrow');if(body.style.display==='none'){body.style.display='';arrow.classList.add('open')}else{body.style.display='none';arrow.classList.remove('open')}}
 var notes=[],sel=0;
 function showViewer(){document.getElementById('pasteScreen').style.display='none';document.getElementById('viewerScreen').style.display='';document.getElementById('newNoteBtn').style.display=notes.length>1?'':'none';document.getElementById('noteCount').textContent=notes.length>1?notes.length+' notes':'';renderSidebar();renderMain()}
