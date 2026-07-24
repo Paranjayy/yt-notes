@@ -78,6 +78,17 @@ Benefits: each file is small → less context needed per edit, easier to test, f
 
 ---
 
+## Website (YT Notes Viewer)
+> Zero-dependency static site in `website/` — deploy to Vercel with no build step.
+
+- [x] Single HTML file with embedded CSS/JS
+- [x] Parses YAML frontmatter + markdown sections from Social Companion export
+- [x] Single and multiple notes with sidebar navigation
+- [x] Dark mode, collapsible sections, editorial design
+- [x] Deploy via `vercel.json` — no npm install needed
+
+---
+
 ## Completed (this session)
 - [x] Dashboard page with video cards, screenshots, notes modal
 - [x] Import / Export JSON
@@ -88,3 +99,6 @@ Benefits: each file is small → less context needed per edit, easier to test, f
 - [x] Metadata + transcript persisted to storage for dashboard
 - [x] Dark mode / glassmorphism throughout
 - [x] Toast notifications replacing all alert() calls
+- [x] Full description in markdown export (removed 500-char truncation)
+- [x] Video like count in metadata extraction + frontmatter
+- [x] YT Notes viewer website — Vercel-ready, zero-dependency
