@@ -94,7 +94,14 @@ textarea::placeholder{color:var(--fg-faint)}
       <span class="logo">YT Notes</span>
       <span id="noteCount" style="font-size:12px;color:var(--fg-faint)"></span>
     </div>
-    <button class="btn" id="newNoteBtn" style="display:none">New Note</button>
+    <div style="display:flex;gap:8px;align-items:center">
+      <div id="playlistExportActions" style="display:none;gap:8px">
+        <button class="btn" data-playlist-export="json">Download JSON</button>
+        <button class="btn" data-playlist-export="csv">Download CSV</button>
+        <button class="btn" data-playlist-export="markdown">Download Markdown</button>
+      </div>
+      <button class="btn" id="newNoteBtn" style="display:none">New Note</button>
+    </div>
   </header>
   <div class="layout">
     <aside id="sidebar" class="sidebar" style="display:none"></aside>
@@ -178,10 +185,14 @@ var notes=[],sel=0;
 function showViewer(){document.getElementById('pasteScreen').style.display='none';document.getElementById('viewerScreen').style.display='';document.getElementById('newNoteBtn').style.display=notes.length>1?'':'none';document.getElementById('noteCount').textContent=notes.length>1?notes.length+' notes':'';renderSidebar();renderMain()}
 function showPaste(){document.getElementById('pasteScreen').style.display='';document.getElementById('viewerScreen').style.display='none'}
 function renderSidebar(){var sb=document.getElementById('sidebar');if(notes.length<=1){sb.style.display='none';return}sb.style.display='';sb.innerHTML=notes.map(function(n,i){var title=n.kind==='playlist'?n.playlist.title:n.frontmatter.Title;var sub=n.kind==='playlist'?(n.playlist.items||[]).length+' videos':n.frontmatter.Channel;return '<button class="sidebar-item'+(i===sel?' active':'')+'" onclick="selectNote('+i+')"><div class="st">'+esc(title||'Untitled')+'</div><div class="sc">'+esc(sub||'')+'</div></button>'}).join('')}
-function renderMain(){var mc=document.getElementById('mainContent');if(!notes.length){mc.innerHTML='';return}mc.innerHTML=notes[sel].kind==='playlist'?renderPlaylistBackup(notes[sel].playlist):renderNote(notes[sel])}
+function renderMain(){var mc=document.getElementById('mainContent'),actions=document.getElementById('playlistExportActions');if(!notes.length){mc.innerHTML='';actions.style.display='none';return}var isPlaylist=notes[sel].kind==='playlist';actions.style.display=isPlaylist?'flex':'none';mc.innerHTML=isPlaylist?renderPlaylistBackup(notes[sel].playlist):renderNote(notes[sel])}
 function selectNote(i){sel=i;renderSidebar();renderMain()}
 document.getElementById('pasteInput').addEventListener('input',function(){var md=this.value.trim();if(!md){notes=[];showPaste();return}notes=parseMultipleNotes(md);if(!notes.length){try{var r=parseFrontmatter(md);if(r[0].Title)notes=[{frontmatter:r[0],sections:parseSections(r[1]),raw:md}]}catch(e){}}if(notes.length){sel=0;showViewer()}else{showPaste()}});
 document.getElementById('newNoteBtn').addEventListener('click',showPaste);
+function downloadText(content,name,type){var blob=new Blob([content],{type:type}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(url)},1000)}
+function playlistFileBase(backup){return String(backup.title||'youtube_playlist').trim().replace(/[^a-z0-9]+/gi,'_').replace(/^_|_$/g,'').toLowerCase()||'youtube_playlist'}
+function exportPlaylistBackup(format){var current=notes[sel];if(!current||current.kind!=='playlist')return;var backup=current.playlist,items=backup.items||[],base=playlistFileBase(backup),content,type;if(format==='json'){content=JSON.stringify(backup,null,2);type='application/json'}else if(format==='csv'){var fields=['position','videoId','title','channel','duration','url','thumbnail','unavailable'];content=PLAYLIST_CSV_SENTINEL+'\n'+fields.join(',')+'\n'+items.map(function(item){return fields.map(function(field){return '"'+String(item[field]??'').replace(/"/g,'""')+'"'}).join(',')}).join('\n');type='text/csv'}else{content='# '+(backup.title||'YouTube playlist backup')+'\n\nSource: '+(backup.url||'')+'\nExported: '+(backup.exportedAt||new Date().toISOString())+'\n\n'+items.map(function(item){var transcript=item.transcriptCollection;var transcriptLine=transcript?'\n   Transcript: '+transcript.status+(transcript.segments?' ('+transcript.segments.length+' segments)':'')+(transcript.reason?' — '+transcript.reason:''):'';return (item.position||'')+'. **'+(item.title||'Unavailable video')+'**'+(item.channel?' — '+item.channel:'')+(item.duration?' ['+item.duration+']':'')+'\n   '+(item.url||'Unavailable/private video')+transcriptLine}).join('\n');type='text/markdown'}downloadText(content,base+'_backup.'+(format==='markdown'?'md':format),type);showToast('Downloaded '+format.toUpperCase()+' backup.','success')}
+document.querySelectorAll('[data-playlist-export]').forEach(function(button){button.addEventListener('click',function(){exportPlaylistBackup(button.dataset.playlistExport)})});
 var toastTimer;
 function showToast(message,type){var toast=document.getElementById('statusToast');clearTimeout(toastTimer);toast.textContent=message;toast.className='toast visible '+(type||'');toast.setAttribute('role',type==='error'?'alert':'status');toast.setAttribute('aria-live',type==='error'?'assertive':'polite');toastTimer=setTimeout(function(){toast.className='toast'},type==='error'?7000:5500)}
 function csvRows(text){var rows=[],row=[],field='',quoted=false;for(var i=0;i<text.length;i++){var ch=text[i],next=text[i+1];if(ch==='"'&&quoted&&next==='"'){field+='"';i++}else if(ch==='"'){quoted=!quoted}else if(ch===','&&!quoted){row.push(field);field=''}else if((ch==='\n'||ch==='\r')&&!quoted){if(ch==='\r'&&next==='\n')i++;row.push(field);if(row.some(function(v){return v!==''}))rows.push(row);row=[];field=''}else field+=ch}if(quoted)throw importError('This CSV has an unterminated quoted field. Re-export the playlist from Social Companion and try again.');if(field||row.length){row.push(field);rows.push(row)}return rows}

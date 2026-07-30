@@ -17,6 +17,7 @@ A simple, zero-dependency web viewer for YouTube notes and playlist backups expo
 2. Use **Playlist Backup** and, if needed, **Load all videos**.
 3. Download a JSON or CSV backup.
 4. Choose **Import playlist backup** on the viewer and select that file.
+5. Use **Download JSON**, **Download CSV**, or **Download Markdown** in the viewer to make a new local copy or switch formats.
 
 The backup uses the playlist page you can already access. It does not require an API key, account, server, or paid service.
 
@@ -29,6 +30,7 @@ For complete public or unlisted playlist metadata, the extension also offers **F
 - **Collapsible sections** — transcript, comments, and recommendations
 - **Zero dependencies** — pure HTML/CSS/JS, no build step needed
 - **Local playlist imports** — view Social Companion JSON/CSV playlist backups, including unavailable/private entries
+- **Playlist re-exports** — download an imported playlist as JSON, CSV, or Markdown directly from the viewer
 
 ## Deploy to Vercel
 
