@@ -14,9 +14,9 @@
     :root {
       --sc-primary: #8b5cf6;
       --sc-primary-hover: #7c3aed;
-      --sc-secondary: #ec4899;
-      --sc-bg-light: rgba(24, 24, 37, 0.95); /* Enforce dark theme by default */
-      --sc-bg-dark: rgba(24, 24, 37, 0.95);
+      --sc-secondary: #a78bfa;
+      --sc-bg-light: rgba(18, 18, 22, 0.96); /* Enforce dark theme by default */
+      --sc-bg-dark: rgba(18, 18, 22, 0.96);
       --sc-text-light: #f8fafc; /* Dark mode colors by default */
       --sc-text-dark: #f8fafc;
       --sc-text-muted-light: #94a3b8;
@@ -55,7 +55,8 @@
     }
 
     .sc-header {
-      background: linear-gradient(135deg, var(--sc-primary), var(--sc-secondary));
+      background: #24212d;
+      border-bottom: 1px solid rgba(167, 139, 250, 0.28);
       color: white;
       padding: 16px 20px;
       font-weight: 800;
@@ -83,6 +84,26 @@
       border-bottom: 1px solid var(--sc-border-dark);
       padding: 4px;
       gap: 4px;
+    }
+
+    .sc-quick-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin: 0 0 12px;
+      padding: 9px;
+      border: 1px solid var(--sc-border-dark);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.025);
+    }
+
+    .sc-quick-actions-label {
+      width: 100%;
+      color: var(--sc-text-muted-light);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
     }
     html[theme="dark"] .sc-tabs,
     @media (prefers-color-scheme: dark) {
@@ -540,7 +561,7 @@
 
   // Initialize script depending on host
   const host = location.hostname;
-  if (host.includes("youtube.com")) {
+  if (host.includes("youtube.com") || host === "youtu.be") {
     initYouTubeWatcher();
   } else if (host.includes("twitter.com") || host.includes("x.com")) {
     initSocialCompanion("x");
@@ -566,9 +587,50 @@
   // Tracks the sidebar observer so we can disconnect on video change
   let _recoObserver = null;
 
+  function canonicalYouTubeUrl(videoId, timestamp = null) {
+    const url = new URL("https://www.youtube.com/watch");
+    url.searchParams.set("v", videoId);
+    if (Number.isFinite(timestamp)) {
+      url.searchParams.set("t", `${Math.max(0, Math.floor(timestamp))}s`);
+    }
+    return url.toString();
+  }
+
+  function getYouTubeVideoId(urlString = window.location.href) {
+    const url = new URL(urlString, window.location.origin);
+
+    // Standard watch URLs use a query parameter. Newer video entry points put
+    // the same ID directly in the path (for example, /live/<id> and /shorts/<id>).
+    const watchVideoId = url.searchParams.get("v");
+    if (watchVideoId) return watchVideoId;
+
+    const pathParts = url.pathname.split("/").filter(Boolean);
+    const isShortUrl = url.hostname === "youtu.be";
+    const videoPathIndex = pathParts.findIndex((part) =>
+      ["live", "shorts", "embed", "v"].includes(part),
+    );
+    const pathVideoId = isShortUrl ? pathParts[0] : pathParts[videoPathIndex + 1];
+    if (pathVideoId) {
+      try {
+        return decodeURIComponent(pathVideoId);
+      } catch (e) {
+        return pathVideoId;
+      }
+    }
+
+    // YouTube can experiment with URL shapes. Its loaded player payload is
+    // the source of truth and makes the widget independent of the slug.
+    const playerVideoId = getPlayerResponseFromScripts()?.videoDetails?.videoId;
+    if (playerVideoId) return playerVideoId;
+
+    const canonicalHref = document.querySelector('link[rel="canonical"]')?.href;
+    return canonicalHref && canonicalHref !== url.href
+      ? new URL(canonicalHref).searchParams.get("v") || ""
+      : "";
+  }
+
   function onYouTubeUrlChange() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const videoId = urlParams.get("v");
+    const videoId = getYouTubeVideoId();
 
     if (videoId) {
       currentVideoId = videoId;
@@ -632,6 +694,7 @@
         }, 30000);
       }
     } else {
+      currentVideoId = "";
       if (_recoObserver) {
         _recoObserver.disconnect();
         _recoObserver = null;
@@ -677,6 +740,13 @@
 
       <!-- Notes tab -->
       <div class="sc-content-panel ${activeTabName === "notes" ? "active" : ""}" id="sc-panel-notes">
+        <div class="sc-quick-actions" aria-label="Quick copy actions">
+          <span class="sc-quick-actions-label">Quick copy</span>
+          <button class="sc-btn sc-btn-secondary" id="sc-btn-copy-notes">Notes</button>
+          <button class="sc-btn sc-btn-secondary" id="sc-btn-copy-description">Description</button>
+          <button class="sc-btn sc-btn-secondary" id="sc-btn-copy-metadata">Stats & Info</button>
+          <button class="sc-btn sc-btn-secondary" id="sc-btn-copy-transcript-quick">Transcript</button>
+        </div>
         <div class="sc-notes-input-group">
           <textarea class="sc-textarea" id="sc-note-input" placeholder="Type a timestamped note... (Auto-pauses video)"></textarea>
           <div class="sc-btn-row">
@@ -804,6 +874,11 @@
       capturePlayerScreenshot();
     });
 
+    container.querySelector("#sc-btn-copy-notes").addEventListener("click", () => copyNotesOnly());
+    container.querySelector("#sc-btn-copy-description").addEventListener("click", () => copyDescription());
+    container.querySelector("#sc-btn-copy-metadata").addEventListener("click", () => copyMetadata());
+    container.querySelector("#sc-btn-copy-transcript-quick").addEventListener("click", () => copyTranscript());
+
     // Sync button
     container
       .querySelector("#sc-btn-sync-transcript")
@@ -884,7 +959,7 @@
 
   function saveScreenshot(videoId, dataUrl, timestamp) {
     const key = `sc_screenshots_${videoId}`;
-    const frameUrl = `https://www.youtube.com/watch?v=${videoId}&t=${Math.floor(timestamp || 0)}s`;
+    const frameUrl = canonicalYouTubeUrl(videoId, timestamp || 0);
     const ssObj = {
       dataUrl,
       timestamp: timestamp || 0,
@@ -916,7 +991,7 @@
           : { dataUrl: ss, timestamp: 0 };
       const frameUrl =
         ssData.timestampUrl ||
-        `https://www.youtube.com/watch?v=${currentVideoId}&t=${Math.floor(ssData.timestamp || 0)}s`;
+        canonicalYouTubeUrl(currentVideoId, ssData.timestamp || 0);
 
       const wrap = document.createElement("div");
       wrap.style.cssText =
@@ -1181,10 +1256,7 @@
   function getPlayerResponseFromScripts() {
     // Try global variable first (most reliable)
     try {
-      if (
-        window.ytInitialPlayerResponse &&
-        window.ytInitialPlayerResponse.captions
-      ) {
+      if (window.ytInitialPlayerResponse?.videoDetails?.videoId) {
         return window.ytInitialPlayerResponse;
       }
     } catch (e) {}
@@ -1233,7 +1305,7 @@
               const jsonStr = text.substring(jsonStart, i + 1);
               try {
                 const parsed = JSON.parse(jsonStr);
-                if (parsed && parsed.captions) return parsed;
+                if (parsed?.videoDetails?.videoId) return parsed;
               } catch (e) {
                 // Try next pattern
               }
@@ -1435,13 +1507,7 @@
 
     const copyBtn = document.getElementById("sc-btn-copy-transcript");
     if (copyBtn) {
-      copyBtn.onclick = () => {
-        const raw = ytCaptions
-          .map((c) => `[${formatTime(c.start)}] ${c.text}`)
-          .join("\n");
-        navigator.clipboard.writeText(raw);
-        alert("Transcript copied to clipboard!");
-      };
+      copyBtn.onclick = () => copyTranscript();
     }
     updateExportPreview();
   }
@@ -1681,7 +1747,7 @@
       description,
       likes,
       uploadDate,
-      url: window.location.href,
+      url: canonicalYouTubeUrl(currentVideoId),
       thumbnail: `https://img.youtube.com/vi/${currentVideoId}/maxresdefault.jpg`,
       recommendations: recVids,
       playlistId,
@@ -1736,7 +1802,7 @@
       md += `*No notes added yet.*\n\n`;
     } else {
       notes.forEach((n) => {
-        md += `- **[${formatTime(n.time)}]** (https://www.youtube.com/watch?v=${currentVideoId}&t=${Math.floor(n.time)}s): ${n.text}\n`;
+        md += `- **[${formatTime(n.time)}]** (${canonicalYouTubeUrl(currentVideoId, n.time)}): ${n.text}\n`;
       });
       md += `\n`;
     }
@@ -1792,6 +1858,58 @@
     } else {
       scCopyFallback(text);
     }
+  }
+
+  async function copyNotesOnly() {
+    const notesKey = `sc_notes_${currentVideoId}`;
+    const data = await storage.getAsync([notesKey]);
+    const notes = data[notesKey] || [];
+    const text = notes.length
+      ? notes
+          .map(
+            (note) =>
+              `- [${formatTime(note.time)}] ${note.text}\n  ${canonicalYouTubeUrl(currentVideoId, note.time)}`,
+          )
+          .join("\n")
+      : "No notes added yet.";
+    scCopyText(text);
+    showToast("📋 Notes copied!");
+  }
+
+  async function copyTranscript() {
+    let captions = ytCaptions;
+    if (!captions.length) {
+      const data = await storage.getAsync([`sc_transcript_${currentVideoId}`]);
+      captions = data[`sc_transcript_${currentVideoId}`] || [];
+    }
+    const text = captions.length
+      ? captions.map((caption) => `[${formatTime(caption.start)}] ${caption.text}`).join("\n")
+      : "Transcript not loaded yet.";
+    scCopyText(text);
+    showToast("📋 Transcript copied!");
+  }
+
+  function copyDescription() {
+    const description = extractYouTubeMetadata().description || "No description available.";
+    scCopyText(description);
+    showToast("📋 Description copied!");
+  }
+
+  function copyMetadata() {
+    const meta = extractYouTubeMetadata();
+    const fields = [
+      ["Title", meta.title],
+      ["Channel", meta.channel],
+      ["Subscribers", meta.subCount],
+      ["Views", meta.views],
+      ["Likes", meta.likes],
+      ["Comments", meta.commentsCount],
+      ["Published", meta.uploadDate],
+      ["Tags", meta.tags],
+      ["URL", meta.url],
+    ].filter(([, value]) => value);
+    scCopyText(fields.map(([label, value]) => `${label}: ${value}`).join("\n"));
+    showToast("📋 Stats & info copied!");
   }
 
   function scCopyFallback(text) {
