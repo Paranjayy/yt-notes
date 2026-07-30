@@ -74,6 +74,7 @@ textarea::placeholder{color:var(--fg-faint)}
 .rec-link:hover{border-bottom-color:var(--accent)}
 .rec-section{margin-bottom:24px}
 .playlist-grid{display:grid;gap:8px}.playlist-row{display:grid;grid-template-columns:34px minmax(0,1fr) auto;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface)}.playlist-row.unavailable{opacity:.62}.playlist-pos{font-family:'SF Mono',monospace;font-size:12px;color:var(--fg-faint)}.playlist-title{font-size:13px;font-weight:500;line-height:1.35}.playlist-sub{font-size:11px;color:var(--fg-faint);margin-top:2px}.playlist-link{font-size:12px;color:var(--accent);text-decoration:none;white-space:nowrap}
+.toast{position:fixed;right:20px;bottom:20px;z-index:200;max-width:min(420px,calc(100vw - 40px));padding:12px 14px;border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:8px;background:var(--surface);color:var(--fg);box-shadow:0 12px 32px color-mix(in srgb,#000 16%,transparent);font-size:13px;line-height:1.45;opacity:0;transform:translateY(8px);pointer-events:none;transition:opacity .18s ease,transform .18s ease}.toast.visible{opacity:1;transform:translateY(0);pointer-events:auto}.toast.error{border-left-color:#dc2626}.toast.success{border-left-color:#16a34a}
 @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 </style>
 </head>
@@ -101,16 +102,21 @@ textarea::placeholder{color:var(--fg-faint)}
   </div>
 </div>
 
+<div id="statusToast" class="toast" role="status" aria-live="polite" aria-atomic="true"></div>
+
 <script>
 function parseFrontmatter(md){var m=md.match(/^---\n([\s\S]*?)\n---/);if(!m)return[{},md];var fm={};m[1].split('\n').forEach(function(l){var i=l.indexOf(':');if(i>0)fm[l.slice(0,i).trim()]=l.slice(i+1).trim()});return[fm,md.slice(m[0].length)]}
 function parseSections(b){var s={};b.split(/^# /m).filter(Boolean).forEach(function(p){var l=p.split('\n');s[l[0].trim().toLowerCase()]=l.slice(1).join('\n').trim()});return s}
 function parseMultipleNotes(md){var n=[];md.split(/(?=^---$)/m).filter(function(s){return s.trim()}).forEach(function(c){try{var r=parseFrontmatter(c);if(r[0].Title)n.push({frontmatter:r[0],sections:parseSections(r[1]),raw:c})}catch(e){}});return n}
 var ICO={eye:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>',like:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v12M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2h0a3.13 3.13 0 0 1 3 3.88Z"/></svg>',msg:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',usr:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',arr:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" x2="19" y1="12" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>'};
 function esc(t){var d=document.createElement('div');d.textContent=t;return d.innerHTML}
+function safeHttpUrl(value){try{var url=new URL(String(value||''));return url.protocol==='https:'||url.protocol==='http:'?url.href:''}catch(e){return ''}}
+function renderBoldComment(comment){return esc(comment).replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')}
 function renderNote(note){
   var fm=note.frontmatter,s=note.sections;
   var v=(fm.URL||'').match(/v=([^&]+)/);var vid=v?v[1]:'';
-  var th=fm.Thumbnail||(vid?'https://img.youtube.com/vi/'+vid+'/maxresdefault.jpg':'');
+  var th=safeHttpUrl(fm.Thumbnail)||(vid?'https://img.youtube.com/vi/'+vid+'/maxresdefault.jpg':'');
+  var videoUrl=safeHttpUrl(fm.URL);
   var h='';
   if(th)h+='<div class="thumb"><img src="'+th+'" alt="'+esc(fm.Title||'')+'" loading="lazy"></div>';
   h+='<div class="meta"><h2>'+esc(fm.Title||'Untitled')+'</h2>';
@@ -125,7 +131,7 @@ function renderNote(note){
   if(fm.Published)h+='<span>Published: '+esc(fm.Published)+'</span>';
   if(fm.Copied)h+='<span>Copied: '+esc(fm.Copied)+'</span>';
   h+='</div>';
-  if(fm.URL)h+='<a href="'+fm.URL+'" target="_blank" rel="noopener" class="open-link">Open on YouTube '+ICO.arr+'</a>';
+  if(videoUrl)h+='<a href="'+esc(videoUrl)+'" target="_blank" rel="noopener" class="open-link">Open on YouTube '+ICO.arr+'</a>';
   h+='</div>';
   if(fm.Tags){h+='<div class="tags">';fm.Tags.split(',').forEach(function(t){h+='<span class="tag">'+esc(t.trim())+'</span>'});h+='</div>'}
   var desc=fm.Description||fm.description||'';
@@ -133,7 +139,7 @@ function renderNote(note){
   var pn=s['personal notes & markers']||'';
   if(pn&&pn.indexOf('No notes added yet')===-1)h+='<div class="notes-callout"><div class="nc-label">Personal Notes</div><div class="nc-body">'+esc(pn)+'</div></div>';
   if(s['transcript']){var tl=s['transcript'].split('\n').filter(Boolean);h+='<div style="margin-bottom:24px"><button class="section-toggle" onclick="toggle(this)"><span class="label">Transcript</span><span class="count">'+tl.length+' lines</span><span class="arrow open">&#9654;</span></button><div class="section-body">';tl.forEach(function(l){h+='<div class="ts-line">'+esc(l)+'</div>'});h+='</div></div>'}
-  if(s['comments']){var cl=s['comments'].split('\n').filter(Boolean);h+='<div style="margin-bottom:24px"><button class="section-toggle" onclick="toggle(this)"><span class="label">Comments</span><span class="count">'+cl.length+'</span><span class="arrow open">&#9654;</span></button><div class="section-body">';cl.forEach(function(l){h+='<div class="comment">'+l.replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')+'</div>'});h+='</div></div>'}
+  if(s['comments']){var cl=s['comments'].split('\n').filter(Boolean);h+='<div style="margin-bottom:24px"><button class="section-toggle" onclick="toggle(this)"><span class="label">Comments</span><span class="count">'+cl.length+'</span><span class="arrow open">&#9654;</span></button><div class="section-body">';cl.forEach(function(l){h+='<div class="comment">'+renderBoldComment(l)+'</div>'});h+='</div></div>'}
   if(s['recommendations']){
     var rl=s['recommendations'].split('\n').filter(Boolean);
     h+='<div class="rec-section"><button class="section-toggle" onclick="toggle(this)"><span class="label">Recommendations</span><span class="arrow open">&#9654;</span></button><div style="max-height:none;overflow:visible">';
@@ -141,20 +147,20 @@ function renderNote(note){
     rl.forEach(function(l){
       if(/^\d+\./.test(l)){if(cur)recs.push(cur);cur={title:l.replace(/^\d+\.\s*\*\*/,'').replace(/\*\*.*$/,'').trim(),meta:'',url:'',thumb:'',raw:l}}
       else if(/^https?:\/\/.*img\.youtube\.com/.test(l.trim())){if(cur)cur.thumb=l.trim()}
-      else if(/^https?:\/\//.test(l.trim())){if(cur)cur.url=l.trim()}
+      else if(/^https?:\/\//.test(l.trim())){if(cur)cur.url=safeHttpUrl(l.trim())}
       else if(cur){cur.meta+=(cur.meta?' ':'')+l.trim()}
     });
     if(cur)recs.push(cur);
     recs.forEach(function(r){
       if(r.url&&r.thumb){
-        h+='<a href="'+r.url+'" target="_blank" rel="noopener" class="rec-card">';
-        h+='<div class="rec-thumb"><img src="'+r.thumb+'" loading="lazy"></div>';
+        h+='<a href="'+esc(r.url)+'" target="_blank" rel="noopener" class="rec-card">';
+        h+='<div class="rec-thumb"><img src="'+esc(safeHttpUrl(r.thumb))+'" loading="lazy"></div>';
         h+='<div class="rec-info"><div class="rec-title">'+esc(r.title)+'</div>';
         if(r.meta)h+='<div class="rec-meta">'+esc(r.meta)+'</div>';
         h+='</div></a>';
       } else {
         h+='<div class="rec-line">'+esc(r.raw||r.title)+'</div>';
-        if(r.url)h+='<div><a href="'+r.url+'" target="_blank" rel="noopener" class="rec-link">'+esc(r.url)+'</a></div>';
+        if(r.url)h+='<div><a href="'+esc(r.url)+'" target="_blank" rel="noopener" class="rec-link">'+esc(r.url)+'</a></div>';
       }
     });
     h+='</div></div>';
@@ -163,8 +169,8 @@ function renderNote(note){
 }
 function renderPlaylistBackup(backup){
   var items=backup.items||[];
-  var h='<article class="note-article" style="animation:fadeUp .4s ease-out both"><div class="meta"><h2>'+esc(backup.title||'YouTube playlist backup')+'</h2><div class="date-row"><span>'+items.length+' videos</span>'+(backup.exportedAt?'<span>Exported: '+esc(backup.exportedAt.slice(0,10))+'</span>':'')+'</div>'+(backup.url?'<a href="'+esc(backup.url)+'" target="_blank" rel="noopener" class="open-link">Open playlist '+ICO.arr+'</a>':'')+'</div><div class="playlist-grid">';
-  items.forEach(function(item,index){var unavailable=item.unavailable||!item.videoId;h+='<div class="playlist-row'+(unavailable?' unavailable':'')+'"><div class="playlist-pos">'+esc(String(item.position||index+1))+'</div><div><div class="playlist-title">'+esc(item.title||'Unavailable video')+'</div><div class="playlist-sub">'+esc([item.channel,item.duration,unavailable?'Unavailable/private':''].filter(Boolean).join(' · '))+'</div></div>'+(item.url?'<a class="playlist-link" href="'+esc(item.url)+'" target="_blank" rel="noopener">Open</a>':'<span class="playlist-link">Unavailable</span>')+'</div>'});
+  var playlistUrl=safeHttpUrl(backup.url);var h='<article class="note-article" style="animation:fadeUp .4s ease-out both"><div class="meta"><h2>'+esc(backup.title||'YouTube playlist backup')+'</h2><div class="date-row"><span>'+items.length+' videos</span>'+(backup.exportedAt?'<span>Exported: '+esc(backup.exportedAt.slice(0,10))+'</span>':'')+'</div>'+(playlistUrl?'<a href="'+esc(playlistUrl)+'" target="_blank" rel="noopener" class="open-link">Open playlist '+ICO.arr+'</a>':'')+'</div><div class="playlist-grid">';
+  items.forEach(function(item,index){var unavailable=item.unavailable||!item.videoId,itemUrl=safeHttpUrl(item.url);h+='<div class="playlist-row'+(unavailable?' unavailable':'')+'"><div class="playlist-pos">'+esc(String(item.position||index+1))+'</div><div><div class="playlist-title">'+esc(item.title||'Unavailable video')+'</div><div class="playlist-sub">'+esc([item.channel,item.duration,unavailable?'Unavailable/private':''].filter(Boolean).join(' · '))+'</div></div>'+(itemUrl?'<a class="playlist-link" href="'+esc(itemUrl)+'" target="_blank" rel="noopener">Open</a>':'<span class="playlist-link">Unavailable</span>')+'</div>'});
   return h+'</div></article>';
 }
 function toggle(btn){var body=btn.nextElementSibling,arrow=btn.querySelector('.arrow');if(body.style.display==='none'){body.style.display='';arrow.classList.add('open')}else{body.style.display='none';arrow.classList.remove('open')}}
@@ -176,8 +182,16 @@ function renderMain(){var mc=document.getElementById('mainContent');if(!notes.le
 function selectNote(i){sel=i;renderSidebar();renderMain()}
 document.getElementById('pasteInput').addEventListener('input',function(){var md=this.value.trim();if(!md){notes=[];showPaste();return}notes=parseMultipleNotes(md);if(!notes.length){try{var r=parseFrontmatter(md);if(r[0].Title)notes=[{frontmatter:r[0],sections:parseSections(r[1]),raw:md}]}catch(e){}}if(notes.length){sel=0;showViewer()}else{showPaste()}});
 document.getElementById('newNoteBtn').addEventListener('click',showPaste);
-function csvRows(text){var rows=[],row=[],field='',quoted=false;for(var i=0;i<text.length;i++){var ch=text[i],next=text[i+1];if(ch==='"'&&quoted&&next==='"'){field+='"';i++}else if(ch==='"'){quoted=!quoted}else if(ch===','&&!quoted){row.push(field);field=''}else if((ch==='\n'||ch==='\r')&&!quoted){if(ch==='\r'&&next==='\n')i++;row.push(field);if(row.some(function(v){return v!==''}))rows.push(row);row=[];field=''}else field+=ch}if(field||row.length){row.push(field);rows.push(row)}return rows}
-function importBackup(file){file.text().then(function(text){var backup;if(file.name.toLowerCase().endsWith('.json')){backup=JSON.parse(text)}else{var rows=csvRows(text),headers=rows.shift()||[];backup={title:file.name.replace(/\.csv$/i,''),exportedAt:new Date().toISOString(),items:rows.map(function(row){var item={};headers.forEach(function(header,i){item[header]=row[i]||''});item.position=Number(item.position)||0;item.unavailable=item.unavailable==='true'||!item.videoId;return item})}}if(!Array.isArray(backup.items))throw new Error('This is not a Social Companion playlist backup.');notes=[{kind:'playlist',playlist:backup}];sel=0;showViewer()}).catch(function(){alert('Could not read that backup. Choose a Social Companion playlist JSON or CSV file.')})}
+var toastTimer;
+function showToast(message,type){var toast=document.getElementById('statusToast');clearTimeout(toastTimer);toast.textContent=message;toast.className='toast visible '+(type||'');toast.setAttribute('role',type==='error'?'alert':'status');toast.setAttribute('aria-live',type==='error'?'assertive':'polite');toastTimer=setTimeout(function(){toast.className='toast'},type==='error'?7000:5500)}
+function csvRows(text){var rows=[],row=[],field='',quoted=false;for(var i=0;i<text.length;i++){var ch=text[i],next=text[i+1];if(ch==='"'&&quoted&&next==='"'){field+='"';i++}else if(ch==='"'){quoted=!quoted}else if(ch===','&&!quoted){row.push(field);field=''}else if((ch==='\n'||ch==='\r')&&!quoted){if(ch==='\r'&&next==='\n')i++;row.push(field);if(row.some(function(v){return v!==''}))rows.push(row);row=[];field=''}else field+=ch}if(quoted)throw importError('This CSV has an unterminated quoted field. Re-export the playlist from Social Companion and try again.');if(field||row.length){row.push(field);rows.push(row)}return rows}
+function importError(message){var error=new Error(message);error.isImportError=true;return error}
+var PLAYLIST_BACKUP_FORMAT='social-companion-playlist-backup',PLAYLIST_BACKUP_SCHEMA_VERSION=1,PLAYLIST_CSV_SENTINEL='# Social Companion Playlist Backup v1';
+function hasOwn(object,key){return Object.prototype.hasOwnProperty.call(object,key)}
+function normalisePlaylistItems(items){var loaded=[],skipped=0,unavailable=0,required=['position','videoId','title','channel','duration','url','thumbnail','unavailable'];items.forEach(function(raw){if(!raw||typeof raw!=='object'||Array.isArray(raw)||required.some(function(key){return !hasOwn(raw,key)})||typeof raw.videoId!=='string'||typeof raw.title!=='string'||typeof raw.channel!=='string'||typeof raw.duration!=='string'||typeof raw.url!=='string'||typeof raw.thumbnail!=='string'||!(typeof raw.unavailable==='boolean'||raw.unavailable==='true'||raw.unavailable==='false')){skipped++;return}var position=typeof raw.position==='number'?raw.position:Number(raw.position);var videoId=raw.videoId.trim(),title=raw.title.trim(),isUnavailable=raw.unavailable===true||raw.unavailable==='true',url=safeHttpUrl(raw.url),thumbnail=safeHttpUrl(raw.thumbnail);if(!Number.isInteger(position)||position<1||!title||(!isUnavailable&&!/^[A-Za-z0-9_-]{11}$/.test(videoId))||(raw.url&&!url)||(raw.thumbnail&&!thumbnail)){skipped++;return}var item={position:position,videoId:videoId,title:title,channel:raw.channel.trim(),duration:raw.duration.trim(),url:url,thumbnail:thumbnail,unavailable:isUnavailable||!videoId};if(item.unavailable)unavailable++;loaded.push(item)});if(!loaded.length)throw importError('No valid playlist rows were found. Export the playlist again from Social Companion, then import its JSON or CSV file.');return{items:loaded,skipped:skipped,unavailable:unavailable}}
+function backupFromCsv(text,fileName){var source=text.charCodeAt(0)===0xFEFF?text.slice(1):text;if(source.indexOf('\uFEFF')!==-1)throw importError('This CSV has a misplaced byte-order mark. Re-export the playlist from Social Companion and try again.');var firstBreak=source.indexOf('\n');if(firstBreak===-1)throw importError('This CSV is not a Social Companion v1 playlist backup. Export it again from the extension, then choose that file.');var firstLine=source.slice(0,firstBreak);if(firstLine.endsWith('\r'))firstLine=firstLine.slice(0,-1);if(firstLine!==PLAYLIST_CSV_SENTINEL)throw importError('This CSV is not a Social Companion v1 playlist backup. Export it again from the extension, then choose that file.');var afterSentinel=source.slice(firstBreak+1),secondBreak=afterSentinel.indexOf('\n');if(secondBreak===-1)throw importError('This CSV has no playlist rows. Export a populated playlist from Social Companion and try again.');var headerLine=afterSentinel.slice(0,secondBreak);if(headerLine.endsWith('\r'))headerLine=headerLine.slice(0,-1);var required=['position','videoId','title','channel','duration','url','thumbnail','unavailable'],requiredHeader=required.join(',');if(headerLine!==requiredHeader)throw importError('This CSV does not have the exact Social Companion v1 header. Re-export the playlist from the extension and try that file.');var rows=csvRows(afterSentinel.slice(secondBreak+1));if(!rows.length)throw importError('This CSV has no playlist rows. Export a populated playlist from Social Companion and try again.');return{format:PLAYLIST_BACKUP_FORMAT,schemaVersion:PLAYLIST_BACKUP_SCHEMA_VERSION,title:fileName.replace(/\.csv$/i,''),exportedAt:new Date().toISOString(),items:rows.map(function(row){var item={};required.forEach(function(header,i){item[header]=row[i]||''});return item})}}
+function backupFromJson(text){var backup;try{backup=JSON.parse(text)}catch(e){throw importError('That JSON could not be read. Re-export the playlist from Social Companion and choose the unedited JSON file.')}if(!backup||typeof backup!=='object'||Array.isArray(backup)||backup.format!==PLAYLIST_BACKUP_FORMAT||backup.schemaVersion!==PLAYLIST_BACKUP_SCHEMA_VERSION||!Array.isArray(backup.items)||typeof backup.id!=='string'||!backup.id.trim()||!safeHttpUrl(backup.url))throw importError('This JSON is not a Social Companion v1 playlist backup. Re-export the playlist from the extension, then choose that JSON file.');return backup}
+function importBackup(file){showToast('Importing '+file.name+'…');file.text().then(function(text){var isJson=/\.json$/i.test(file.name),isCsv=/\.csv$/i.test(file.name);if(!isJson&&!isCsv)throw importError('Only Social Companion playlist .json or .csv backups can be imported. Choose one of those exports and try again.');var backup=isJson?backupFromJson(text):backupFromCsv(text,file.name);var result=normalisePlaylistItems(backup.items);backup.items=result.items;notes=[{kind:'playlist',playlist:backup}];sel=0;showViewer();var receipt='Imported '+result.items.length+' video'+(result.items.length===1?'':'s')+' · '+result.unavailable+' unavailable · '+result.skipped+' malformed row'+(result.skipped===1?'':'s')+' skipped';showToast(receipt,'success')}).catch(function(error){showToast(error&&error.message?error.message:'Could not read that backup. Export a Social Companion playlist JSON or CSV file, then try again.','error')})}
 document.getElementById('backupFileBtn').addEventListener('click',function(){document.getElementById('backupFileInput').click()});document.getElementById('backupFileInput').addEventListener('change',function(){if(this.files[0])importBackup(this.files[0])});
 </script>
 </body>

@@ -4,6 +4,9 @@
 (function () {
   "use strict";
 
+  const PLAYLIST_BACKUP_FORMAT = "social-companion-playlist-backup";
+  const PLAYLIST_BACKUP_SCHEMA_VERSION = 1;
+
   // Destructure helpers from global scope
   const { formatTime, escapeHtml, decodeHtmlEntities } = window;
 
@@ -810,7 +813,7 @@
     found.forEach((item) => byKey.set(item.videoId || `${item.position}:${item.title}`, item));
     playlistBackupItems = [...byKey.values()].sort((a, b) => a.position - b.position);
     const context = getPlaylistContext();
-    if (context) storage.set({ [`sc_playlist_backup_${context.id}`]: { ...context, exportedAt: new Date().toISOString(), items: playlistBackupItems } });
+    if (context) storage.set({ [`sc_playlist_backup_${context.id}`]: { format: PLAYLIST_BACKUP_FORMAT, schemaVersion: PLAYLIST_BACKUP_SCHEMA_VERSION, ...context, exportedAt: new Date().toISOString(), items: playlistBackupItems } });
     playlistStatus(`${playlistBackupItems.length} videos collected${found.length ? "." : " — scroll the playlist or load all."}`);
     return playlistBackupItems;
   }
@@ -888,7 +891,7 @@
         const video = videos.get(videoId);
         const snippet = video?.snippet || item.snippet || {};
         return {
-          position: item.snippet?.position ?? index + 1,
+          position: (item.snippet?.position ?? index) + 1,
           videoId,
           title: snippet.title || "Unavailable video",
           channel: snippet.channelTitle || "",
@@ -901,7 +904,7 @@
           description: video?.snippet?.description || "",
         };
       });
-      storage.set({ [`sc_playlist_backup_${context.id}`]: { ...context, exportedAt: new Date().toISOString(), source: "youtube-data-api", items: playlistBackupItems } });
+      storage.set({ [`sc_playlist_backup_${context.id}`]: { format: PLAYLIST_BACKUP_FORMAT, schemaVersion: PLAYLIST_BACKUP_SCHEMA_VERSION, ...context, exportedAt: new Date().toISOString(), source: "youtube-data-api", items: playlistBackupItems } });
       playlistStatus(`API backup ready — ${playlistBackupItems.length} videos, including metadata not loaded on the page.`);
     } catch (error) {
       playlistStatus(`API backup failed: ${error.message}`);
@@ -925,11 +928,11 @@
     let content;
     let mimeType;
     if (format === "json") {
-      content = JSON.stringify({ ...context, exportedAt: new Date().toISOString(), items }, null, 2);
+      content = JSON.stringify({ format: PLAYLIST_BACKUP_FORMAT, schemaVersion: PLAYLIST_BACKUP_SCHEMA_VERSION, ...context, exportedAt: new Date().toISOString(), items }, null, 2);
       mimeType = "application/json";
     } else if (format === "csv") {
       const columns = ["position", "videoId", "title", "channel", "duration", "url", "thumbnail", "unavailable"];
-      content = [columns.join(","), ...items.map((item) => columns.map((column) => playlistCsvField(item[column])).join(","))].join("\n");
+      content = ["# Social Companion Playlist Backup v1", columns.join(","), ...items.map((item) => columns.map((column) => playlistCsvField(item[column])).join(","))].join("\n");
       mimeType = "text/csv";
     } else {
       content = `# ${context.title}\n\nSource: ${context.url}\nExported: ${new Date().toISOString()}\n\n` + items.map((item) => `${item.position}. **${item.title}**${item.channel ? ` — ${item.channel}` : ""}${item.duration ? ` [${item.duration}]` : ""}\n   ${item.url || "Unavailable / private video"}`).join("\n");
