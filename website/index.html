@@ -21,7 +21,7 @@ textarea{width:100%;padding:16px;border:1px solid var(--border);border-radius:8p
 textarea:focus{border-color:var(--accent)}
 textarea::placeholder{color:var(--fg-faint)}
 .paste-hint{margin-top:12px;font-size:12px;color:var(--fg-faint)}
-.paste-actions{display:flex;align-items:center;gap:10px;margin-top:14px}.file-input{display:none}
+.paste-actions{display:flex;align-items:center;gap:10px;margin-top:14px}.file-input{display:none}.playlist-start{margin-top:28px;padding:18px 20px;border:1px solid var(--border);border-radius:10px;background:var(--surface-raised)}.playlist-start h2{font-size:21px;margin-bottom:5px}.playlist-start p{margin:0 0 14px;font-size:14px;color:var(--fg-muted)}.playlist-start-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:16px}.playlist-start-step{font-size:12px;color:var(--fg-muted);line-height:1.45}.playlist-start-step b{display:block;color:var(--fg);font-size:13px;margin-bottom:2px}@media(max-width:560px){.playlist-start-steps{grid-template-columns:1fr}}
 .site-header{padding:16px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--bg);z-index:100}
 .site-header .logo{font-family:'Newsreader',Georgia,serif;font-size:18px;font-weight:500}
 .btn{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--fg-muted);font-size:12px;font-weight:500;cursor:pointer;transition:all .15s;font-family:inherit}
@@ -84,8 +84,17 @@ textarea::placeholder{color:var(--fg-faint)}
   <h1>YT Notes</h1>
   <p>Paste your markdown export from the Social Companion extension to view it here. Supports single or multiple notes.</p>
   <textarea id="pasteInput" rows="14" placeholder="---&#10;Title: My Video&#10;Channel: Some Channel&#10;---&#10;&#10;# Transcript&#10;[0:00] Hello world...&#10;&#10;# Comments&#10;1. @user: Great video!"></textarea>
-  <div class="paste-actions"><button class="btn" id="backupFileBtn">Import playlist backup</button><input class="file-input" id="backupFileInput" type="file" accept=".json,.csv,application/json,text/csv"></div>
-  <p class="paste-hint">Paste Markdown or import a Social Companion playlist JSON/CSV backup. Everything stays in this browser.</p>
+  <p class="paste-hint">Paste Markdown to read a video archive. Everything stays in this browser.</p>
+  <section class="playlist-start" aria-labelledby="playlistStartTitle">
+    <h2 id="playlistStartTitle">Playlist backup tools</h2>
+    <p>Import a Social Companion playlist export to browse it and download a fresh JSON, CSV, or Markdown copy.</p>
+    <div class="playlist-start-steps" aria-label="Playlist backup workflow">
+      <div class="playlist-start-step"><b>1. Collect</b>Use Playlist Backup in the extension.</div>
+      <div class="playlist-start-step"><b>2. Import</b>Choose its JSON or CSV file here.</div>
+      <div class="playlist-start-step"><b>3. Re-download</b>Use the visible JSON, CSV, or Markdown controls.</div>
+    </div>
+    <button class="btn" id="backupFileBtn">Import playlist backup</button><input class="file-input" id="backupFileInput" type="file" accept=".json,.csv,application/json,text/csv">
+  </section>
 </div>
 
 <div id="viewerScreen" style="display:none">
