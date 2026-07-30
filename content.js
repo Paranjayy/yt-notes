@@ -1151,6 +1151,7 @@
           <button class="sc-btn sc-btn-secondary" id="sc-btn-copy-description">Description</button>
           <button class="sc-btn sc-btn-secondary" id="sc-btn-copy-metadata">Stats & Info</button>
           <button class="sc-btn sc-btn-secondary" id="sc-btn-copy-transcript-quick">Transcript</button>
+          <button class="sc-btn sc-btn-secondary" id="sc-btn-sync-transcript-quick">↻ Sync transcript</button>
         </div>
         <div class="sc-notes-input-group">
           <textarea class="sc-textarea" id="sc-note-input" placeholder="Type a timestamped note... (Auto-pauses video)"></textarea>
@@ -1284,6 +1285,7 @@
     container.querySelector("#sc-btn-copy-description").addEventListener("click", () => copyDescription());
     container.querySelector("#sc-btn-copy-metadata").addEventListener("click", () => copyMetadata());
     container.querySelector("#sc-btn-copy-transcript-quick").addEventListener("click", () => copyTranscript());
+    container.querySelector("#sc-btn-sync-transcript-quick").addEventListener("click", () => forceSyncTranscript());
 
     // Sync button
     container
@@ -1629,8 +1631,22 @@
       transcriptBox.innerHTML = `<div style="color: var(--sc-text-muted-light); text-align: center; padding: 12px;">Syncing transcript...</div>`;
     }
 
-    fetchYouTubeTranscript();
-    scrapeNativeYouTubeTranscript(true);
+    const retryDelays = [0, 1400, 3600];
+    retryDelays.forEach((delay, attempt) => {
+      setTimeout(() => {
+        if (ytCaptions.length > 0) return;
+        fetchYouTubeTranscript();
+        // A later retry is more likely to find YouTube's lazily rendered panel.
+        scrapeNativeYouTubeTranscript(attempt > 0);
+        if (attempt === retryDelays.length - 1) {
+          setTimeout(() => {
+            if (!ytCaptions.length) {
+              showToast("ℹ️ Transcript still unavailable — YouTube may not expose one for this video");
+            }
+          }, 1200);
+        }
+      }, delay);
+    });
   }
 
   // Fetch transcript: script parsing + DOM clicker fallback
