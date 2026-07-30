@@ -20,6 +20,8 @@ A simple, zero-dependency web viewer for YouTube notes and playlist backups expo
 
 The backup uses the playlist page you can already access. It does not require an API key, account, server, or paid service.
 
+For complete public or unlisted playlist metadata, the extension also offers **Fetch with API**. Create and supply your own YouTube Data API key; it stays in browser storage and is never bundled or sent to this project. The API route is optional. YouTube documents `playlistItems.list` and `videos.list` as one quota unit per request, and projects have a default 10,000-unit daily allocation, subject to Google's current policy. See the [quota overview](https://developers.google.com/youtube/v3/getting-started) and [playlist endpoint](https://developers.google.com/youtube/v3/docs/playlistItems/list).
+
 ## Features
 
 - **Single or multiple notes** — paste one or many, the viewer handles both

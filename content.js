@@ -742,14 +742,32 @@
         <div style="font-size:12px;color:var(--sc-text-muted-light);margin-bottom:10px;">Exports what you can view — no API key or quota needed.</div>
         <div class="sc-btn-row">
           <button class="sc-btn sc-btn-primary" id="sc-playlist-load">Load all videos</button>
+          <button class="sc-btn sc-btn-secondary" id="sc-playlist-api-load">Fetch with API</button>
           <button class="sc-btn sc-btn-secondary" id="sc-playlist-json">JSON</button>
           <button class="sc-btn sc-btn-secondary" id="sc-playlist-csv">CSV</button>
           <button class="sc-btn sc-btn-secondary" id="sc-playlist-md">Markdown</button>
         </div>
+        <details style="margin-top:10px;color:var(--sc-text-muted-light);font-size:11px;">
+          <summary style="cursor:pointer;">Optional API key for complete public/unlisted backups</summary>
+          <div style="display:flex;gap:6px;margin-top:8px;">
+            <input id="sc-playlist-api-key" type="password" placeholder="Your YouTube Data API key" class="sc-search-bar" style="margin:0;min-width:0;">
+            <button class="sc-btn sc-btn-secondary" id="sc-playlist-api-save">Save</button>
+          </div>
+          <div style="margin-top:6px;">Your key stays in this browser. Keyless export remains available for playlists you can open.</div>
+        </details>
         <div id="sc-playlist-status" style="font-size:11px;color:var(--sc-text-muted-light);margin-top:10px;">Ready to collect visible videos.</div>
       </div>`;
     collectPlaylistItems();
     widget.querySelector("#sc-playlist-load").onclick = () => loadAllPlaylistItems();
+    widget.querySelector("#sc-playlist-api-load").onclick = () => loadPlaylistWithApi();
+    widget.querySelector("#sc-playlist-api-save").onclick = () => {
+      const key = widget.querySelector("#sc-playlist-api-key").value.trim();
+      storage.set({ sc_youtube_api_key: key });
+      playlistStatus(key ? "API key saved locally." : "API key cleared.");
+    };
+    storage.get(["sc_youtube_api_key"], (data) => {
+      if (data.sc_youtube_api_key) widget.querySelector("#sc-playlist-api-key").value = data.sc_youtube_api_key;
+    });
     widget.querySelector("#sc-playlist-json").onclick = () => downloadPlaylistBackup("json");
     widget.querySelector("#sc-playlist-csv").onclick = () => downloadPlaylistBackup("csv");
     widget.querySelector("#sc-playlist-md").onclick = () => downloadPlaylistBackup("markdown");
@@ -813,6 +831,83 @@
     }
     if (button) button.disabled = false;
     playlistStatus(`Finished — ${playlistBackupItems.length} videos ready to export.`);
+  }
+
+  function youTubeApiUrl(resource, params) {
+    const url = new URL(`https://www.googleapis.com/youtube/v3/${resource}`);
+    Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
+    return url;
+  }
+
+  async function fetchYouTubeApi(resource, params) {
+    const response = await fetch(youTubeApiUrl(resource, params));
+    const body = await response.json();
+    if (!response.ok) throw new Error(body?.error?.message || `YouTube API request failed (${response.status})`);
+    return body;
+  }
+
+  async function loadPlaylistWithApi() {
+    const context = getPlaylistContext();
+    const keyInput = document.getElementById("sc-playlist-api-key");
+    const apiKey = keyInput?.value.trim();
+    if (!context || !apiKey) {
+      playlistStatus("Add your own YouTube Data API key, then try Fetch with API.");
+      return;
+    }
+    const button = document.getElementById("sc-playlist-api-load");
+    if (button) button.disabled = true;
+    try {
+      storage.set({ sc_youtube_api_key: apiKey });
+      const playlistItems = [];
+      let pageToken = "";
+      do {
+        playlistStatus(`Fetching playlist with API… ${playlistItems.length} videos received`);
+        const page = await fetchYouTubeApi("playlistItems", {
+          part: "snippet,contentDetails",
+          playlistId: context.id,
+          maxResults: "50",
+          key: apiKey,
+          ...(pageToken ? { pageToken } : {}),
+        });
+        playlistItems.push(...(page.items || []));
+        pageToken = page.nextPageToken || "";
+      } while (pageToken);
+
+      const videoIds = playlistItems.map((item) => item.contentDetails?.videoId || item.snippet?.resourceId?.videoId).filter(Boolean);
+      const videos = new Map();
+      for (let index = 0; index < videoIds.length; index += 50) {
+        const page = await fetchYouTubeApi("videos", {
+          part: "snippet,contentDetails",
+          id: videoIds.slice(index, index + 50).join(","),
+          key: apiKey,
+        });
+        (page.items || []).forEach((video) => videos.set(video.id, video));
+      }
+      playlistBackupItems = playlistItems.map((item, index) => {
+        const videoId = item.contentDetails?.videoId || item.snippet?.resourceId?.videoId || "";
+        const video = videos.get(videoId);
+        const snippet = video?.snippet || item.snippet || {};
+        return {
+          position: item.snippet?.position ?? index + 1,
+          videoId,
+          title: snippet.title || "Unavailable video",
+          channel: snippet.channelTitle || "",
+          duration: video?.contentDetails?.duration || "",
+          url: videoId ? canonicalYouTubeUrl(videoId) : "",
+          thumbnail: snippet.thumbnails?.medium?.url || snippet.thumbnails?.default?.url || "",
+          unavailable: !video,
+          addedAt: item.snippet?.publishedAt || "",
+          publishedAt: video?.snippet?.publishedAt || "",
+          description: video?.snippet?.description || "",
+        };
+      });
+      storage.set({ [`sc_playlist_backup_${context.id}`]: { ...context, exportedAt: new Date().toISOString(), source: "youtube-data-api", items: playlistBackupItems } });
+      playlistStatus(`API backup ready — ${playlistBackupItems.length} videos, including metadata not loaded on the page.`);
+    } catch (error) {
+      playlistStatus(`API backup failed: ${error.message}`);
+    } finally {
+      if (button) button.disabled = false;
+    }
   }
 
   function playlistCsvField(value) {
