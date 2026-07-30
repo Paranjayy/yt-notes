@@ -551,6 +551,7 @@
   let transcriptSearchQuery = "";
   let cachedMarkdown = ""; // pre-cached export markdown for sync clipboard copy
   let hasAttemptedAutoClick = false; // flag to prevent duplicate auto-clicks per video
+  let playlistBackupItems = [];
 
   // Load user auto-pause preference from storage
   storage.get(["sc_preference_autopause"], (data) => {
@@ -699,9 +700,154 @@
         _recoObserver.disconnect();
         _recoObserver = null;
       }
-      const existing = document.getElementById("sc-youtube-widget");
-      if (existing) existing.remove();
+      const existingVideoWidget = document.getElementById("sc-youtube-widget");
+      if (existingVideoWidget) existingVideoWidget.remove();
+      if (getPlaylistContext()) injectPlaylistBackupWidget();
+      else document.getElementById("sc-playlist-backup-widget")?.remove();
     }
+  }
+
+  function getPlaylistContext() {
+    const listId = new URL(window.location.href).searchParams.get("list");
+    if (!listId) return null;
+    const title =
+      document.querySelector("ytd-playlist-header-renderer #title, ytd-playlist-header-renderer h1, #container #text")?.innerText?.trim() ||
+      "YouTube playlist";
+    return {
+      id: listId,
+      title,
+      url: `https://www.youtube.com/playlist?list=${encodeURIComponent(listId)}`,
+    };
+  }
+
+  function injectPlaylistBackupWidget() {
+    const target =
+      document.querySelector("ytd-browse #primary, ytd-two-column-browse-results-renderer #primary, #primary");
+    if (!target) {
+      setTimeout(injectPlaylistBackupWidget, 1200);
+      return;
+    }
+    let widget = document.getElementById("sc-playlist-backup-widget");
+    if (!widget) {
+      widget = document.createElement("div");
+      widget.id = "sc-playlist-backup-widget";
+      widget.className = "sc-adaptive-theme";
+      widget.style.cssText = "margin: 0 0 18px; border-radius: 16px; overflow: hidden; border: 1px solid var(--sc-border-dark); background: var(--sc-bg-dark); color: var(--sc-text-dark); box-shadow: var(--sc-glass-shadow);";
+      target.insertBefore(widget, target.firstChild);
+    }
+    const context = getPlaylistContext();
+    widget.innerHTML = `
+      <div class="sc-header"><div class="sc-header-title"><span class="sc-logo-icon">🔮</span><span>Playlist Backup</span></div></div>
+      <div style="padding: 14px 16px;">
+        <div style="font-size:12px;color:var(--sc-text-muted-light);margin-bottom:10px;">Exports what you can view — no API key or quota needed.</div>
+        <div class="sc-btn-row">
+          <button class="sc-btn sc-btn-primary" id="sc-playlist-load">Load all videos</button>
+          <button class="sc-btn sc-btn-secondary" id="sc-playlist-json">JSON</button>
+          <button class="sc-btn sc-btn-secondary" id="sc-playlist-csv">CSV</button>
+          <button class="sc-btn sc-btn-secondary" id="sc-playlist-md">Markdown</button>
+        </div>
+        <div id="sc-playlist-status" style="font-size:11px;color:var(--sc-text-muted-light);margin-top:10px;">Ready to collect visible videos.</div>
+      </div>`;
+    collectPlaylistItems();
+    widget.querySelector("#sc-playlist-load").onclick = () => loadAllPlaylistItems();
+    widget.querySelector("#sc-playlist-json").onclick = () => downloadPlaylistBackup("json");
+    widget.querySelector("#sc-playlist-csv").onclick = () => downloadPlaylistBackup("csv");
+    widget.querySelector("#sc-playlist-md").onclick = () => downloadPlaylistBackup("markdown");
+    if (!context) widget.remove();
+  }
+
+  function playlistStatus(message) {
+    const status = document.getElementById("sc-playlist-status");
+    if (status) status.textContent = message;
+  }
+
+  function collectPlaylistItems() {
+    const found = [];
+    document
+      .querySelectorAll("ytd-playlist-video-renderer, ytd-playlist-panel-video-renderer, yt-lockup-view-model")
+      .forEach((row, index) => {
+        const link = row.querySelector('a[href*="watch?v="], a[href*="/shorts/"], a[href*="/live/"]');
+        const videoId = link ? getYouTubeVideoId(link.href) : "";
+        const title =
+          row.querySelector("#video-title, a#video-title, .yt-lockup-metadata-view-model-wiz__title, h3")?.textContent?.trim() ||
+          link?.textContent?.trim() ||
+          "Unavailable video";
+        const channel = row.querySelector("ytd-channel-name #text, #channel-name #text, .yt-lockup-metadata-view-model__metadata-row")?.textContent?.trim() || "";
+        const duration = row.querySelector("ytd-thumbnail-overlay-time-status-renderer span, .ytd-thumbnail-overlay-time-status-renderer")?.textContent?.trim() || "";
+        const thumbnail = row.querySelector("img")?.src || (videoId ? `https://img.youtube.com/vi/${videoId}/mqdefault.jpg` : "");
+        const positionText = row.querySelector("#index, .index")?.textContent?.trim() || `${index + 1}`;
+        if (!videoId && title === "Unavailable video") return;
+        found.push({
+          position: Number.parseInt(positionText, 10) || index + 1,
+          videoId,
+          title,
+          channel,
+          duration,
+          url: videoId ? canonicalYouTubeUrl(videoId) : "",
+          thumbnail,
+          unavailable: !videoId,
+        });
+      });
+    const byKey = new Map(playlistBackupItems.map((item) => [item.videoId || `${item.position}:${item.title}`, item]));
+    found.forEach((item) => byKey.set(item.videoId || `${item.position}:${item.title}`, item));
+    playlistBackupItems = [...byKey.values()].sort((a, b) => a.position - b.position);
+    const context = getPlaylistContext();
+    if (context) storage.set({ [`sc_playlist_backup_${context.id}`]: { ...context, exportedAt: new Date().toISOString(), items: playlistBackupItems } });
+    playlistStatus(`${playlistBackupItems.length} videos collected${found.length ? "." : " — scroll the playlist or load all."}`);
+    return playlistBackupItems;
+  }
+
+  async function loadAllPlaylistItems() {
+    const button = document.getElementById("sc-playlist-load");
+    if (button) button.disabled = true;
+    let unchangedPasses = 0;
+    let previousCount = playlistBackupItems.length;
+    for (let pass = 0; pass < 120 && unchangedPasses < 3; pass++) {
+      window.scrollTo(0, document.documentElement.scrollHeight);
+      playlistStatus(`Loading playlist… ${playlistBackupItems.length} videos collected`);
+      await new Promise((resolve) => setTimeout(resolve, 900));
+      collectPlaylistItems();
+      if (playlistBackupItems.length === previousCount) unchangedPasses++;
+      else unchangedPasses = 0;
+      previousCount = playlistBackupItems.length;
+    }
+    if (button) button.disabled = false;
+    playlistStatus(`Finished — ${playlistBackupItems.length} videos ready to export.`);
+  }
+
+  function playlistCsvField(value) {
+    return `"${String(value ?? "").replace(/"/g, '""')}"`;
+  }
+
+  function downloadPlaylistBackup(format) {
+    const context = getPlaylistContext();
+    const items = collectPlaylistItems();
+    if (!context || !items.length) {
+      playlistStatus("No playlist videos found yet. Scroll or click Load all videos first.");
+      return;
+    }
+    const safeName = context.title.replace(/[^a-z0-9]+/gi, "_").replace(/^_|_$/g, "") || "youtube_playlist";
+    let content;
+    let mimeType;
+    if (format === "json") {
+      content = JSON.stringify({ ...context, exportedAt: new Date().toISOString(), items }, null, 2);
+      mimeType = "application/json";
+    } else if (format === "csv") {
+      const columns = ["position", "videoId", "title", "channel", "duration", "url", "thumbnail", "unavailable"];
+      content = [columns.join(","), ...items.map((item) => columns.map((column) => playlistCsvField(item[column])).join(","))].join("\n");
+      mimeType = "text/csv";
+    } else {
+      content = `# ${context.title}\n\nSource: ${context.url}\nExported: ${new Date().toISOString()}\n\n` + items.map((item) => `${item.position}. **${item.title}**${item.channel ? ` — ${item.channel}` : ""}${item.duration ? ` [${item.duration}]` : ""}\n   ${item.url || "Unavailable / private video"}`).join("\n");
+      mimeType = "text/markdown";
+    }
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${safeName}_backup.${format === "markdown" ? "md" : format}`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    playlistStatus(`${format.toUpperCase()} backup downloaded — ${items.length} videos.`);
   }
 
   function injectYouTubeWidget() {

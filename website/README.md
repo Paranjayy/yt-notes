@@ -1,6 +1,6 @@
 # YT Notes Viewer
 
-A simple, zero-dependency web viewer for YouTube video notes exported from the Social Companion browser extension.
+A simple, zero-dependency web viewer for YouTube notes and playlist backups exported from the Social Companion browser extension.
 
 **Live:** https://website-sage-zeta-74.vercel.app
 
@@ -11,12 +11,22 @@ A simple, zero-dependency web viewer for YouTube video notes exported from the S
 3. Visit [website-sage-zeta-74.vercel.app](https://website-sage-zeta-74.vercel.app)
 4. Paste the markdown — your notes render instantly
 
+### Playlist backup
+
+1. Open a YouTube playlist in the extension.
+2. Use **Playlist Backup** and, if needed, **Load all videos**.
+3. Download a JSON or CSV backup.
+4. Choose **Import playlist backup** on the viewer and select that file.
+
+The backup uses the playlist page you can already access. It does not require an API key, account, server, or paid service.
+
 ## Features
 
 - **Single or multiple notes** — paste one or many, the viewer handles both
 - **Dark mode** — follows your system preference
 - **Collapsible sections** — transcript, comments, and recommendations
 - **Zero dependencies** — pure HTML/CSS/JS, no build step needed
+- **Local playlist imports** — view Social Companion JSON/CSV playlist backups, including unavailable/private entries
 
 ## Deploy to Vercel
 

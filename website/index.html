@@ -21,6 +21,7 @@ textarea{width:100%;padding:16px;border:1px solid var(--border);border-radius:8p
 textarea:focus{border-color:var(--accent)}
 textarea::placeholder{color:var(--fg-faint)}
 .paste-hint{margin-top:12px;font-size:12px;color:var(--fg-faint)}
+.paste-actions{display:flex;align-items:center;gap:10px;margin-top:14px}.file-input{display:none}
 .site-header{padding:16px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--bg);z-index:100}
 .site-header .logo{font-family:'Newsreader',Georgia,serif;font-size:18px;font-weight:500}
 .btn{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--fg-muted);font-size:12px;font-weight:500;cursor:pointer;transition:all .15s;font-family:inherit}
@@ -72,6 +73,7 @@ textarea::placeholder{color:var(--fg-faint)}
 .rec-link{font-size:13px;color:var(--accent);text-decoration:none;border-bottom:1px solid var(--border);transition:border-color .15s,color .15s}
 .rec-link:hover{border-bottom-color:var(--accent)}
 .rec-section{margin-bottom:24px}
+.playlist-grid{display:grid;gap:8px}.playlist-row{display:grid;grid-template-columns:34px minmax(0,1fr) auto;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface)}.playlist-row.unavailable{opacity:.62}.playlist-pos{font-family:'SF Mono',monospace;font-size:12px;color:var(--fg-faint)}.playlist-title{font-size:13px;font-weight:500;line-height:1.35}.playlist-sub{font-size:11px;color:var(--fg-faint);margin-top:2px}.playlist-link{font-size:12px;color:var(--accent);text-decoration:none;white-space:nowrap}
 @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 </style>
 </head>
@@ -81,7 +83,8 @@ textarea::placeholder{color:var(--fg-faint)}
   <h1>YT Notes</h1>
   <p>Paste your markdown export from the Social Companion extension to view it here. Supports single or multiple notes.</p>
   <textarea id="pasteInput" rows="14" placeholder="---&#10;Title: My Video&#10;Channel: Some Channel&#10;---&#10;&#10;# Transcript&#10;[0:00] Hello world...&#10;&#10;# Comments&#10;1. @user: Great video!"></textarea>
-  <p class="paste-hint">Or paste directly into the textarea above — your notes render instantly.</p>
+  <div class="paste-actions"><button class="btn" id="backupFileBtn">Import playlist backup</button><input class="file-input" id="backupFileInput" type="file" accept=".json,.csv,application/json,text/csv"></div>
+  <p class="paste-hint">Paste Markdown or import a Social Companion playlist JSON/CSV backup. Everything stays in this browser.</p>
 </div>
 
 <div id="viewerScreen" style="display:none">
@@ -158,15 +161,24 @@ function renderNote(note){
   }
   return '<article class="note-article" style="animation:fadeUp .4s ease-out both">'+h+'</article>';
 }
+function renderPlaylistBackup(backup){
+  var items=backup.items||[];
+  var h='<article class="note-article" style="animation:fadeUp .4s ease-out both"><div class="meta"><h2>'+esc(backup.title||'YouTube playlist backup')+'</h2><div class="date-row"><span>'+items.length+' videos</span>'+(backup.exportedAt?'<span>Exported: '+esc(backup.exportedAt.slice(0,10))+'</span>':'')+'</div>'+(backup.url?'<a href="'+esc(backup.url)+'" target="_blank" rel="noopener" class="open-link">Open playlist '+ICO.arr+'</a>':'')+'</div><div class="playlist-grid">';
+  items.forEach(function(item,index){var unavailable=item.unavailable||!item.videoId;h+='<div class="playlist-row'+(unavailable?' unavailable':'')+'"><div class="playlist-pos">'+esc(String(item.position||index+1))+'</div><div><div class="playlist-title">'+esc(item.title||'Unavailable video')+'</div><div class="playlist-sub">'+esc([item.channel,item.duration,unavailable?'Unavailable/private':''].filter(Boolean).join(' · '))+'</div></div>'+(item.url?'<a class="playlist-link" href="'+esc(item.url)+'" target="_blank" rel="noopener">Open</a>':'<span class="playlist-link">Unavailable</span>')+'</div>'});
+  return h+'</div></article>';
+}
 function toggle(btn){var body=btn.nextElementSibling,arrow=btn.querySelector('.arrow');if(body.style.display==='none'){body.style.display='';arrow.classList.add('open')}else{body.style.display='none';arrow.classList.remove('open')}}
 var notes=[],sel=0;
 function showViewer(){document.getElementById('pasteScreen').style.display='none';document.getElementById('viewerScreen').style.display='';document.getElementById('newNoteBtn').style.display=notes.length>1?'':'none';document.getElementById('noteCount').textContent=notes.length>1?notes.length+' notes':'';renderSidebar();renderMain()}
 function showPaste(){document.getElementById('pasteScreen').style.display='';document.getElementById('viewerScreen').style.display='none'}
-function renderSidebar(){var sb=document.getElementById('sidebar');if(notes.length<=1){sb.style.display='none';return}sb.style.display='';sb.innerHTML=notes.map(function(n,i){return '<button class="sidebar-item'+(i===sel?' active':'')+'" onclick="selectNote('+i+')"><div class="st">'+esc(n.frontmatter.Title||'Untitled')+'</div><div class="sc">'+esc(n.frontmatter.Channel||'')+'</div></button>'}).join('')}
-function renderMain(){var mc=document.getElementById('mainContent');if(!notes.length){mc.innerHTML='';return}mc.innerHTML=renderNote(notes[sel])}
+function renderSidebar(){var sb=document.getElementById('sidebar');if(notes.length<=1){sb.style.display='none';return}sb.style.display='';sb.innerHTML=notes.map(function(n,i){var title=n.kind==='playlist'?n.playlist.title:n.frontmatter.Title;var sub=n.kind==='playlist'?(n.playlist.items||[]).length+' videos':n.frontmatter.Channel;return '<button class="sidebar-item'+(i===sel?' active':'')+'" onclick="selectNote('+i+')"><div class="st">'+esc(title||'Untitled')+'</div><div class="sc">'+esc(sub||'')+'</div></button>'}).join('')}
+function renderMain(){var mc=document.getElementById('mainContent');if(!notes.length){mc.innerHTML='';return}mc.innerHTML=notes[sel].kind==='playlist'?renderPlaylistBackup(notes[sel].playlist):renderNote(notes[sel])}
 function selectNote(i){sel=i;renderSidebar();renderMain()}
 document.getElementById('pasteInput').addEventListener('input',function(){var md=this.value.trim();if(!md){notes=[];showPaste();return}notes=parseMultipleNotes(md);if(!notes.length){try{var r=parseFrontmatter(md);if(r[0].Title)notes=[{frontmatter:r[0],sections:parseSections(r[1]),raw:md}]}catch(e){}}if(notes.length){sel=0;showViewer()}else{showPaste()}});
 document.getElementById('newNoteBtn').addEventListener('click',showPaste);
+function csvRows(text){var rows=[],row=[],field='',quoted=false;for(var i=0;i<text.length;i++){var ch=text[i],next=text[i+1];if(ch==='"'&&quoted&&next==='"'){field+='"';i++}else if(ch==='"'){quoted=!quoted}else if(ch===','&&!quoted){row.push(field);field=''}else if((ch==='\n'||ch==='\r')&&!quoted){if(ch==='\r'&&next==='\n')i++;row.push(field);if(row.some(function(v){return v!==''}))rows.push(row);row=[];field=''}else field+=ch}if(field||row.length){row.push(field);rows.push(row)}return rows}
+function importBackup(file){file.text().then(function(text){var backup;if(file.name.toLowerCase().endsWith('.json')){backup=JSON.parse(text)}else{var rows=csvRows(text),headers=rows.shift()||[];backup={title:file.name.replace(/\.csv$/i,''),exportedAt:new Date().toISOString(),items:rows.map(function(row){var item={};headers.forEach(function(header,i){item[header]=row[i]||''});item.position=Number(item.position)||0;item.unavailable=item.unavailable==='true'||!item.videoId;return item})}}if(!Array.isArray(backup.items))throw new Error('This is not a Social Companion playlist backup.');notes=[{kind:'playlist',playlist:backup}];sel=0;showViewer()}).catch(function(){alert('Could not read that backup. Choose a Social Companion playlist JSON or CSV file.')})}
+document.getElementById('backupFileBtn').addEventListener('click',function(){document.getElementById('backupFileInput').click()});document.getElementById('backupFileInput').addEventListener('change',function(){if(this.files[0])importBackup(this.files[0])});
 </script>
 </body>
 </html>
