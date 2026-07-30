@@ -555,6 +555,7 @@
   let cachedMarkdown = ""; // pre-cached export markdown for sync clipboard copy
   let hasAttemptedAutoClick = false; // flag to prevent duplicate auto-clicks per video
   let playlistBackupItems = [];
+  let playlistTranscriptQueueActive = false;
 
   // Load user auto-pause preference from storage
   storage.get(["sc_preference_autopause"], (data) => {
@@ -572,6 +573,21 @@
   } else if (host.includes("reddit.com")) {
     initSocialCompanion("reddit");
   }
+
+  // Used by the background-owned playlist queue. This intentionally avoids the
+  // normal widget/UI path: the inactive queue tab should only return factual
+  // caption-track results, never click controls or surface a toast.
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message.type === "sc_collect_transcript") {
+      collectTranscriptForBackground().then(sendResponse).catch((error) => {
+        sendResponse({ status: "error", reason: error?.message || "Transcript collection failed.", segments: [] });
+      });
+      return true;
+    }
+    if (message.type === "sc_playlist_transcript_progress") {
+      updatePlaylistTranscriptProgress(message);
+    }
+  });
 
   // --- YouTube Scripting & Logic ---
   function initYouTubeWatcher() {
@@ -745,6 +761,8 @@
         <div style="font-size:12px;color:var(--sc-text-muted-light);margin-bottom:10px;">Exports what you can view — no API key or quota needed.</div>
         <div class="sc-btn-row">
           <button class="sc-btn sc-btn-primary" id="sc-playlist-load">Load all videos</button>
+          <button class="sc-btn sc-btn-secondary" id="sc-playlist-transcripts">Collect transcripts</button>
+          <button class="sc-btn sc-btn-secondary" id="sc-playlist-transcripts-stop" disabled>Stop</button>
           <button class="sc-btn sc-btn-secondary" id="sc-playlist-api-load">Fetch with API</button>
           <button class="sc-btn sc-btn-secondary" id="sc-playlist-json">JSON</button>
           <button class="sc-btn sc-btn-secondary" id="sc-playlist-csv">CSV</button>
@@ -762,6 +780,8 @@
       </div>`;
     collectPlaylistItems();
     widget.querySelector("#sc-playlist-load").onclick = () => loadAllPlaylistItems();
+    widget.querySelector("#sc-playlist-transcripts").onclick = () => startPlaylistTranscriptCollection();
+    widget.querySelector("#sc-playlist-transcripts-stop").onclick = () => stopPlaylistTranscriptCollection();
     widget.querySelector("#sc-playlist-api-load").onclick = () => loadPlaylistWithApi();
     widget.querySelector("#sc-playlist-api-save").onclick = () => {
       const key = widget.querySelector("#sc-playlist-api-key").value.trim();
@@ -780,6 +800,70 @@
   function playlistStatus(message) {
     const status = document.getElementById("sc-playlist-status");
     if (status) status.textContent = message;
+  }
+
+  function setPlaylistTranscriptControls({ running }) {
+    const start = document.getElementById("sc-playlist-transcripts");
+    const stop = document.getElementById("sc-playlist-transcripts-stop");
+    if (start) start.disabled = running;
+    if (stop) stop.disabled = !running;
+  }
+
+  function startPlaylistTranscriptCollection() {
+    const context = getPlaylistContext();
+    playlistTranscriptQueueActive = true;
+    const items = collectPlaylistItems();
+    if (!context || !items.length) {
+      playlistTranscriptQueueActive = false;
+      playlistStatus("Collect playlist videos first, then choose Collect transcripts.");
+      return;
+    }
+    playlistStatus(`Starting transcript collection for ${items.length} videos…`);
+    chrome.runtime.sendMessage({
+      type: "sc_playlist_transcript_queue_start",
+      playlist: { format: PLAYLIST_BACKUP_FORMAT, schemaVersion: PLAYLIST_BACKUP_SCHEMA_VERSION, ...context },
+      items,
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        playlistTranscriptQueueActive = false;
+        playlistStatus(`Couldn't start transcript collection: ${chrome.runtime.lastError.message}`);
+        return;
+      }
+      if (!response?.ok) {
+        playlistTranscriptQueueActive = false;
+        playlistStatus(response?.reason || "Couldn't start transcript collection.");
+        return;
+      }
+      setPlaylistTranscriptControls({ running: true });
+      playlistStatus(`Transcript collection started — 0/${response.total}.`);
+    });
+  }
+
+  function stopPlaylistTranscriptCollection() {
+    chrome.runtime.sendMessage({ type: "sc_playlist_transcript_queue_stop" }, (response) => {
+      if (chrome.runtime.lastError || !response?.ok) {
+        playlistStatus(response?.reason || "Couldn't stop transcript collection.");
+        return;
+      }
+      playlistStatus("Stopping after the current video…");
+    });
+  }
+
+  function updatePlaylistTranscriptProgress(progress) {
+    const context = getPlaylistContext();
+    if (!context || progress.playlistId !== context.id) return;
+    const counts = `${progress.completeCount || 0} collected · ${progress.noTranscriptCount || 0} no transcript · ${progress.errorCount || 0} errors · ${progress.stoppedCount || 0} stopped`;
+    playlistStatus(`${progress.message || "Collecting transcripts…"} (${progress.completed || 0}/${progress.total || 0}; ${counts})`);
+    setPlaylistTranscriptControls({ running: progress.status === "running" });
+    playlistTranscriptQueueActive = progress.status === "running";
+    if (progress.status === "complete" || progress.status === "stopped" || progress.status === "error") {
+      // Refresh in-memory data so subsequent exports include queue outcomes.
+      storage.get([`sc_playlist_backup_${context.id}`], (data) => {
+        if (Array.isArray(data[`sc_playlist_backup_${context.id}`]?.items)) {
+          playlistBackupItems = data[`sc_playlist_backup_${context.id}`].items;
+        }
+      });
+    }
   }
 
   function collectPlaylistItems() {
@@ -810,10 +894,17 @@
         });
       });
     const byKey = new Map(playlistBackupItems.map((item) => [item.videoId || `${item.position}:${item.title}`, item]));
-    found.forEach((item) => byKey.set(item.videoId || `${item.position}:${item.title}`, item));
+    found.forEach((item) => {
+      const key = item.videoId || `${item.position}:${item.title}`;
+      // Keep transcript queue outcomes (and any richer API fields) when the
+      // visible playlist DOM is re-collected immediately before export.
+      byKey.set(key, { ...byKey.get(key), ...item });
+    });
     playlistBackupItems = [...byKey.values()].sort((a, b) => a.position - b.position);
-    const context = getPlaylistContext();
-    if (context) storage.set({ [`sc_playlist_backup_${context.id}`]: { format: PLAYLIST_BACKUP_FORMAT, schemaVersion: PLAYLIST_BACKUP_SCHEMA_VERSION, ...context, exportedAt: new Date().toISOString(), items: playlistBackupItems } });
+    // Collection is deliberately in-memory only. The queue initializes its
+    // authoritative backup immediately before it starts; exports save through
+    // their explicit queue-aware path. This avoids delayed stale writes racing
+    // background transcript outcomes.
     playlistStatus(`${playlistBackupItems.length} videos collected${found.length ? "." : " — scroll the playlist or load all."}`);
     return playlistBackupItems;
   }
@@ -857,6 +948,11 @@
       playlistStatus("Add your own YouTube Data API key, then try Fetch with API.");
       return;
     }
+    const queueState = await storage.getAsync(["sc_playlist_transcript_queue_state"]);
+    if (playlistTranscriptQueueActive || queueState.sc_playlist_transcript_queue_state?.playlist?.id === context.id) {
+      playlistStatus("Transcript collection is running for this playlist. Finish or stop it before Fetch with API.");
+      return;
+    }
     const button = document.getElementById("sc-playlist-api-load");
     if (button) button.disabled = true;
     try {
@@ -886,7 +982,7 @@
         });
         (page.items || []).forEach((video) => videos.set(video.id, video));
       }
-      playlistBackupItems = playlistItems.map((item, index) => {
+      const apiItems = playlistItems.map((item, index) => {
         const videoId = item.contentDetails?.videoId || item.snippet?.resourceId?.videoId || "";
         const video = videos.get(videoId);
         const snippet = video?.snippet || item.snippet || {};
@@ -904,7 +1000,23 @@
           description: video?.snippet?.description || "",
         };
       });
-      storage.set({ [`sc_playlist_backup_${context.id}`]: { format: PLAYLIST_BACKUP_FORMAT, schemaVersion: PLAYLIST_BACKUP_SCHEMA_VERSION, ...context, exportedAt: new Date().toISOString(), source: "youtube-data-api", items: playlistBackupItems } });
+      // The background worker serializes this owner-aware write with queue
+      // initialization. A content script never writes API backup objects.
+      const saved = await new Promise((resolve) => {
+        chrome.runtime.sendMessage({
+          type: "sc_save_playlist_api_backup",
+          playlist: { format: PLAYLIST_BACKUP_FORMAT, schemaVersion: PLAYLIST_BACKUP_SCHEMA_VERSION, ...context },
+          items: apiItems,
+        }, (response) => {
+          if (chrome.runtime.lastError) resolve({ ok: false, reason: chrome.runtime.lastError.message });
+          else resolve(response || { ok: false, reason: "Background did not confirm the API backup write." });
+        });
+      });
+      if (!saved.ok) {
+        playlistStatus(saved.reason || "API metadata was not saved.");
+        return;
+      }
+      playlistBackupItems = saved.items || apiItems;
       playlistStatus(`API backup ready — ${playlistBackupItems.length} videos, including metadata not loaded on the page.`);
     } catch (error) {
       playlistStatus(`API backup failed: ${error.message}`);
@@ -917,12 +1029,52 @@
     return `"${String(value ?? "").replace(/"/g, '""')}"`;
   }
 
-  function downloadPlaylistBackup(format) {
+  function playlistTranscriptSummary(item) {
+    const transcript = item.transcriptCollection;
+    if (!transcript) return { status: "not-collected", segmentCount: 0, reason: "" };
+    return {
+      status: transcript.status || "unknown",
+      segmentCount: Array.isArray(transcript.segments) ? transcript.segments.length : 0,
+      reason: transcript.reason || "",
+    };
+  }
+
+  async function downloadPlaylistBackup(format) {
     const context = getPlaylistContext();
-    const items = collectPlaylistItems();
-    if (!context || !items.length) {
+    const collectedItems = collectPlaylistItems();
+    if (!context || !collectedItems.length) {
       playlistStatus("No playlist videos found yet. Scroll or click Load all videos first.");
       return;
+    }
+    const key = `sc_playlist_backup_${context.id}`;
+    const stored = await storage.getAsync([key, "sc_playlist_transcript_queue_state"]);
+    const queueOwnsBackup = playlistTranscriptQueueActive || stored.sc_playlist_transcript_queue_state?.playlist?.id === context.id;
+    const savedBackup = stored[key];
+    const savedByKey = new Map((savedBackup?.items || []).map((item) => [item.videoId || `${item.position}:${item.title}`, item]));
+    let items = (queueOwnsBackup && savedBackup?.items?.length ? savedBackup.items : collectedItems).map((item) => {
+      const saved = savedByKey.get(item.videoId || `${item.position}:${item.title}`);
+      return saved?.transcriptCollection ? { ...item, transcriptCollection: saved.transcriptCollection } : item;
+    });
+    if (!queueOwnsBackup) {
+      // All playlist-backup writes go through the background's serialized
+      // owner-aware protocol. It may return queue-owned authoritative items if
+      // collection started between this page's read and the save request.
+      const saved = await new Promise((resolve) => {
+        chrome.runtime.sendMessage({
+          type: "sc_save_playlist_export_backup",
+          playlist: { format: PLAYLIST_BACKUP_FORMAT, schemaVersion: PLAYLIST_BACKUP_SCHEMA_VERSION, ...context },
+          items,
+        }, (response) => {
+          if (chrome.runtime.lastError) resolve({ ok: false, reason: chrome.runtime.lastError.message, items: [] });
+          else resolve(response || { ok: false, reason: "Background did not confirm the export snapshot.", items: [] });
+        });
+      });
+      if (!saved.ok && !saved.items?.length) {
+        playlistStatus(saved.reason || "Couldn't prepare playlist export.");
+        return;
+      }
+      if (saved.items?.length) items = saved.items;
+      if (!saved.ok) playlistStatus(saved.reason);
     }
     const safeName = context.title.replace(/[^a-z0-9]+/gi, "_").replace(/^_|_$/g, "") || "youtube_playlist";
     let content;
@@ -931,11 +1083,19 @@
       content = JSON.stringify({ format: PLAYLIST_BACKUP_FORMAT, schemaVersion: PLAYLIST_BACKUP_SCHEMA_VERSION, ...context, exportedAt: new Date().toISOString(), items }, null, 2);
       mimeType = "application/json";
     } else if (format === "csv") {
-      const columns = ["position", "videoId", "title", "channel", "duration", "url", "thumbnail", "unavailable"];
-      content = ["# Social Companion Playlist Backup v1", columns.join(","), ...items.map((item) => columns.map((column) => playlistCsvField(item[column])).join(","))].join("\n");
+      const columns = ["position", "videoId", "title", "channel", "duration", "url", "thumbnail", "unavailable", "transcriptStatus", "transcriptSegmentCount", "transcriptReason"];
+      content = ["# Social Companion Playlist Backup v1", columns.join(","), ...items.map((item) => {
+        const transcript = playlistTranscriptSummary(item);
+        const row = { ...item, transcriptStatus: transcript.status, transcriptSegmentCount: transcript.segmentCount, transcriptReason: transcript.reason };
+        return columns.map((column) => playlistCsvField(row[column])).join(",");
+      })].join("\n");
       mimeType = "text/csv";
     } else {
-      content = `# ${context.title}\n\nSource: ${context.url}\nExported: ${new Date().toISOString()}\n\n` + items.map((item) => `${item.position}. **${item.title}**${item.channel ? ` — ${item.channel}` : ""}${item.duration ? ` [${item.duration}]` : ""}\n   ${item.url || "Unavailable / private video"}`).join("\n");
+      content = `# ${context.title}\n\nSource: ${context.url}\nExported: ${new Date().toISOString()}\n\n` + items.map((item) => {
+        const transcript = playlistTranscriptSummary(item);
+        const transcriptLine = `Transcript: ${transcript.status}${transcript.segmentCount ? ` (${transcript.segmentCount} segments)` : ""}${transcript.reason ? ` — ${transcript.reason}` : ""}`;
+        return `${item.position}. **${item.title}**${item.channel ? ` — ${item.channel}` : ""}${item.duration ? ` [${item.duration}]` : ""}\n   ${item.url || "Unavailable / private video"}\n   ${transcriptLine}`;
+      }).join("\n");
       mimeType = "text/markdown";
     }
     const blob = new Blob([content], { type: mimeType });
@@ -1562,6 +1722,57 @@
       }
     }
     return null;
+  }
+
+  async function collectTranscriptForBackground() {
+    const expectedVideoId = getYouTubeVideoId();
+    let playerResponse = null;
+    // `complete` happens before YouTube always exposes its player payload.
+    // Keep this short and local to the inactive tab rather than treating a
+    // missing first read as a permanent absence of captions.
+    for (let attempt = 0; attempt < 10; attempt++) {
+      playerResponse = getPlayerResponseFromScripts();
+      if (playerResponse?.videoDetails?.videoId && (!expectedVideoId || playerResponse.videoDetails.videoId === expectedVideoId)) break;
+      await new Promise((resolve) => setTimeout(resolve, 700));
+    }
+    if (!playerResponse?.videoDetails?.videoId) {
+      return { status: "no-transcript", reason: "YouTube player data was not available in time.", segments: [] };
+    }
+    if (expectedVideoId && playerResponse.videoDetails.videoId !== expectedVideoId) {
+      return { status: "error", reason: "YouTube player data did not match the requested video.", segments: [] };
+    }
+    const tracks = playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+    if (!Array.isArray(tracks) || !tracks.length) {
+      return { status: "no-transcript", reason: "YouTube did not expose caption tracks for this video.", segments: [] };
+    }
+    const track = tracks.find((candidate) => candidate.languageCode === "en") || tracks[0];
+    if (!track?.baseUrl) {
+      return { status: "no-transcript", reason: "YouTube exposed a caption track without a usable URL.", segments: [] };
+    }
+    try {
+      const response = await fetch(track.baseUrl);
+      if (!response.ok) {
+        return { status: "error", reason: `YouTube caption request failed (${response.status}).`, segments: [] };
+      }
+      const xml = await response.text();
+      const documentXml = new DOMParser().parseFromString(xml, "text/xml");
+      if (documentXml.querySelector("parsererror")) {
+        return { status: "error", reason: "YouTube returned an unreadable caption response.", segments: [] };
+      }
+      const segments = Array.from(documentXml.getElementsByTagName("text"))
+        .map((node) => ({
+          start: Number.parseFloat(node.getAttribute("start")) || 0,
+          duration: Number.parseFloat(node.getAttribute("dur")) || 0,
+          text: decodeHtmlEntities(node.textContent || "").trim(),
+        }))
+        .filter((segment) => segment.text);
+      if (!segments.length) {
+        return { status: "no-transcript", reason: "The selected YouTube caption track contained no transcript segments.", segments: [] };
+      }
+      return { status: "complete", reason: "", languageCode: track.languageCode || "", segments };
+    } catch (error) {
+      return { status: "error", reason: error?.message || "Couldn't fetch the YouTube caption track.", segments: [] };
+    }
   }
 
   async function loadTranscriptFromTracks(tracks) {
