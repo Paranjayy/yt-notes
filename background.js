@@ -1,11 +1,63 @@
 // Service worker — opens the dashboard tab when the toolbar icon is clicked
 chrome.runtime.onInstalled.addListener(() => {
   console.log("Social Companion Extension installed successfully.");
+  chrome.contextMenus.removeAll().then(() => {
+    chrome.contextMenus.create({
+      id: "sc-save-current-capture",
+      title: "Save current capture as Markdown",
+      contexts: ["page"],
+      documentUrlPatterns: ["https://*.youtube.com/*", "https://youtu.be/*"],
+    });
+    chrome.contextMenus.create({
+      id: "sc-open-capture-archive",
+      title: "Open Social Companion capture archive",
+      contexts: ["page"],
+      documentUrlPatterns: ["https://*.youtube.com/*", "https://youtu.be/*"],
+    });
+  }).catch((error) => console.warn("Couldn't create Social Companion context menus", error));
 });
 
 // Open dashboard page on extension icon click
 chrome.action.onClicked.addListener((tab) => {
   chrome.tabs.create({ url: chrome.runtime.getURL("dashboard.html") });
+});
+
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId === "sc-open-capture-archive") {
+    chrome.tabs.create({ url: chrome.runtime.getURL("dashboard.html") });
+    return;
+  }
+  if (info.menuItemId === "sc-save-current-capture" && tab?.id != null) {
+    chrome.tabs.sendMessage(tab.id, { type: "sc_download_current_markdown" }).then((response) => {
+      if (!response?.ok) {
+        chrome.tabs.create({ url: chrome.runtime.getURL("dashboard.html") });
+      }
+    }).catch(() => {
+      chrome.tabs.create({ url: chrome.runtime.getURL("dashboard.html") });
+    });
+  }
+});
+
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg.type !== "sc_download_archive_file") return;
+  const filename = String(msg.filename || "capture.txt").replace(/[\\/:*?"<>|]/g, "_");
+  const folder = msg.folder === "transcripts" ? "transcripts" : "captures";
+  const content = typeof msg.content === "string" ? msg.content : "";
+  if (!content) {
+    sendResponse({ ok: false, reason: "There is no capture content to download." });
+    return;
+  }
+  const dataUrl = `data:${msg.mimeType || "text/plain"};charset=utf-8,${encodeURIComponent(content)}`;
+  chrome.downloads.download({
+    url: dataUrl,
+    filename: `Social Companion/${folder}/${filename}`,
+    saveAs: false,
+  }).then((downloadId) => {
+    sendResponse({ ok: true, downloadId });
+  }).catch((error) => {
+    sendResponse({ ok: false, reason: error?.message || "The browser could not start this download." });
+  });
+  return true;
 });
 
 // A single, deliberately sequential queue for playlist transcript backups.

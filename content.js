@@ -587,11 +587,38 @@
     if (message.type === "sc_playlist_transcript_progress") {
       updatePlaylistTranscriptProgress(message);
     }
+    if (message.type === "sc_get_capture_status") {
+      sendResponse({
+        ok: true,
+        videoId: currentVideoId,
+        title: currentVideoId ? extractYouTubeMetadata().title : "",
+        transcriptAvailable: ytCaptions.length > 0,
+      });
+    }
+    if (message.type === "sc_download_current_markdown") {
+      downloadMarkdownFile({ toast: true }).then(sendResponse).catch((error) => {
+        sendResponse({ ok: false, reason: error?.message || "Couldn't save this page's capture." });
+      });
+      return true;
+    }
+    if (message.type === "sc_download_current_transcript") {
+      downloadTranscriptFile({ toast: true }).then(sendResponse).catch((error) => {
+        sendResponse({ ok: false, reason: error?.message || "Couldn't download this transcript." });
+      });
+      return true;
+    }
   });
 
   // --- YouTube Scripting & Logic ---
   function initYouTubeWatcher() {
     let lastUrl = location.href;
+    const requestActivation = () => {
+      lastUrl = location.href;
+      onYouTubeUrlChange();
+    };
+    window.addEventListener("yt-navigate-finish", requestActivation, true);
+    window.addEventListener("yt-page-data-updated", requestActivation, true);
+    window.addEventListener("popstate", requestActivation, true);
     setInterval(() => {
       if (location.href !== lastUrl) {
         lastUrl = location.href;
@@ -622,7 +649,12 @@
     // Standard watch URLs use a query parameter. Newer video entry points put
     // the same ID directly in the path (for example, /live/<id> and /shorts/<id>).
     const watchVideoId = url.searchParams.get("v");
-    if (watchVideoId) return watchVideoId;
+    if (watchVideoId) {
+      // YouTube has experimentally emitted /watch?v=/live/<id> and
+      // /watch?v=/shorts/<id>. Store the actual video ID, never the slug.
+      const nestedPath = watchVideoId.match(/^\/(?:live|shorts|embed|v)\/([^/?#]+)/);
+      return nestedPath ? nestedPath[1] : watchVideoId;
+    }
 
     const pathParts = url.pathname.split("/").filter(Boolean);
     const isShortUrl = url.hostname === "youtu.be";
@@ -662,9 +694,10 @@
 
     if (videoId) {
       currentVideoId = videoId;
+      ytCaptions = [];
       cachedMarkdown = ""; // reset cache for new video
       hasAttemptedAutoClick = false; // reset auto-trigger state
-      injectYouTubeWidget();
+      injectYouTubeWidget(videoId, 0);
       injectTimelineMarkers();
 
       // Delay transcript fetch slightly to ensure page data is loaded
@@ -1116,12 +1149,15 @@
     playlistStatus(`${format.toUpperCase()} backup downloaded — ${items.length} videos.`);
   }
 
-  function injectYouTubeWidget() {
+  function injectYouTubeWidget(expectedVideoId = currentVideoId, attempt = 0) {
+    if (!expectedVideoId || currentVideoId !== expectedVideoId) return;
     const target =
       document.querySelector("#secondary-inner") ||
       document.querySelector("#secondary");
     if (!target) {
-      setTimeout(injectYouTubeWidget, 1500);
+      // YouTube's SPA can emit its navigation event before the sidebar exists.
+      // Retry only for this still-active video, then stop instead of looping forever.
+      if (attempt < 20) setTimeout(() => injectYouTubeWidget(expectedVideoId, attempt + 1), 500);
       return;
     }
 
@@ -1196,6 +1232,7 @@
         <div class="sc-tools-panel">
           <button class="sc-btn sc-btn-primary" style="width: 100%; justify-content: center;" id="sc-btn-copy-all">Copy Notes & Info Markdown</button>
           <button class="sc-btn sc-btn-secondary" style="width: 100%; justify-content: center;" id="sc-btn-dl-md">Download Markdown File</button>
+          <button class="sc-btn sc-btn-secondary" style="width: 100%; justify-content: center; margin-top: 6px;" id="sc-btn-dl-transcript">Download Transcript (.txt)</button>
 
           <div style="margin-top: 12px;">
             <strong style="font-size: 13px;">Markdown Preview:</strong>
@@ -1320,6 +1357,9 @@
     container
       .querySelector("#sc-btn-dl-md")
       .addEventListener("click", () => downloadMarkdownFile());
+    container
+      .querySelector("#sc-btn-dl-transcript")
+      .addEventListener("click", () => downloadTranscriptFile());
     container.querySelectorAll(".sc-llm-routing button").forEach((btn) => {
       btn.addEventListener("click", () => sendToLLM(btn.dataset.llm));
     });
@@ -2527,23 +2567,85 @@
     }
   }
 
-  async function downloadMarkdownFile() {
+  async function downloadCaptureText(content, filename, type, folder) {
     try {
-      const md = await generateMarkdown();
-      const meta = extractYouTubeMetadata();
-      const blob = new Blob([md], { type: "text/markdown" });
+      const response = await chrome.runtime.sendMessage({
+        type: "sc_download_archive_file",
+        content,
+        filename,
+        mimeType: type,
+        folder,
+      });
+      if (response?.ok) return true;
+      throw new Error(response?.reason || "The archive download could not be started.");
+    } catch (error) {
+      // Keep a local browser fallback for older extension installs/background restarts.
+      console.warn("Archive download service unavailable; falling back to page download", error);
+      const blob = new Blob([content], { type });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${(meta.title || "video").replace(/[^a-z0-9]/gi, "_").toLowerCase()}_notes.md`;
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-      showToast("📥 Markdown file downloaded!");
+      return false;
+    }
+  }
+
+  async function downloadMarkdownFile({ toast = true } = {}) {
+    try {
+      if (!currentVideoId) {
+        const reason = "Open a YouTube video before saving a capture.";
+        if (toast) showToast(`ℹ️ ${reason}`);
+        return { ok: false, reason };
+      }
+      const md = await generateMarkdown();
+      const meta = extractYouTubeMetadata();
+      const archived = await downloadCaptureText(md, `${(meta.title || "video").replace(/[^a-z0-9]/gi, "_").toLowerCase()}_notes.md`, "text/markdown", "captures");
+      if (toast) showToast(archived ? "📥 Markdown saved to Downloads/Social Companion/captures." : "📥 Markdown downloaded (archive folder unavailable).");
+      return { ok: true, title: meta.title || "video" };
     } catch (err) {
       console.error("downloadMarkdownFile error:", err);
-      showToast("❌ Download failed: " + err.message);
+      if (toast) showToast("❌ Download failed: " + err.message);
+      return { ok: false, reason: err?.message || "Download failed." };
+    }
+  }
+
+  async function downloadTranscriptFile({ toast = true } = {}) {
+    try {
+      if (!currentVideoId) {
+        const reason = "Open a YouTube video before downloading a transcript.";
+        if (toast) showToast(`ℹ️ ${reason}`);
+        return { ok: false, reason };
+      }
+      let captions = ytCaptions;
+      if (!captions.length) {
+        const data = await storage.getAsync([`sc_transcript_${currentVideoId}`]);
+        captions = data[`sc_transcript_${currentVideoId}`] || [];
+      }
+      if (!captions.length) {
+        const reason = "No transcript is saved — use Sync, or YouTube may not expose one.";
+        if (toast) showToast(`ℹ️ ${reason}`);
+        return { ok: false, reason };
+      }
+      const meta = extractYouTubeMetadata();
+      const transcript = [
+        meta.title || "YouTube transcript",
+        canonicalYouTubeUrl(currentVideoId),
+        `Saved: ${new Date().toISOString()}`,
+        "",
+        ...captions.map((caption) => `[${formatTime(caption.start)}] ${caption.text}`),
+      ].join("\n");
+      const archived = await downloadCaptureText(transcript, `${(meta.title || "video").replace(/[^a-z0-9]/gi, "_").toLowerCase()}_transcript.txt`, "text/plain", "transcripts");
+      if (toast) showToast(archived ? `📥 Transcript saved to Downloads/Social Companion/transcripts — ${captions.length} segments.` : `📥 Transcript downloaded — ${captions.length} segments.`);
+      return { ok: true, segments: captions.length, title: meta.title || "video" };
+    } catch (error) {
+      console.error("downloadTranscriptFile error:", error);
+      const reason = error?.message || "Transcript download failed.";
+      if (toast) showToast(`❌ ${reason}`);
+      return { ok: false, reason };
     }
   }
 

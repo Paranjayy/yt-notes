@@ -1,14 +1,16 @@
 {
   "manifest_version": 3,
   "name": "Social Companion & YT Note-Taker",
-  "version": "1.5.2",
+  "version": "1.6.0",
   "description": "Premium companion for YouTube, X (Twitter), Reddit, and Cambridge Dictionary. Take notes, extract transcripts, scrape word lists, and export to markdown/JSON/CSV.",
   "permissions": [
     "storage",
     "clipboardWrite",
     "clipboardRead",
     "tabs",
-    "scripting"
+    "scripting",
+    "contextMenus",
+    "downloads"
   ],
   "host_permissions": [
     "https://*.youtube.com/*",
@@ -51,6 +53,7 @@
   },
   "action": {
     "default_title": "Social Companion — Open Dashboard",
+    "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon-16.png",
       "48": "icons/icon-48.png",
