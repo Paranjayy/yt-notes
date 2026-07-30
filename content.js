@@ -646,20 +646,21 @@
   function getYouTubeVideoId(urlString = window.location.href) {
     const url = new URL(urlString, window.location.origin);
 
-    // Standard watch URLs use a query parameter. Newer video entry points put
-    // the same ID directly in the path (for example, /live/<id> and /shorts/<id>).
+    // Only explicit video routes mount the page widget. YouTube browse/channel
+    // pages often contain preloaded player data, which is not permission to
+    // cover those surfaces with a video-notes panel.
     const watchVideoId = url.searchParams.get("v");
     if (watchVideoId) {
       // YouTube has experimentally emitted /watch?v=/live/<id> and
       // /watch?v=/shorts/<id>. Store the actual video ID, never the slug.
-      const nestedPath = watchVideoId.match(/^\/(?:live|shorts|embed|v)\/([^/?#]+)/);
+      const nestedPath = watchVideoId.match(/^\/(?:live|shorts)\/([^/?#]+)/);
       return nestedPath ? nestedPath[1] : watchVideoId;
     }
 
     const pathParts = url.pathname.split("/").filter(Boolean);
     const isShortUrl = url.hostname === "youtu.be";
     const videoPathIndex = pathParts.findIndex((part) =>
-      ["live", "shorts", "embed", "v"].includes(part),
+      ["live", "shorts"].includes(part),
     );
     const pathVideoId = isShortUrl ? pathParts[0] : pathParts[videoPathIndex + 1];
     if (pathVideoId) {
@@ -670,23 +671,7 @@
       }
     }
 
-    // YouTube can experiment with URL shapes. Only use page-data fallback on
-    // a real watch/Shorts layout: browse/channel pages can retain a player
-    // response for a thumbnail and must never get the video-note widget.
-    const hasActiveVideoLayout = document.querySelector(
-      "ytd-watch-flexy, ytd-reel-video-renderer, ytd-shorts, #movie_player.html5-video-player",
-    );
-    if (!hasActiveVideoLayout) return "";
-
-    // Its loaded player payload is the source of truth for those unknown
-    // watch paths and keeps this independent of future URL experiments.
-    const playerVideoId = getPlayerResponseFromScripts()?.videoDetails?.videoId;
-    if (playerVideoId) return playerVideoId;
-
-    const canonicalHref = document.querySelector('link[rel="canonical"]')?.href;
-    return canonicalHref && canonicalHref !== url.href
-      ? new URL(canonicalHref).searchParams.get("v") || ""
-      : "";
+    return "";
   }
 
   function onYouTubeUrlChange() {
@@ -762,8 +747,10 @@
       }
       const existingVideoWidget = document.getElementById("sc-youtube-widget");
       if (existingVideoWidget) existingVideoWidget.remove();
-      if (getPlaylistContext()) injectPlaylistBackupWidget();
-      else document.getElementById("sc-playlist-backup-widget")?.remove();
+      // Keep browse, channel and playlist surfaces untouched. Playlist work is
+      // available in the web collector and archive; no floating page panel
+      // appears unless this is an explicit watch/live/short route.
+      document.getElementById("sc-playlist-backup-widget")?.remove();
     }
   }
 
