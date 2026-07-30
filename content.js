@@ -981,8 +981,9 @@
 
       <!-- Notes tab -->
       <div class="sc-content-panel ${activeTabName === "notes" ? "active" : ""}" id="sc-panel-notes">
-        <div class="sc-quick-actions" aria-label="Quick copy actions">
-          <span class="sc-quick-actions-label">Quick copy</span>
+        <div class="sc-quick-actions" role="group" aria-labelledby="sc-quick-actions-label">
+          <span class="sc-quick-actions-label" id="sc-quick-actions-label">Quick copy</span>
+          <button class="sc-btn sc-btn-primary" id="sc-btn-copy-everything">Everything</button>
           <button class="sc-btn sc-btn-secondary" id="sc-btn-copy-notes">Notes</button>
           <button class="sc-btn sc-btn-secondary" id="sc-btn-copy-description">Description</button>
           <button class="sc-btn sc-btn-secondary" id="sc-btn-copy-metadata">Stats & Info</button>
@@ -1115,6 +1116,7 @@
       capturePlayerScreenshot();
     });
 
+    container.querySelector("#sc-btn-copy-everything").addEventListener("click", () => copyCompleteMarkdown());
     container.querySelector("#sc-btn-copy-notes").addEventListener("click", () => copyNotesOnly());
     container.querySelector("#sc-btn-copy-description").addEventListener("click", () => copyDescription());
     container.querySelector("#sc-btn-copy-metadata").addEventListener("click", () => copyMetadata());
@@ -2095,10 +2097,12 @@
       navigator.clipboard &&
       typeof navigator.clipboard.writeText === "function"
     ) {
-      navigator.clipboard.writeText(text).catch(() => scCopyFallback(text));
-    } else {
-      scCopyFallback(text);
+      return navigator.clipboard
+        .writeText(text)
+        .then(() => true)
+        .catch(() => scCopyFallback(text));
     }
+    return Promise.resolve(scCopyFallback(text));
   }
 
   async function copyNotesOnly() {
@@ -2161,12 +2165,15 @@
     document.body.appendChild(ta);
     ta.focus();
     ta.select();
+    let copied = false;
     try {
-      document.execCommand("copy");
+      copied = document.execCommand("copy");
     } catch (e) {
       console.error("Copy failed", e);
+    } finally {
+      ta.remove();
     }
-    ta.remove();
+    return copied;
   }
 
   function showToast(msg, duration = 2600) {
@@ -2197,24 +2204,21 @@
     }, duration);
   }
 
-  function copyCompleteMarkdown() {
+  async function copyCompleteMarkdown() {
     // Use pre-cached markdown so clipboard fires synchronously inside the user gesture.
     // If cache empty (tab opened but preview not yet loaded), refresh then copy.
-    if (cachedMarkdown) {
-      scCopyText(cachedMarkdown);
-      showToast("📋 Markdown copied to clipboard!");
-    } else {
-      // Cache miss: generate, cache, then copy (next click will be instant)
-      generateMarkdown()
-        .then((md) => {
-          cachedMarkdown = md;
-          scCopyText(md);
-          showToast("📋 Markdown copied to clipboard!");
-        })
-        .catch((err) => {
-          console.error("copyCompleteMarkdown error:", err);
-          showToast("❌ Copy failed — try clicking Download instead");
-        });
+    try {
+      const markdown = cachedMarkdown || await generateMarkdown();
+      cachedMarkdown = markdown;
+      const copied = await scCopyText(markdown);
+      showToast(
+        copied
+          ? "📋 Markdown copied to clipboard!"
+          : "❌ Copy failed — allow clipboard access or try Download instead",
+      );
+    } catch (err) {
+      console.error("copyCompleteMarkdown error:", err);
+      showToast("❌ Copy failed — try clicking Download instead");
     }
   }
 
