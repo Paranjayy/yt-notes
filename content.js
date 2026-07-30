@@ -2100,61 +2100,125 @@
       return navigator.clipboard
         .writeText(text)
         .then(() => true)
-        .catch(() => scCopyFallback(text));
+        .catch(() => {
+          try {
+            return scCopyFallback(text);
+          } catch (error) {
+            console.error("Copy fallback failed", error);
+            return false;
+          }
+        });
     }
-    return Promise.resolve(scCopyFallback(text));
+    return Promise.resolve()
+      .then(() => scCopyFallback(text))
+      .catch((error) => {
+        console.error("Copy fallback failed", error);
+        return false;
+      });
   }
 
   async function copyNotesOnly() {
-    const notesKey = `sc_notes_${currentVideoId}`;
-    const data = await storage.getAsync([notesKey]);
-    const notes = data[notesKey] || [];
-    const text = notes.length
-      ? notes
-          .map(
-            (note) =>
-              `- [${formatTime(note.time)}] ${note.text}\n  ${canonicalYouTubeUrl(currentVideoId, note.time)}`,
-          )
-          .join("\n")
-      : "No notes added yet.";
-    scCopyText(text);
-    showToast("📋 Notes copied!");
+    try {
+      const notesKey = `sc_notes_${currentVideoId}`;
+      const data = await storage.getAsync([notesKey]);
+      const notes = data[notesKey] || [];
+      if (!notes.length) {
+        showToast("ℹ️ No notes available to copy yet");
+        return;
+      }
+      const text = notes
+        .map(
+          (note) =>
+            `- [${formatTime(note.time)}] ${note.text}\n  ${canonicalYouTubeUrl(currentVideoId, note.time)}`,
+        )
+        .join("\n");
+      const copied = await scCopyText(text);
+      showToast(
+        copied
+          ? "📋 Notes copied!"
+          : "❌ Couldn't copy notes — allow clipboard access and try again",
+      );
+    } catch (error) {
+      console.error("Copy notes failed", error);
+      showToast("❌ Couldn't prepare notes to copy — try again");
+    }
   }
 
   async function copyTranscript() {
-    let captions = ytCaptions;
-    if (!captions.length) {
-      const data = await storage.getAsync([`sc_transcript_${currentVideoId}`]);
-      captions = data[`sc_transcript_${currentVideoId}`] || [];
+    try {
+      let captions = ytCaptions;
+      if (!captions.length) {
+        const data = await storage.getAsync([`sc_transcript_${currentVideoId}`]);
+        captions = data[`sc_transcript_${currentVideoId}`] || [];
+      }
+      if (!captions.length) {
+        showToast("ℹ️ No transcript available — use Sync, or YouTube may not expose one");
+        return;
+      }
+      const text = captions
+        .map((caption) => `[${formatTime(caption.start)}] ${caption.text}`)
+        .join("\n");
+      const copied = await scCopyText(text);
+      showToast(
+        copied
+          ? "📋 Transcript copied!"
+          : "❌ Couldn't copy transcript — allow clipboard access and try again",
+      );
+    } catch (error) {
+      console.error("Copy transcript failed", error);
+      showToast("❌ Couldn't prepare transcript to copy — try Sync again");
     }
-    const text = captions.length
-      ? captions.map((caption) => `[${formatTime(caption.start)}] ${caption.text}`).join("\n")
-      : "Transcript not loaded yet.";
-    scCopyText(text);
-    showToast("📋 Transcript copied!");
   }
 
-  function copyDescription() {
-    const description = extractYouTubeMetadata().description || "No description available.";
-    scCopyText(description);
-    showToast("📋 Description copied!");
+  async function copyDescription() {
+    try {
+      const description = extractYouTubeMetadata().description;
+      if (!description) {
+        showToast("ℹ️ No description available to copy");
+        return;
+      }
+      const copied = await scCopyText(description);
+      showToast(
+        copied
+          ? "📋 Description copied!"
+          : "❌ Couldn't copy description — allow clipboard access and try again",
+      );
+    } catch (error) {
+      console.error("Copy description failed", error);
+      showToast("❌ Couldn't prepare description to copy — try again");
+    }
   }
 
-  function copyMetadata() {
-    const meta = extractYouTubeMetadata();
-    const fields = [
-      ["Title", meta.title],
-      ["Channel", meta.channel],
-      ["Subscribers", meta.subCount],
-      ["Views", meta.views],
-      ["Likes", meta.likes],
-      ["Comments", meta.commentsCount],
-      ["Published", meta.uploadDate],
-      ["Tags", meta.tags],
-      ["URL", meta.url],
-    ].filter(([, value]) => value);
-    scCopyText(fields.map(([label, value]) => `${label}: ${value}`).join("\n"));
-    showToast("📋 Stats & info copied!");
+  async function copyMetadata() {
+    try {
+      const meta = extractYouTubeMetadata();
+      const fields = [
+        ["Title", meta.title],
+        ["Channel", meta.channel],
+        ["Subscribers", meta.subCount],
+        ["Views", meta.views],
+        ["Likes", meta.likes],
+        ["Comments", meta.commentsCount],
+        ["Published", meta.uploadDate],
+        ["Tags", meta.tags],
+        ["URL", meta.url],
+      ].filter(([, value]) => value);
+      if (!fields.length) {
+        showToast("ℹ️ No stats or video info available to copy");
+        return;
+      }
+      const copied = await scCopyText(
+        fields.map(([label, value]) => `${label}: ${value}`).join("\n"),
+      );
+      showToast(
+        copied
+          ? "📋 Stats & info copied!"
+          : "❌ Couldn't copy stats & info — allow clipboard access and try again",
+      );
+    } catch (error) {
+      console.error("Copy stats & info failed", error);
+      showToast("❌ Couldn't prepare stats & info to copy — try again");
+    }
   }
 
   function scCopyFallback(text) {
@@ -2181,6 +2245,9 @@
     if (!t) {
       t = document.createElement("div");
       t.id = "sc-toast-notif";
+      t.setAttribute("role", "status");
+      t.setAttribute("aria-live", "polite");
+      t.setAttribute("aria-atomic", "true");
       t.style.cssText = `
         position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(10px);
         background: rgba(30,30,45,0.97); border: 1px solid rgba(139,92,246,0.5);
