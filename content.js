@@ -638,8 +638,16 @@
       }
     }
 
-    // YouTube can experiment with URL shapes. Its loaded player payload is
-    // the source of truth and makes the widget independent of the slug.
+    // YouTube can experiment with URL shapes. Only use page-data fallback on
+    // a real watch/Shorts layout: browse/channel pages can retain a player
+    // response for a thumbnail and must never get the video-note widget.
+    const hasActiveVideoLayout = document.querySelector(
+      "ytd-watch-flexy, ytd-reel-video-renderer, ytd-shorts, #movie_player.html5-video-player",
+    );
+    if (!hasActiveVideoLayout) return "";
+
+    // Its loaded player payload is the source of truth for those unknown
+    // watch paths and keeps this independent of future URL experiments.
     const playerVideoId = getPlayerResponseFromScripts()?.videoDetails?.videoId;
     if (playerVideoId) return playerVideoId;
 
