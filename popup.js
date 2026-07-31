@@ -87,7 +87,15 @@ async function askProvider(instruction) {
   const response = await chrome.runtime.sendMessage({ type: 'sc_provider_prompt_batch', providers, prompt, autoSubmit, startNewChat });
   if (!response?.ok) setStatus(response?.reason || 'Could not open the selected AI targets.', 'error');
   else {
-    setStatus(response.sent ? `Sent to ${response.sent} AI target${response.sent === 1 ? '' : 's'}.` : `Prompt inserted into ${response.inserted} AI target${response.inserted === 1 ? '' : 's'}.`, 'success');
+    const failed = Array.isArray(response.results) ? response.results.filter((result) => !result.ok) : [];
+    const completed = response.sent || response.inserted || 0;
+    const action = response.sent ? 'sent' : 'inserted';
+    if (failed.length) {
+      const names = failed.map((result) => result.provider).join(', ');
+      setStatus(`${action[0].toUpperCase()}${action.slice(1)} for ${completed} target${completed === 1 ? '' : 's'}; ${names} needs attention.`, 'error');
+    } else {
+      setStatus(`${action[0].toUpperCase()}${action.slice(1)} for ${completed} AI target${completed === 1 ? '' : 's'}.`, 'success');
+    }
     if (document.getElementById('autoReadReply').checked) setLiveReply(true);
   }
 }

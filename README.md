@@ -12,5 +12,19 @@ Local-first browser companion for YouTube capture, notes, transcripts, playlist 
 - Backs up visible playlist items and saves local JSON/CSV/Markdown captures.
 - Collects selected public playlist or video transcripts from the website, with optional YouTube Data API enrichment and ZIP bundles.
 - Provides local-first receipts for transcript state, mismatches, unavailable captions, and export outcomes.
+- Converts Safari/clipboard link lists into clean Markdown locally, and provides opt-in guides for Reddit, X, and CRX workflows.
+
+## Signed-in AI handoff
+
+The extension can send deliberately captured page context to one or more of ChatGPT, Gemini, Claude, and Grok using the browser sessions you are already signed into. It is designed as a cross-browser popup workflow rather than a Chrome-only side panel.
+
+- Choose one or many providers, then insert a draft or send it in the current/new provider chat.
+- The provider’s own model picker and chat history remain the source of truth.
+- Use the page-selection right-click menu for a fast single-provider handoff.
+- Save local prompt recipes, re-run recent local prompts, and copy or save the newest visible provider reply as Markdown.
+
+This is a visible-composer bridge, not account automation: it does **not** inspect or export cookies, OAuth/session tokens, private chats, account data, or network traffic. Provider web UIs can change, so a missing composer is reported in the popup instead of silently treated as success. The website intentionally offers copy-and-open handoff only; direct signed-in composer insertion requires the extension.
 
 See [the product backlog](docs/youtube-product-backlog.md) for deliberately planned YouTube workflow features and their guardrails.
+
+See [the provider bridge guide](docs/provider-bridge.md) for its exact scope and troubleshooting.
