@@ -35,7 +35,24 @@
     composer.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: prompt }));
     composer.dispatchEvent(new Event('change', { bubbles: true }));
   }
+  function newestReply() {
+    const selectors = [
+      '[data-message-author-role="assistant"]',
+      '[data-testid*="assistant"]',
+      'model-response',
+      '.model-response-text',
+      '.assistant-message',
+    ];
+    const nodes = selectors.flatMap((selector) => Array.from(document.querySelectorAll(selector))).filter((node) => node.getClientRects().length && node.innerText?.trim());
+    const node = nodes.at(-1);
+    return node?.innerText?.trim().slice(-30000) || '';
+  }
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.type === 'sc_read_provider_reply' && message.provider === provider) {
+      const text = newestReply();
+      sendResponse(text ? { ok: true, text } : { ok: false, reason: `No visible ${provider} reply yet; it may still be generating.` });
+      return;
+    }
     if (message?.type !== 'sc_insert_provider_prompt' || message.provider !== provider) return;
     try {
       const composer = visible(composers[provider] || []);

@@ -94,6 +94,15 @@ async function rerunPrompt(record) {
   else setStatus(response.submitted ? `Sent in ${record.provider}.` : `Prompt inserted in ${record.provider}; send it when ready.`, 'success');
 }
 
+async function readProviderReply() {
+  setStatus('Reading the newest visible provider reply…');
+  const response = await chrome.runtime.sendMessage({ type: 'sc_provider_read_reply' });
+  if (!response?.ok) return setStatus(response?.reason || 'No provider reply is available yet.', 'error');
+  document.getElementById('replyCard').hidden = false;
+  document.getElementById('providerReply').textContent = response.text;
+  setStatus(`Read latest ${response.provider} reply.`, 'success');
+}
+
 async function renderPromptHistory() {
   const root = document.getElementById('promptHistory');
   const stored = await chrome.storage.local.get('sc_provider_prompt_history').catch(() => ({}));
@@ -132,6 +141,11 @@ document.getElementById('saveTranscript').addEventListener('click', () => runDow
 document.getElementById('copyPageContext').addEventListener('click', copyActivePageContext);
 document.getElementById('openChatGPT').addEventListener('click', async () => {
   if (await copyActivePageContext()) chrome.tabs.create({ url: 'https://chatgpt.com/' });
+});
+document.getElementById('readProviderReply').addEventListener('click', readProviderReply);
+document.getElementById('focusProvider').addEventListener('click', async () => {
+  const response = await chrome.runtime.sendMessage({ type: 'sc_provider_focus' });
+  if (!response?.ok) setStatus(response?.reason || 'No provider tab is available.', 'error');
 });
 document.getElementById('askChatGPT').addEventListener('click', async () => {
   const instruction = document.getElementById('chatPrompt').value.trim();

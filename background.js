@@ -57,6 +57,14 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 });
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg.type === "sc_provider_read_reply") {
+    readProviderReply().then(sendResponse).catch((error) => sendResponse({ ok: false, reason: error?.message || "Could not read the provider reply." }));
+    return true;
+  }
+  if (msg.type === "sc_provider_focus") {
+    focusProvider().then(sendResponse).catch((error) => sendResponse({ ok: false, reason: error?.message || "Could not open the provider tab." }));
+    return true;
+  }
   if (msg.type === "sc_provider_prompt_batch") {
     deliverProviderBatch(msg).then(sendResponse).catch((error) => sendResponse({ ok: false, reason: error?.message || "Could not open the AI providers." }));
     return true;
@@ -93,6 +101,27 @@ const PROVIDERS = {
   grok: { url: "https://grok.com/", pattern: "https://grok.com/*" },
 };
 
+async function latestProviderTarget() {
+  const stored = await chrome.storage.local.get('sc_provider_last_tab');
+  const target = stored.sc_provider_last_tab;
+  if (!target?.tabId || !PROVIDERS[target.provider]) return null;
+  try { await chrome.tabs.get(target.tabId); return target; } catch { return null; }
+}
+
+async function focusProvider() {
+  const target = await latestProviderTarget();
+  if (!target) return { ok: false, reason: "Send or insert a provider prompt first." };
+  await chrome.tabs.update(target.tabId, { active: true });
+  return { ok: true };
+}
+
+async function readProviderReply() {
+  const target = await latestProviderTarget();
+  if (!target) return { ok: false, reason: "Send or insert a provider prompt first." };
+  const response = await chrome.tabs.sendMessage(target.tabId, { type: "sc_read_provider_reply", provider: target.provider });
+  return response?.ok ? { ...response, provider: target.provider } : { ok: false, reason: response?.reason || "The provider response is not ready yet." };
+}
+
 function waitForProviderTab(tabId, timeoutMs = 30000) {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => finish(new Error("The provider page did not finish loading.")), timeoutMs);
@@ -115,15 +144,15 @@ async function deliverProviderPrompt(message) {
   const provider = PROVIDERS[message.provider];
   if (!provider) return { ok: false, reason: "Choose a supported AI provider." };
   const candidates = message.startNewChat ? [] : await chrome.tabs.query({ url: provider.pattern });
-  const tab = candidates.find((candidate) => candidate.status === "complete") || await chrome.tabs.create({ url: provider.url, active: true });
+  const tab = candidates.find((candidate) => candidate.status === "complete") || await chrome.tabs.create({ url: provider.url, active: false });
   if (tab.id == null) return { ok: false, reason: "The provider tab could not be created." };
-  await chrome.tabs.update(tab.id, { active: true });
   if (tab.status !== "complete") await waitForProviderTab(tab.id);
   let lastError = null;
   for (let attempt = 0; attempt < 8; attempt++) {
     try {
       const result = await chrome.tabs.sendMessage(tab.id, { type: "sc_insert_provider_prompt", provider: message.provider, prompt: String(message.prompt || ""), autoSubmit: Boolean(message.autoSubmit) });
       if (result?.ok) {
+        await chrome.storage.local.set({ sc_provider_last_tab: { provider: message.provider, tabId: tab.id, at: new Date().toISOString() } });
         await chrome.storage.local.set({ sc_provider_last_status: { provider: message.provider, submitted: Boolean(result.submitted), at: new Date().toISOString() } });
         const stored = await chrome.storage.local.get('sc_provider_prompt_history');
         const prior = Array.isArray(stored.sc_provider_prompt_history) ? stored.sc_provider_prompt_history : [];
