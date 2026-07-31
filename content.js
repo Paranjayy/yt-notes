@@ -2905,7 +2905,9 @@
             <button class="sc-btn sc-btn-secondary" data-llm="chatgpt">ChatGPT</button>
             <button class="sc-btn sc-btn-secondary" data-llm="claude">Claude</button>
             <button class="sc-btn sc-btn-secondary" data-llm="gemini">Gemini</button>
+            <button class="sc-btn sc-btn-secondary" data-llm="grok">Grok</button>
           </div>
+          <div id="sc-social-ai-status" role="status" aria-live="polite" style="margin-top:8px; min-height:16px; color:var(--sc-text-muted-light); font-size:11px;"></div>
         </div>
 
         <div style="margin-top: 12px; border-top: 1px solid var(--sc-border-light); padding-top: 12px;">
@@ -2942,18 +2944,24 @@
     });
 
     panel.querySelectorAll(".sc-llm-routing button").forEach((btn) => {
-      btn.addEventListener("click", () => {
+      btn.addEventListener("click", async () => {
         const target = btn.dataset.llm;
-        const promptText = encodeURIComponent(
-          `Summarize or answer questions based on this post/thread content:\n\n${md}`,
-        );
-        let targetUrl = "";
-        if (target === "chatgpt")
-          targetUrl = `https://chatgpt.com/?q=${promptText}`;
-        else if (target === "claude") targetUrl = `https://claude.ai/new`;
-        else if (target === "gemini")
-          targetUrl = `https://gemini.google.com/app`;
-        window.open(targetUrl, "_blank");
+        const status = panel.querySelector("#sc-social-ai-status");
+        status.textContent = `Sending this ${platform} capture to ${target}…`;
+        try {
+          const response = await chrome.runtime.sendMessage({
+            type: "sc_provider_prompt",
+            provider: target,
+            prompt: `Summarize or answer questions based on this ${platform} post/thread capture:\n\n${md}`,
+            autoSubmit: true,
+            startNewChat: true,
+          });
+          status.textContent = response?.ok
+            ? (response.submitted ? `Sent in ${target}.` : `Inserted in ${target}; open its tab to send.`)
+            : (response?.reason || `Could not send to ${target}.`);
+        } catch (error) {
+          status.textContent = error?.message || `Could not send to ${target}.`;
+        }
       });
     });
 
