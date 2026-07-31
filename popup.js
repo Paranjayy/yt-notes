@@ -125,6 +125,33 @@ async function renderPromptHistory() {
   });
 }
 
+async function renderRecipes() {
+  const root = document.getElementById('recipeList');
+  const stored = await chrome.storage.local.get('sc_prompt_recipes').catch(() => ({}));
+  const recipes = Array.isArray(stored.sc_prompt_recipes) ? stored.sc_prompt_recipes : [];
+  root.innerHTML = '';
+  recipes.forEach((recipe, index) => {
+    const button = document.createElement('button');
+    button.className = 'quick-ask';
+    button.type = 'button';
+    button.textContent = recipe.name;
+    button.title = recipe.instruction;
+    button.addEventListener('click', () => { document.getElementById('chatPrompt').value = recipe.instruction; setStatus(`Loaded recipe: ${recipe.name}.`); });
+    const remove = document.createElement('button');
+    remove.className = 'quick-ask';
+    remove.type = 'button';
+    remove.textContent = '×';
+    remove.title = `Delete ${recipe.name}`;
+    remove.addEventListener('click', async () => {
+      const next = recipes.filter((_recipe, recipeIndex) => recipeIndex !== index);
+      await chrome.storage.local.set({ sc_prompt_recipes: next });
+      renderRecipes();
+    });
+    root.append(button, remove);
+  });
+  if (!recipes.length) root.innerHTML = '<span class="history-empty">Save the current instruction as your own local recipe.</span>';
+}
+
 async function runDownload(type, label) {
   try {
     setStatus(`${label}…`);
@@ -160,6 +187,18 @@ document.querySelectorAll('[data-quick-ask]').forEach((button) => {
   });
 });
 document.getElementById('openArchive').addEventListener('click', () => chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') }));
+document.getElementById('saveRecipe').addEventListener('click', async () => {
+  const name = document.getElementById('recipeName').value.trim();
+  const instruction = document.getElementById('chatPrompt').value.trim();
+  if (!name || !instruction) return setStatus('Give the recipe a name and write its instruction first.', 'error');
+  const stored = await chrome.storage.local.get('sc_prompt_recipes');
+  const recipes = Array.isArray(stored.sc_prompt_recipes) ? stored.sc_prompt_recipes : [];
+  await chrome.storage.local.set({ sc_prompt_recipes: [{ name, instruction }, ...recipes.filter((recipe) => recipe.name !== name)].slice(0, 20) });
+  document.getElementById('recipeName').value = '';
+  await renderRecipes();
+  setStatus(`Saved recipe: ${name}.`, 'success');
+});
 
 refreshStatus();
 renderPromptHistory();
+renderRecipes();
