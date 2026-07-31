@@ -57,6 +57,10 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 });
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg.type === "sc_provider_prompt") {
+    deliverProviderPrompt(msg).then(sendResponse).catch((error) => sendResponse({ ok: false, reason: error?.message || "Could not open the AI provider." }));
+    return true;
+  }
   if (msg.type !== "sc_download_archive_file") return;
   const filename = String(msg.filename || "capture.txt").replace(/[\\/:*?"<>|]/g, "_");
   const folder = msg.folder === "transcripts" ? "transcripts" : "captures";
@@ -77,6 +81,58 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   });
   return true;
 });
+
+const PROVIDERS = {
+  chatgpt: { url: "https://chatgpt.com/", pattern: "https://chatgpt.com/*" },
+  gemini: { url: "https://gemini.google.com/", pattern: "https://gemini.google.com/*" },
+  claude: { url: "https://claude.ai/new", pattern: "https://claude.ai/*" },
+  grok: { url: "https://grok.com/", pattern: "https://grok.com/*" },
+};
+
+function waitForProviderTab(tabId, timeoutMs = 30000) {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => finish(new Error("The provider page did not finish loading.")), timeoutMs);
+    const listener = (updatedId, changeInfo) => {
+      if (updatedId === tabId && changeInfo.status === "complete") finish();
+    };
+    const finish = (error) => {
+      clearTimeout(timeout);
+      chrome.tabs.onUpdated.removeListener(listener);
+      error ? reject(error) : resolve();
+    };
+    chrome.tabs.onUpdated.addListener(listener);
+    chrome.tabs.get(tabId).then((tab) => {
+      if (tab.status === "complete") finish();
+    }).catch(() => finish(new Error("The provider tab closed before the prompt could be inserted.")));
+  });
+}
+
+async function deliverProviderPrompt(message) {
+  const provider = PROVIDERS[message.provider];
+  if (!provider) return { ok: false, reason: "Choose a supported AI provider." };
+  const candidates = await chrome.tabs.query({ url: provider.pattern });
+  const tab = candidates.find((candidate) => candidate.status === "complete") || await chrome.tabs.create({ url: provider.url, active: true });
+  if (tab.id == null) return { ok: false, reason: "The provider tab could not be created." };
+  await chrome.tabs.update(tab.id, { active: true });
+  if (tab.status !== "complete") await waitForProviderTab(tab.id);
+  let lastError = null;
+  for (let attempt = 0; attempt < 8; attempt++) {
+    try {
+      const result = await chrome.tabs.sendMessage(tab.id, { type: "sc_insert_provider_prompt", provider: message.provider, prompt: String(message.prompt || ""), autoSubmit: Boolean(message.autoSubmit) });
+      if (result?.ok) {
+        await chrome.storage.local.set({ sc_provider_last_status: { provider: message.provider, submitted: Boolean(result.submitted), at: new Date().toISOString() } });
+        return result;
+      }
+      lastError = new Error(result?.reason || "The provider composer is not ready.");
+    } catch (error) {
+      lastError = error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 700));
+  }
+  const failure = { ok: false, reason: lastError?.message || "Open a signed-in provider chat and try again." };
+  await chrome.storage.local.set({ sc_provider_last_status: { provider: message.provider, error: failure.reason, at: new Date().toISOString() } });
+  return failure;
+}
 
 // A single, deliberately sequential queue for playlist transcript backups.
 // It only visits YouTube pages the user already selected from an open playlist;

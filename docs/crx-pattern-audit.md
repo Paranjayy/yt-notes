@@ -29,3 +29,9 @@ Inspection was performed on temporary, unpacked CRX copies only. No third-party 
 - The toolbar popup can copy a user’s current selection, or a short readable page context, only after an explicit click.
 - It can then open `chatgpt.com` in the user's normal browser session. It does not inspect, copy, or use ChatGPT cookies, OAuth tokens, session data, or private endpoints.
 - This keeps the useful cross-browser popup pattern without depending on a Chrome-only side panel or broad site-wide injection.
+
+## Implemented: explicit provider bridge
+
+- The popup can target ChatGPT, Gemini, Claude, or Grok, and write a prompt into the selected provider's visible signed-in composer. The user can choose to insert a draft or send it after pressing the extension action.
+- The provider owns the resulting conversation and account history. The bridge does not read or export cookies, OAuth credentials, account metadata, prior chats, or network traffic.
+- Provider DOMs are inherently changeable, so a failed composer lookup is surfaced as a receipt rather than being silently treated as a sent prompt.
