@@ -149,8 +149,11 @@ async function latestProviderTarget() {
 }
 
 async function knownProviderTargets() {
-  const stored = await chrome.storage.local.get('sc_provider_targets');
-  const candidates = stored.sc_provider_targets && typeof stored.sc_provider_targets === 'object' ? stored.sc_provider_targets : {};
+  const stored = await chrome.storage.local.get(['sc_provider_targets', 'sc_provider_last_tab']);
+  const candidates = stored.sc_provider_targets && typeof stored.sc_provider_targets === 'object' ? { ...stored.sc_provider_targets } : {};
+  // Migration path for prompts sent before multi-provider receipts existed.
+  const last = stored.sc_provider_last_tab;
+  if (last?.provider && last?.tabId && !candidates[last.provider]) candidates[last.provider] = last;
   const targets = [];
   for (const [provider, target] of Object.entries(candidates)) {
     if (!PROVIDERS[provider] || !target?.tabId) continue;
