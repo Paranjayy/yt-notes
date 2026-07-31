@@ -13,6 +13,7 @@ The extension’s AI handoff is a deliberate browser workflow for turning select
 - On a synced YouTube video route, can use the structured local capture (metadata, notes, transcript, and visible comments) instead of a DOM excerpt. The popup exposes the capture size, including a deliberate full-capture option.
 - Adds a right-click **Ask selected text with** menu for quick one-provider handoff from any page.
 - Opens an on-demand active-page mini palette with `Control + Shift + A` on macOS or `Alt + Shift + A` elsewhere. It is injected only after that shortcut, uses selection or a 12k-character readable-page excerpt, and closes with Escape or a click outside.
+- The active-page palette includes editable summary, claims, study-notes, and critique recipes for quick analysis without locking you into a fixed prompt.
 - The palette can also copy the fully prepared prompt locally, giving you a manual-paste fallback when a provider has a temporary UI or sign-in issue.
 - The supported YT Notes Vercel site can explicitly hand a built Prompt Pack to the installed extension with **Send with extension**. That bridge is limited to our site origins, validates the provider and prompt size, and returns only the outcome of the handoff.
 

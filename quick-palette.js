@@ -19,6 +19,7 @@
       <div class="heading">Ask your signed-in AIs</div>
       <div class="source" id="source"></div>
       <textarea class="prompt" id="prompt" autofocus placeholder="What should the selected AI do with this context?"></textarea>
+      <div class="row" aria-label="Prompt recipes"><button class="target" type="button" data-template="Summarize this clearly in concise bullets. Include the main argument, evidence, and caveats.">Summarize</button><button class="target" type="button" data-template="Extract the important claims. For each claim, state what supports it and what remains uncertain.">Claims</button><button class="target" type="button" data-template="Turn this into high-signal study notes: key ideas, definitions, examples, and questions to revisit.">Study notes</button><button class="target" type="button" data-template="Critique this carefully. Identify assumptions, missing context, weak evidence, and the strongest counterargument.">Critique</button></div>
       <div class="row" aria-label="AI targets">
         <label class="target"><input type="checkbox" value="chatgpt" checked> ChatGPT</label>
         <label class="target"><input type="checkbox" value="gemini"> Gemini</label>
@@ -46,6 +47,9 @@
   $('#close').addEventListener('click', close);
   $('.veil').addEventListener('click', close);
   root.addEventListener('keydown', (event) => { if (event.key === 'Escape') { event.preventDefault(); close(); } });
+  shadow.querySelectorAll('[data-template]').forEach((button) => {
+    button.addEventListener('click', () => { $('#prompt').value = button.dataset.template || ''; $('#prompt').focus(); });
+  });
   setTimeout(() => $('#prompt').focus(), 0);
 
   $('#copy').addEventListener('click', async () => {
