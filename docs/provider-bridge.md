@@ -9,7 +9,7 @@ The extension’s AI handoff is a deliberate browser workflow for turning select
 - Inserts a draft or attempts to send it when **Send in my chat** is checked.
 - Leaves model choice, conversation history, billing, and rate limits with the selected provider account.
 - Keeps prompt recipes and a short prompt history in extension-local storage.
-- Can read the newest *visible* provider response into the popup for copying or a local Markdown download.
+- Can read the newest *visible* response from every provider target into one labeled comparison in the popup, then copy or save that local Markdown bundle.
 - On a synced YouTube video route, can use the structured local capture (metadata, notes, transcript, and visible comments) instead of a DOM excerpt. The popup exposes the capture size, including a deliberate full-capture option.
 - Adds a right-click **Ask selected text with** menu for quick one-provider handoff from any page.
 - Opens an on-demand active-page mini palette with `Control + Shift + A` on macOS or `Alt + Shift + A` elsewhere. It is injected only after that shortcut, uses selection or a 12k-character readable-page excerpt, and closes with Escape or a click outside.

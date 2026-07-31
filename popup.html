@@ -18,14 +18,14 @@
   <div class="card"><span class="prompt-label">Quick asks</span><div class="quick-asks"><button class="quick-ask" data-quick-ask="Summarize this clearly in concise bullets. Include the main argument, evidence, and caveats.">Summarize</button><button class="quick-ask" data-quick-ask="Extract the important claims. For each claim, state what supports it and what remains uncertain.">Claims</button><button class="quick-ask" data-quick-ask="Turn this into high-signal study notes: key ideas, definitions, examples, and questions to revisit.">Study notes</button><button class="quick-ask" data-quick-ask="Critique this carefully. Identify assumptions, missing context, weak evidence, and the strongest counterargument.">Critique</button></div></div>
   <div class="card"><span class="prompt-label">My recipes</span><div class="provider-row"><input class="recipe-name" id="recipeName" maxlength="48" placeholder="Name this current prompt"><button class="btn" id="saveRecipe">Save</button></div><div class="quick-asks" id="recipeList" style="margin-top:8px"></div></div>
   <div class="card"><span class="prompt-label">Recent local prompts</span><div class="history" id="promptHistory"><span class="history-empty">Loading local receipts…</span></div></div>
-  <div class="card" id="replyCard" hidden><span class="prompt-label">Newest provider reply</span><pre class="reply" id="providerReply"></pre><div class="provider-row"><button class="btn" id="copyProviderReply">Copy reply</button><button class="btn" id="saveProviderReply">Save reply .md</button></div></div>
+  <div class="card" id="replyCard" hidden><span class="prompt-label">Provider replies</span><pre class="reply" id="providerReply"></pre><div class="provider-row"><button class="btn" id="copyProviderReply">Copy replies</button><button class="btn" id="saveProviderReply">Save replies .md</button></div></div>
   <div class="actions">
     <button class="btn primary" id="saveMarkdown">Save Markdown</button>
     <button class="btn" id="saveTranscript">Transcript .txt</button>
     <button class="btn" id="copyPageContext">Copy page context</button>
     <button class="btn" id="openChatGPT">Open ChatGPT</button>
     <button class="btn primary" id="askChatGPT">Run selected AIs</button>
-    <button class="btn" id="readProviderReply">Read newest reply</button>
+    <button class="btn" id="readProviderReply">Read provider replies</button>
     <button class="btn" id="focusProvider">Open provider tab</button>
     <label class="btn" style="cursor:default"><input type="checkbox" id="autoReadReply" checked> Live reply</label>
     <button class="btn archive" id="openArchive">Open capture archive</button>

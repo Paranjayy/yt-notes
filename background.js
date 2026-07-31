@@ -97,6 +97,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     readProviderReply().then(sendResponse).catch((error) => sendResponse({ ok: false, reason: error?.message || "Could not read the provider reply." }));
     return true;
   }
+  if (msg.type === "sc_provider_read_replies") {
+    readProviderReplies().then(sendResponse).catch((error) => sendResponse({ ok: false, reason: error?.message || "Could not read the provider replies." }));
+    return true;
+  }
   if (msg.type === "sc_provider_focus") {
     focusProvider().then(sendResponse).catch((error) => sendResponse({ ok: false, reason: error?.message || "Could not open the provider tab." }));
     return true;
@@ -144,6 +148,17 @@ async function latestProviderTarget() {
   try { await chrome.tabs.get(target.tabId); return target; } catch { return null; }
 }
 
+async function knownProviderTargets() {
+  const stored = await chrome.storage.local.get('sc_provider_targets');
+  const candidates = stored.sc_provider_targets && typeof stored.sc_provider_targets === 'object' ? stored.sc_provider_targets : {};
+  const targets = [];
+  for (const [provider, target] of Object.entries(candidates)) {
+    if (!PROVIDERS[provider] || !target?.tabId) continue;
+    try { await chrome.tabs.get(target.tabId); targets.push({ provider, tabId: target.tabId, at: target.at }); } catch { /* stale tab; omit it */ }
+  }
+  return targets;
+}
+
 async function focusProvider() {
   const target = await latestProviderTarget();
   if (!target) return { ok: false, reason: "Send or insert a provider prompt first." };
@@ -156,6 +171,23 @@ async function readProviderReply() {
   if (!target) return { ok: false, reason: "Send or insert a provider prompt first." };
   const response = await chrome.tabs.sendMessage(target.tabId, { type: "sc_read_provider_reply", provider: target.provider });
   return response?.ok ? { ...response, provider: target.provider } : { ok: false, reason: response?.reason || "The provider response is not ready yet." };
+}
+
+async function readProviderReplies() {
+  const targets = await knownProviderTargets();
+  if (!targets.length) return { ok: false, reason: 'Send or insert a provider prompt first.' };
+  const replies = [];
+  const errors = [];
+  for (const target of targets) {
+    try {
+      const response = await chrome.tabs.sendMessage(target.tabId, { type: 'sc_read_provider_reply', provider: target.provider });
+      if (response?.ok && response.text) replies.push({ provider: target.provider, text: response.text });
+      else errors.push({ provider: target.provider, reason: response?.reason || 'No visible reply yet.' });
+    } catch (error) {
+      errors.push({ provider: target.provider, reason: error?.message || 'Could not reach this provider tab.' });
+    }
+  }
+  return replies.length ? { ok: true, replies, errors } : { ok: false, reason: errors.map((entry) => `${entry.provider}: ${entry.reason}`).join(' · ') || 'No provider replies are available yet.', errors };
 }
 
 function waitForProviderTab(tabId, timeoutMs = 30000) {
@@ -189,6 +221,8 @@ async function deliverProviderPrompt(message) {
       const result = await chrome.tabs.sendMessage(tab.id, { type: "sc_insert_provider_prompt", provider: message.provider, prompt: String(message.prompt || ""), autoSubmit: Boolean(message.autoSubmit) });
       if (result?.ok) {
         await chrome.storage.local.set({ sc_provider_last_tab: { provider: message.provider, tabId: tab.id, at: new Date().toISOString() } });
+        const targets = await chrome.storage.local.get('sc_provider_targets');
+        await chrome.storage.local.set({ sc_provider_targets: { ...(targets.sc_provider_targets || {}), [message.provider]: { tabId: tab.id, at: new Date().toISOString() } } });
         await chrome.storage.local.set({ sc_provider_last_status: { provider: message.provider, submitted: Boolean(result.submitted), at: new Date().toISOString() } });
         const stored = await chrome.storage.local.get('sc_provider_prompt_history');
         const prior = Array.isArray(stored.sc_provider_prompt_history) ? stored.sc_provider_prompt_history : [];

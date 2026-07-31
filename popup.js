@@ -6,7 +6,7 @@ const metaEl = document.getElementById('pageMeta');
 let activeTabId = null;
 let replyPoller = null;
 let lastProviderReply = '';
-let lastProviderName = '';
+let lastProviderName = 'providers';
 
 function setStatus(message, type = '') {
   statusEl.textContent = message;
@@ -139,14 +139,29 @@ async function readProviderReply(silent = false) {
   if (!silent) setStatus(`Read latest ${response.provider} reply.`, 'success');
 }
 
+async function readProviderReplies(silent = false) {
+  if (!silent) setStatus('Reading visible provider replies…');
+  const response = await chrome.runtime.sendMessage({ type: 'sc_provider_read_replies' });
+  if (!response?.ok) { if (!silent) setStatus(response?.reason || 'No provider replies are available yet.', 'error'); return; }
+  const combined = (response.replies || []).map((reply) => `## ${reply.provider}\n\n${reply.text}`).join('\n\n---\n\n');
+  if (combined && combined !== lastProviderReply) {
+    lastProviderReply = combined;
+    lastProviderName = response.replies?.length === 1 ? response.replies[0].provider : 'providers';
+    document.getElementById('replyCard').hidden = false;
+    document.getElementById('providerReply').textContent = combined;
+  }
+  const waiting = Array.isArray(response.errors) ? response.errors.map((entry) => entry.provider) : [];
+  if (!silent) setStatus(waiting.length ? `Read ${response.replies.length} ${response.replies.length === 1 ? 'reply' : 'replies'}; waiting on ${waiting.join(', ')}.` : `Read ${response.replies.length} provider ${response.replies.length === 1 ? 'reply' : 'replies'}.`, waiting.length ? 'error' : 'success');
+}
+
 function setLiveReply(enabled) {
   clearInterval(replyPoller);
   replyPoller = null;
   if (!enabled) return;
   chrome.storage.local.get('sc_provider_last_tab').then((stored) => {
     if (!stored.sc_provider_last_tab || !document.getElementById('autoReadReply').checked) return;
-    readProviderReply(true);
-    replyPoller = setInterval(() => readProviderReply(true), 1800);
+    readProviderReplies(true);
+    replyPoller = setInterval(() => readProviderReplies(true), 1800);
   });
 }
 
@@ -216,7 +231,7 @@ document.getElementById('copyPageContext').addEventListener('click', copyActiveP
 document.getElementById('openChatGPT').addEventListener('click', async () => {
   if (await copyActivePageContext()) chrome.tabs.create({ url: 'https://chatgpt.com/' });
 });
-document.getElementById('readProviderReply').addEventListener('click', readProviderReply);
+document.getElementById('readProviderReply').addEventListener('click', readProviderReplies);
 document.getElementById('copyProviderReply').addEventListener('click', async () => {
   if (!lastProviderReply) return setStatus('Read a provider reply first.', 'error');
   try { await navigator.clipboard.writeText(lastProviderReply); setStatus('Provider reply copied.', 'success'); }
