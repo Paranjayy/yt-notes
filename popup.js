@@ -116,6 +116,7 @@ async function askProvider(instruction) {
     }
     if (document.getElementById('autoReadReply').checked) setLiveReply(true);
   }
+  renderProviderActivity();
 }
 
 async function rerunPrompt(record) {
@@ -124,6 +125,7 @@ async function rerunPrompt(record) {
   const response = await chrome.runtime.sendMessage({ type: 'sc_provider_prompt', provider: record.provider, prompt: record.prompt, autoSubmit: document.getElementById('sendAutomatically').checked, startNewChat: document.getElementById('startNewChat').checked });
   if (!response?.ok) setStatus(response?.reason || `Could not open ${record.provider}.`, 'error');
   else setStatus(response.submitted ? `Sent in ${record.provider}.` : `Prompt inserted in ${record.provider}; send it when ready.`, 'success');
+  renderProviderActivity();
 }
 
 async function readProviderReply(silent = false) {
@@ -184,6 +186,26 @@ async function renderPromptHistory() {
     button.append(provider, text);
     button.addEventListener('click', () => rerunPrompt(record));
     root.appendChild(button);
+  });
+}
+
+async function renderProviderActivity() {
+  const root = document.getElementById('providerActivity');
+  const response = await chrome.runtime.sendMessage({ type: 'sc_provider_activity_log' }).catch(() => null);
+  const entries = Array.isArray(response?.entries) ? response.entries.slice(0, 6) : [];
+  if (!entries.length) { root.innerHTML = '<span class="history-empty">No provider routing activity yet.</span>'; return; }
+  root.innerHTML = '';
+  entries.forEach((entry) => {
+    const item = document.createElement('div');
+    item.className = 'history-item';
+    const provider = document.createElement('span');
+    provider.className = 'history-provider';
+    provider.textContent = String(entry.provider || 'provider');
+    const text = document.createElement('span');
+    text.className = 'history-text';
+    text.textContent = `${entry.state || 'event'}${entry.detail ? ` — ${entry.detail}` : ''}`;
+    item.append(provider, text);
+    root.appendChild(item);
   });
 }
 
@@ -276,5 +298,6 @@ document.getElementById('saveRecipe').addEventListener('click', async () => {
 
 refreshStatus();
 renderPromptHistory();
+renderProviderActivity();
 renderRecipes();
 setLiveReply(document.getElementById('autoReadReply').checked);

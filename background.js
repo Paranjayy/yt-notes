@@ -93,6 +93,10 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 });
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg.type === "sc_provider_activity_log") {
+    chrome.storage.local.get('sc_provider_activity_log').then((stored) => sendResponse({ ok: true, entries: Array.isArray(stored.sc_provider_activity_log) ? stored.sc_provider_activity_log : [] })).catch(() => sendResponse({ ok: true, entries: [] }));
+    return true;
+  }
   if (msg.type === "sc_provider_read_reply") {
     readProviderReply().then(sendResponse).catch((error) => sendResponse({ ok: false, reason: error?.message || "Could not read the provider reply." }));
     return true;
@@ -140,6 +144,13 @@ const PROVIDERS = {
   claude: { url: "https://claude.ai/new", pattern: "https://claude.ai/*" },
   grok: { url: "https://grok.com/", pattern: "https://grok.com/*" },
 };
+
+async function recordProviderActivity(provider, state, detail = '') {
+  const stored = await chrome.storage.local.get('sc_provider_activity_log');
+  const prior = Array.isArray(stored.sc_provider_activity_log) ? stored.sc_provider_activity_log : [];
+  const entry = { provider, state, detail: String(detail || '').slice(0, 180), at: new Date().toISOString() };
+  await chrome.storage.local.set({ sc_provider_activity_log: [entry, ...prior].slice(0, 40) });
+}
 
 async function latestProviderTarget() {
   const stored = await chrome.storage.local.get('sc_provider_last_tab');
@@ -215,7 +226,9 @@ async function deliverProviderPrompt(message) {
   const provider = PROVIDERS[message.provider];
   if (!provider) return { ok: false, reason: "Choose a supported AI provider." };
   const candidates = message.startNewChat ? [] : await chrome.tabs.query({ url: provider.pattern });
-  const tab = candidates.find((candidate) => candidate.status === "complete") || await chrome.tabs.create({ url: provider.url, active: false });
+  const existing = candidates.find((candidate) => candidate.status === "complete");
+  const tab = existing || await chrome.tabs.create({ url: provider.url, active: false });
+  await recordProviderActivity(message.provider, existing ? 'reusing tab' : 'opened tab', existing ? 'A matching provider tab was available.' : 'No reusable matching provider tab was returned by this browser.');
   if (tab.id == null) return { ok: false, reason: "The provider tab could not be created." };
   if (tab.status !== "complete") await waitForProviderTab(tab.id);
   let lastError = null;
@@ -231,6 +244,7 @@ async function deliverProviderPrompt(message) {
         const prior = Array.isArray(stored.sc_provider_prompt_history) ? stored.sc_provider_prompt_history : [];
         const record = { provider: message.provider, prompt: String(message.prompt || ''), submitted: Boolean(result.submitted), at: new Date().toISOString() };
         await chrome.storage.local.set({ sc_provider_prompt_history: [record, ...prior.filter((item) => item.prompt !== record.prompt)].slice(0, 12) });
+        await recordProviderActivity(message.provider, result.submitted ? 'sent' : 'inserted draft', result.submitted ? 'Provider send control accepted the prompt.' : 'Prompt is in the provider composer; send it there if needed.');
         return result;
       }
       lastError = new Error(result?.reason || "The provider composer is not ready.");
@@ -241,6 +255,7 @@ async function deliverProviderPrompt(message) {
   }
   const failure = { ok: false, reason: `${message.provider}: ${lastError?.message || "open a signed-in provider chat and try again."}` };
   await chrome.storage.local.set({ sc_provider_last_status: { provider: message.provider, error: failure.reason, at: new Date().toISOString() } });
+  await recordProviderActivity(message.provider, 'failed', failure.reason);
   return failure;
 }
 

@@ -45,6 +45,25 @@
   document.documentElement.append(root);
   updateContextMode();
   const close = () => root.remove();
+  const panel = $('.panel');
+  const promptField = $('#prompt');
+  // ChatGPT and other provider pages install broad document keyboard handlers.
+  // Keep typing inside this explicit extension surface from leaking into them.
+  ['keydown', 'keyup', 'keypress', 'beforeinput', 'input'].forEach((type) => {
+    promptField.addEventListener(type, (event) => {
+      if (type === 'keydown' && event.key === 'Escape') { event.preventDefault(); close(); }
+      event.stopPropagation();
+    });
+  });
+  ['pointerdown', 'mousedown', 'click'].forEach((type) => {
+    panel.addEventListener(type, (event) => event.stopPropagation());
+  });
+  promptField.addEventListener('blur', (event) => {
+    if (event.relatedTarget && panel.contains(event.relatedTarget)) return;
+    setTimeout(() => {
+      if (root.isConnected && !panel.contains(shadow.activeElement)) promptField.focus();
+    }, 0);
+  });
   const buildPrompt = () => {
     const instruction = $('#prompt').value.trim();
     if (!instruction) throw new Error('Write an instruction first.');
