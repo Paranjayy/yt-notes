@@ -19,6 +19,7 @@ Local-first browser companion for YouTube capture, notes, transcripts, playlist 
 The extension can send deliberately captured page context to one or more of ChatGPT, Gemini, Claude, and Grok using the browser sessions you are already signed into. It is designed as a cross-browser popup workflow rather than a Chrome-only side panel.
 
 - Choose one or many providers, then insert a draft or send it in the current/new provider chat.
+- Press `Control + Shift + A` on macOS (or `Alt + Shift + A` elsewhere) for the explicit active-page mini palette; the shortcut is editable in the browser's extension-shortcuts settings.
 - The provider’s own model picker and chat history remain the source of truth.
 - Use the page-selection right-click menu for a fast single-provider handoff.
 - Save local prompt recipes, re-run recent local prompts, and copy or save the newest visible provider reply as Markdown.

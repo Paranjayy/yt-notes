@@ -11,6 +11,7 @@ The extension’s AI handoff is a deliberate browser workflow for turning select
 - Keeps prompt recipes and a short prompt history in extension-local storage.
 - Can read the newest *visible* provider response into the popup for copying or a local Markdown download.
 - Adds a right-click **Ask selected text with** menu for quick one-provider handoff from any page.
+- Opens an on-demand active-page mini palette with `Control + Shift + A` on macOS or `Alt + Shift + A` elsewhere. It is injected only after that shortcut, uses selection or a 12k-character readable-page excerpt, and closes with Escape or a click outside.
 
 ## What it deliberately does not do
 

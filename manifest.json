@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Social Companion & YT Note-Taker",
-  "version": "1.7.3",
+  "version": "1.7.4",
   "description": "Premium companion for YouTube, X (Twitter), Reddit, and Cambridge Dictionary. Take notes, extract transcripts, scrape word lists, and export to markdown/JSON/CSV.",
   "permissions": [
     "storage",
@@ -68,6 +68,15 @@
       "16": "icons/icon-16.png",
       "48": "icons/icon-48.png",
       "128": "icons/icon-128.png"
+    }
+  },
+  "commands": {
+    "sc-toggle-quick-palette": {
+      "suggested_key": {
+        "default": "Alt+Shift+A",
+        "mac": "MacCtrl+Shift+A"
+      },
+      "description": "Open Social Companion's active-page AI palette"
     }
   },
   "web_accessible_resources": [

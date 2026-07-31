@@ -47,6 +47,18 @@ chrome.action.onClicked.addListener((tab) => {
   chrome.tabs.create({ url: chrome.runtime.getURL("dashboard.html") });
 });
 
+// This is deliberately injected only after a keyboard command. It gives the
+// active page a compact command surface without a permanent all-sites widget.
+chrome.commands.onCommand.addListener((command) => {
+  if (command !== 'sc-toggle-quick-palette') return;
+  chrome.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
+    if (tab?.id == null) return;
+    return chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['quick-palette.js'] });
+  }).catch((error) => {
+    console.warn('Could not open the active-page palette', error);
+  });
+});
+
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId.startsWith("sc-ask-selection-") && info.selectionText) {
     const provider = info.menuItemId.slice("sc-ask-selection-".length);
