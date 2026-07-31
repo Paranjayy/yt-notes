@@ -8,7 +8,7 @@
       : location.hostname === 'claude.ai' ? 'claude'
         : location.hostname === 'grok.com' ? 'grok' : '';
   const composers = {
-    chatgpt: ['#prompt-textarea', 'textarea[placeholder*="Message"]', '[contenteditable="true"][data-lexical-editor="true"]'],
+    chatgpt: ['#prompt-textarea', '[data-testid="textbox"]', 'textarea[placeholder*="Message"]', '[data-testid*="composer"] [contenteditable="true"]', 'form [contenteditable="true"]', '[contenteditable="true"][data-lexical-editor="true"]'],
     gemini: ['rich-textarea [contenteditable="true"]', '[contenteditable="true"][aria-label*="Enter a prompt"]', '[contenteditable="true"]'],
     claude: ['[contenteditable="true"][data-placeholder]', 'div[contenteditable="true"]', 'textarea'],
     grok: ['textarea', '[contenteditable="true"]'],
@@ -20,7 +20,10 @@
     grok: ['button[aria-label*="Send"]', 'button[type="submit"]'],
   };
   function visible(selectors) {
-    return selectors.map((selector) => document.querySelector(selector)).find((element) => element && element.getClientRects().length);
+    return selectors.flatMap((selector) => Array.from(document.querySelectorAll(selector))).find((element) => {
+      const style = window.getComputedStyle(element);
+      return element.getClientRects().length && style.visibility !== 'hidden' && style.display !== 'none';
+    });
   }
   function write(composer, prompt) {
     composer.focus();

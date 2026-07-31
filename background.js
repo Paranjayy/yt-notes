@@ -219,7 +219,7 @@ async function deliverProviderPrompt(message) {
   if (tab.id == null) return { ok: false, reason: "The provider tab could not be created." };
   if (tab.status !== "complete") await waitForProviderTab(tab.id);
   let lastError = null;
-  for (let attempt = 0; attempt < 8; attempt++) {
+  for (let attempt = 0; attempt < 16; attempt++) {
     try {
       const result = await chrome.tabs.sendMessage(tab.id, { type: "sc_insert_provider_prompt", provider: message.provider, prompt: String(message.prompt || ""), autoSubmit: Boolean(message.autoSubmit) });
       if (result?.ok) {
@@ -239,7 +239,7 @@ async function deliverProviderPrompt(message) {
     }
     await new Promise((resolve) => setTimeout(resolve, 700));
   }
-  const failure = { ok: false, reason: lastError?.message || "Open a signed-in provider chat and try again." };
+  const failure = { ok: false, reason: `${message.provider}: ${lastError?.message || "open a signed-in provider chat and try again."}` };
   await chrome.storage.local.set({ sc_provider_last_status: { provider: message.provider, error: failure.reason, at: new Date().toISOString() } });
   return failure;
 }
