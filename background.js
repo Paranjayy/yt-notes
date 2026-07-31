@@ -110,7 +110,7 @@ function waitForProviderTab(tabId, timeoutMs = 30000) {
 async function deliverProviderPrompt(message) {
   const provider = PROVIDERS[message.provider];
   if (!provider) return { ok: false, reason: "Choose a supported AI provider." };
-  const candidates = await chrome.tabs.query({ url: provider.pattern });
+  const candidates = message.startNewChat ? [] : await chrome.tabs.query({ url: provider.pattern });
   const tab = candidates.find((candidate) => candidate.status === "complete") || await chrome.tabs.create({ url: provider.url, active: true });
   if (tab.id == null) return { ok: false, reason: "The provider tab could not be created." };
   await chrome.tabs.update(tab.id, { active: true });
@@ -121,6 +121,10 @@ async function deliverProviderPrompt(message) {
       const result = await chrome.tabs.sendMessage(tab.id, { type: "sc_insert_provider_prompt", provider: message.provider, prompt: String(message.prompt || ""), autoSubmit: Boolean(message.autoSubmit) });
       if (result?.ok) {
         await chrome.storage.local.set({ sc_provider_last_status: { provider: message.provider, submitted: Boolean(result.submitted), at: new Date().toISOString() } });
+        const stored = await chrome.storage.local.get('sc_provider_prompt_history');
+        const prior = Array.isArray(stored.sc_provider_prompt_history) ? stored.sc_provider_prompt_history : [];
+        const record = { provider: message.provider, prompt: String(message.prompt || ''), submitted: Boolean(result.submitted), at: new Date().toISOString() };
+        await chrome.storage.local.set({ sc_provider_prompt_history: [record, ...prior.filter((item) => item.prompt !== record.prompt)].slice(0, 12) });
         return result;
       }
       lastError = new Error(result?.reason || "The provider composer is not ready.");

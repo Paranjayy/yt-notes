@@ -78,10 +78,41 @@ async function askProvider(instruction) {
   if (!prompt) return;
   const provider = document.getElementById('chatProvider').value;
   const autoSubmit = document.getElementById('sendAutomatically').checked;
+  const startNewChat = document.getElementById('startNewChat').checked;
   setStatus(`Opening ${provider}…`);
-  const response = await chrome.runtime.sendMessage({ type: 'sc_provider_prompt', provider, prompt, autoSubmit });
+  const response = await chrome.runtime.sendMessage({ type: 'sc_provider_prompt', provider, prompt, autoSubmit, startNewChat });
   if (!response?.ok) setStatus(response?.reason || `Could not open ${provider}.`, 'error');
   else setStatus(response.submitted ? `Sent in ${provider}.` : `Prompt inserted in ${provider}; send it when ready.`, 'success');
+}
+
+async function rerunPrompt(record) {
+  document.getElementById('chatProvider').value = record.provider;
+  setStatus(`Reopening ${record.provider}…`);
+  const response = await chrome.runtime.sendMessage({ type: 'sc_provider_prompt', provider: record.provider, prompt: record.prompt, autoSubmit: document.getElementById('sendAutomatically').checked, startNewChat: document.getElementById('startNewChat').checked });
+  if (!response?.ok) setStatus(response?.reason || `Could not open ${record.provider}.`, 'error');
+  else setStatus(response.submitted ? `Sent in ${record.provider}.` : `Prompt inserted in ${record.provider}; send it when ready.`, 'success');
+}
+
+async function renderPromptHistory() {
+  const root = document.getElementById('promptHistory');
+  const stored = await chrome.storage.local.get('sc_provider_prompt_history').catch(() => ({}));
+  const history = Array.isArray(stored.sc_provider_prompt_history) ? stored.sc_provider_prompt_history.slice(0, 5) : [];
+  if (!history.length) { root.innerHTML = '<span class="history-empty">Prompts you send stay here locally for quick re-run.</span>'; return; }
+  root.innerHTML = '';
+  history.forEach((record) => {
+    const button = document.createElement('button');
+    button.className = 'history-item';
+    button.type = 'button';
+    const provider = document.createElement('span');
+    provider.className = 'history-provider';
+    provider.textContent = String(record.provider || 'provider');
+    const text = document.createElement('span');
+    text.className = 'history-text';
+    text.textContent = String(record.prompt || '').replace(/\s+/g, ' ').slice(0, 96);
+    button.append(provider, text);
+    button.addEventListener('click', () => rerunPrompt(record));
+    root.appendChild(button);
+  });
 }
 
 async function runDownload(type, label) {
@@ -116,3 +147,4 @@ document.querySelectorAll('[data-quick-ask]').forEach((button) => {
 document.getElementById('openArchive').addEventListener('click', () => chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') }));
 
 refreshStatus();
+renderPromptHistory();
