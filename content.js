@@ -548,6 +548,7 @@
   let currentVideoId = "";
   let activeTabName = "notes";
   let ytCaptions = [];
+  let transcriptState = { status: "idle", videoId: "", message: "Waiting for this video…", source: "" };
   let screenshotList = [];
   let autoPauseOnType = false;
   let notesSearchQuery = "";
@@ -556,6 +557,28 @@
   let hasAttemptedAutoClick = false; // flag to prevent duplicate auto-clicks per video
   let playlistBackupItems = [];
   let playlistTranscriptQueueActive = false;
+
+  function setTranscriptState(status, message, source = "") {
+    transcriptState = { status, videoId: currentVideoId, message, source, updatedAt: new Date().toISOString() };
+    renderTranscriptStatus();
+  }
+
+  function renderTranscriptStatus() {
+    const status = document.getElementById("sc-transcript-status");
+    if (!status) return;
+    const palette = {
+      ready: "#34d399",
+      waiting: "#fbbf24",
+      mismatch: "#fb7185",
+      unavailable: "#94a3b8",
+      error: "#fb7185",
+    };
+    const color = palette[transcriptState.status] || "#94a3b8";
+    status.textContent = transcriptState.message;
+    status.style.color = color;
+    status.style.borderColor = `${color}55`;
+    status.style.background = `${color}12`;
+  }
 
   // Load user auto-pause preference from storage
   storage.get(["sc_preference_autopause"], (data) => {
@@ -692,6 +715,7 @@
     if (videoId) {
       currentVideoId = videoId;
       ytCaptions = [];
+      setTranscriptState("waiting", "Waiting for captions for this video…");
       cachedMarkdown = ""; // reset cache for new video
       hasAttemptedAutoClick = false; // reset auto-trigger state
       injectYouTubeWidget(videoId, 0);
@@ -1297,6 +1321,7 @@
             <button class="sc-btn sc-btn-secondary" style="font-size: 11px; padding: 6px 10px;" id="sc-btn-sync-transcript">🔄 Sync</button>
             <button class="sc-btn sc-btn-secondary" style="font-size: 11px; padding: 6px 10px; margin-left: 4px;" id="sc-btn-copy-transcript">Copy</button>
           </div>
+          <div id="sc-transcript-status" role="status" aria-live="polite" style="margin:8px 0 0;padding:6px 8px;border:1px solid;border-radius:6px;font-size:11px;line-height:1.35;"></div>
           <div class="sc-transcript-list" id="sc-transcript-box">
             <div style="color: var(--sc-text-muted-light); text-align: center; padding: 12px;">Loading transcript...</div>
           </div>
@@ -1424,6 +1449,7 @@
 
     renderNotesList();
     renderTranscript();
+    renderTranscriptStatus();
     updateExportPreview();
 
     // Export operations
@@ -1744,6 +1770,7 @@
   function forceSyncTranscript() {
     ytCaptions = [];
     hasAttemptedAutoClick = false;
+    setTranscriptState("waiting", "Syncing captions — checking YouTube three times…");
 
     if (currentVideoId) {
       storage.set({ [`sc_transcript_${currentVideoId}`]: [] });
@@ -1765,6 +1792,7 @@
         if (attempt === retryDelays.length - 1) {
           setTimeout(() => {
             if (!ytCaptions.length) {
+              setTranscriptState("unavailable", "No transcript exposed for this video after three checks.");
               showToast("ℹ️ Transcript still unavailable — YouTube may not expose one for this video");
             }
           }, 1200);
@@ -1794,6 +1822,11 @@
         playerResponse.captions.playerCaptionsTracklistRenderer.captionTracks;
       loadTranscriptFromTracks(tracks);
     } else {
+      if (playerResponse?.videoDetails?.videoId && playerResponse.videoDetails.videoId !== currentVideoId) {
+        setTranscriptState("mismatch", "Transcript data belongs to a different video — ignored.");
+        return;
+      }
+      setTranscriptState("waiting", "Captions are not ready yet — checking YouTube’s transcript panel…");
       // Fallback: Scrape native transcript DOM
       scrapeNativeYouTubeTranscript();
     }
@@ -1943,6 +1976,15 @@
       // Persist transcript to storage for dashboard
       if (ytCaptions.length > 0 && currentVideoId) {
         storage.set({ [`sc_transcript_${currentVideoId}`]: ytCaptions });
+        const playerVideoId = getPlayerResponseFromScripts()?.videoDetails?.videoId || currentVideoId;
+        const duration = Number(document.querySelector("video")?.duration || 0);
+        const lastStart = ytCaptions[ytCaptions.length - 1]?.start || 0;
+        if (playerVideoId !== currentVideoId || (Number.isFinite(duration) && duration > 0 && lastStart > duration + 45)) {
+          setTranscriptState("mismatch", "Transcript timing/video check failed — not marked ready.");
+        } else {
+          storage.set({ [`sc_transcript_meta_${currentVideoId}`]: { videoId: currentVideoId, durationSeconds: duration, segmentCount: ytCaptions.length, collectedAt: new Date().toISOString(), source: "caption-track" } });
+          setTranscriptState("ready", `Transcript ready · ${ytCaptions.length} segments · caption track verified.`);
+        }
       }
     } catch (e) {
       scrapeNativeYouTubeTranscript();
@@ -2038,9 +2080,18 @@
         });
 
       if (ytCaptions.length > 0) {
+        const playerVideoId = getPlayerResponseFromScripts()?.videoDetails?.videoId || currentVideoId;
+        if (playerVideoId !== currentVideoId) {
+          ytCaptions = [];
+          setTranscriptState("mismatch", "Visible transcript belongs to a different video — ignored.");
+          renderTranscript();
+          return;
+        }
         if (currentVideoId) {
           storage.set({ [`sc_transcript_${currentVideoId}`]: ytCaptions });
+          storage.set({ [`sc_transcript_meta_${currentVideoId}`]: { videoId: currentVideoId, durationSeconds: Number(document.querySelector("video")?.duration || 0), segmentCount: ytCaptions.length, collectedAt: new Date().toISOString(), source: "YouTube transcript panel" } });
         }
+        setTranscriptState("ready", `Transcript ready · ${ytCaptions.length} segments · page/video verified.`);
         renderTranscript();
         return;
       }
@@ -2331,6 +2382,8 @@
       playlistUrl = `https://www.youtube.com/playlist?list=${playlistId}`;
       playlistIndex = urlParams.get("index") || "1";
     }
+    const durationSeconds = Number(document.querySelector("video")?.duration || 0);
+    const duration = Number.isFinite(durationSeconds) && durationSeconds > 0 ? formatTime(durationSeconds) : "";
 
     return {
       title,
@@ -2344,6 +2397,8 @@
       description,
       likes,
       uploadDate,
+      duration,
+      durationSeconds,
       url: canonicalYouTubeUrl(currentVideoId),
       thumbnail: `https://img.youtube.com/vi/${currentVideoId}/maxresdefault.jpg`,
       recommendations: recVids,
@@ -2387,6 +2442,7 @@
     }
     if (meta.likes) md += `Likes: ${meta.likes}\n`;
     if (meta.uploadDate) md += `Published: ${meta.uploadDate}\n`;
+    if (meta.duration) md += `Duration: ${meta.duration}\n`;
     md += `Copied: ${new Date().toISOString().slice(0, 10)}\n`;
     if (meta.description) {
       md += `Description: ${meta.description.trim().replace(/\n/g, ' ')}\n`;

@@ -21,6 +21,12 @@ async function youtubeFetch(url) {
   return response.text();
 }
 
+function innertubeConfig(source) {
+  const apiKey = source.match(/"INNERTUBE_API_KEY":"([^"]+)"/)?.[1] || '';
+  const clientVersion = source.match(/"INNERTUBE_CLIENT_VERSION":"([^"]+)"/)?.[1] || '';
+  return apiKey && clientVersion ? { apiKey, clientVersion } : null;
+}
+
 function extractJsonAfter(source, marker) {
   const startAt = source.indexOf(marker);
   if (startAt < 0) return null;
@@ -113,6 +119,19 @@ async function playlistFromApi(playlistId, apiKey) {
   return items;
 }
 
+async function playlistFromPublicBrowse(playlistId, page) {
+  const config = innertubeConfig(page);
+  if (!config) return { items: [], title: '' };
+  const response = await fetch(`https://www.youtube.com/youtubei/v1/browse?key=${encodeURIComponent(config.apiKey)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'User-Agent': USER_AGENT, 'Accept-Language': 'en-US,en;q=0.9' },
+    body: JSON.stringify({ context: { client: { clientName: 'WEB', clientVersion: config.clientVersion } }, browseId: playlistId }),
+  });
+  if (!response.ok) return { items: [], title: '' };
+  const data = await response.json();
+  return { items: itemsFromInitialData(data), title: playlistTitleFromInitialData(data) };
+}
+
 async function collectPlaylist({ url, apiKey }) {
   const { playlistId } = youtubeTarget(url);
   if (!playlistId) throw new Error('Paste a YouTube playlist URL containing ?list=.');
@@ -123,7 +142,12 @@ async function collectPlaylist({ url, apiKey }) {
     const initialData = extractJsonAfter(page, 'var ytInitialData =') || extractJsonAfter(page, 'ytInitialData =');
     items = itemsFromInitialData(initialData);
     title = playlistTitleFromInitialData(initialData) || title;
-    if (!items.length) throw new Error('YouTube did not expose playlist items on this page. Try the optional API-key route or a public playlist.');
+    if (!items.length) {
+      const browsed = await playlistFromPublicBrowse(playlistId, page);
+      items = browsed.items;
+      title = browsed.title || title;
+    }
+    if (!items.length) throw new Error('YouTube did not expose playlist items through its public page. This playlist may be private, age-restricted, or require a signed-in session; use your optional API key for public playlists.');
   }
   return { format: 'social-companion-playlist-backup', schemaVersion: 1, id: playlistId, title, url: `https://www.youtube.com/playlist?list=${encodeURIComponent(playlistId)}`, exportedAt: new Date().toISOString(), source: apiKey ? 'youtube-data-api' : 'youtube-public-page', items };
 }
@@ -148,12 +172,22 @@ async function collectTranscript(videoId) {
   return segments.length ? { status: 'complete', reason: `Collected ${segments.length} caption segments.`, segments, language: track.languageCode || '' } : { status: 'no-transcript', reason: 'YouTube returned an empty caption track.', segments: [] };
 }
 
+async function inspectVideo(videoId) {
+  if (!/^[A-Za-z0-9_-]{11}$/.test(videoId || '')) throw new Error('That video ID is invalid.');
+  const page = await youtubeFetch(`https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`);
+  const player = extractJsonAfter(page, 'var ytInitialPlayerResponse =') || extractJsonAfter(page, 'ytInitialPlayerResponse =');
+  const details = player?.videoDetails;
+  if (!details?.videoId || details.videoId !== videoId) throw new Error('YouTube did not expose metadata for this video.');
+  return { videoId, title: details.title || 'YouTube video', channel: details.author || '', durationSeconds: Number(details.lengthSeconds || 0), thumbnail: details.thumbnail?.thumbnails?.at(-1)?.url || `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`, url: `https://www.youtube.com/watch?v=${videoId}`, captionsAvailable: Boolean(player?.captions?.playerCaptionsTracklistRenderer?.captionTracks?.length) };
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return json(res, 405, { ok: false, reason: 'Use POST.' });
   try {
     const body = req.body || {};
     if (body.action === 'playlist') return json(res, 200, { ok: true, playlist: await collectPlaylist(body) });
     if (body.action === 'transcript') return json(res, 200, { ok: true, transcript: await collectTranscript(body.videoId) });
+    if (body.action === 'inspect') return json(res, 200, { ok: true, video: await inspectVideo(body.videoId) });
     return json(res, 400, { ok: false, reason: 'Unknown YouTube collection action.' });
   } catch (error) {
     return json(res, 400, { ok: false, reason: error?.message || 'YouTube collection failed.' });
