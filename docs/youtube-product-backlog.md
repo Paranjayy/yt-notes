@@ -31,3 +31,4 @@ An intentionally separate backlog for ideas beyond capture/export. It records re
 - CRX inspection: unpack an extension only for compatibility/security research; never execute or ship third-party code without its licence and a deliberate rewrite.
 - Safari conversion: assess each extension as a WebExtension first. A native Safari wrapper may need Apple tooling/signing; third-party bridge products such as Viaduct can inform the workflow but are not a replacement for review, permissions mapping, or a maintainable source build.
 - Browser research side panel: use focused, user-invoked commands over selected/local capture data; borrow side-panel and recipe ideas only after a permission-minimal design review. See `docs/crx-pattern-audit.md`.
+- Active-tab AI handoff: provide a cross-browser toolbar popup that copies deliberately selected/page context and opens the user's chosen AI destination. Never read credentials, cookies, OAuth tokens, or private account APIs.

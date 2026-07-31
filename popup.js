@@ -33,8 +33,31 @@ async function refreshStatus() {
     titleEl.textContent = response.title || 'Current YouTube video';
     metaEl.textContent = response.transcriptAvailable ? 'Transcript is ready locally.' : 'Transcript not saved yet — Sync it in the page widget.';
   } catch {
-    titleEl.textContent = 'Page capture unavailable';
-    metaEl.textContent = 'Open a YouTube video, then reopen this popup.';
+    const tab = await activeTab().catch(() => null);
+    activeTabId = tab?.id ?? null;
+    titleEl.textContent = tab?.title || 'Active page';
+    metaEl.textContent = 'Copy selected text or a short page context, then choose where to use it.';
+  }
+}
+
+async function copyActivePageContext() {
+  try {
+    const tab = await activeTab();
+    if (tab?.id == null) throw new Error('No active tab is available.');
+    const result = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: () => ({ title: document.title, url: location.href, selection: window.getSelection()?.toString().trim() || '', text: document.body?.innerText?.replace(/\s+/g, ' ').trim().slice(0, 5000) || '' }),
+    });
+    const page = result?.[0]?.result;
+    if (!page) throw new Error('This page did not expose readable context.');
+    const body = page.selection || page.text;
+    if (!body) throw new Error('Select text or open a readable page first.');
+    await navigator.clipboard.writeText(`Source: ${page.title}\nURL: ${page.url}\n\n${body}`);
+    setStatus(page.selection ? 'Selected text copied.' : 'Page context copied.', 'success');
+    return true;
+  } catch (error) {
+    setStatus(error?.message || 'Could not copy this page context.', 'error');
+    return false;
   }
 }
 
@@ -51,6 +74,10 @@ async function runDownload(type, label) {
 
 document.getElementById('saveMarkdown').addEventListener('click', () => runDownload('sc_download_current_markdown', 'Markdown capture'));
 document.getElementById('saveTranscript').addEventListener('click', () => runDownload('sc_download_current_transcript', 'Transcript'));
+document.getElementById('copyPageContext').addEventListener('click', copyActivePageContext);
+document.getElementById('openChatGPT').addEventListener('click', async () => {
+  if (await copyActivePageContext()) chrome.tabs.create({ url: 'https://chatgpt.com/' });
+});
 document.getElementById('openArchive').addEventListener('click', () => chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') }));
 
 refreshStatus();

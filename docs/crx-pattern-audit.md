@@ -23,3 +23,9 @@ Inspection was performed on temporary, unpacked CRX copies only. No third-party 
 2. Add a future command palette/side panel only around explicit user-selected captures: copy context, open a chosen AI destination, save an archive, and run local filters.
 3. Do not claim an embedded AI model without a user-supplied provider or a documented paid backend.
 4. Treat browser history, open tabs, local files, and account actions as separate opt-in permissions—not default access.
+
+## Implemented: active-tab handoff
+
+- The toolbar popup can copy a user’s current selection, or a short readable page context, only after an explicit click.
+- It can then open `chatgpt.com` in the user's normal browser session. It does not inspect, copy, or use ChatGPT cookies, OAuth tokens, session data, or private endpoints.
+- This keeps the useful cross-browser popup pattern without depending on a Chrome-only side panel or broad site-wide injection.
