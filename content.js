@@ -90,8 +90,8 @@
     }
 
     .sc-quick-actions {
-      display: flex;
-      flex-wrap: wrap;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 6px;
       margin: 0 0 12px;
       padding: 9px;
@@ -101,12 +101,44 @@
     }
 
     .sc-quick-actions-label {
-      width: 100%;
       color: var(--sc-text-muted-light);
       font-size: 10px;
       font-weight: 700;
       letter-spacing: 0.06em;
       text-transform: uppercase;
+    }
+
+    .sc-quick-actions-head {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .sc-quick-actions .sc-btn {
+      min-width: 0;
+      justify-content: center;
+      padding: 7px 6px;
+      font-size: 11px;
+    }
+
+    #sc-transcript-quick-status {
+      max-width: 52%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      padding: 3px 7px;
+      border: 1px solid;
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 700;
+      line-height: 1.2;
+      white-space: nowrap;
+    }
+
+    @media (max-width: 420px) {
+      .sc-quick-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
     html[theme="dark"] .sc-tabs,
     @media (prefers-color-scheme: dark) {
@@ -1308,7 +1340,7 @@
       <!-- Notes tab -->
       <div class="sc-content-panel ${activeTabName === "notes" ? "active" : ""}" id="sc-panel-notes">
         <div class="sc-quick-actions" role="group" aria-labelledby="sc-quick-actions-label">
-          <span class="sc-quick-actions-label" id="sc-quick-actions-label">Quick copy</span><span id="sc-transcript-quick-status" role="status" aria-live="polite" style="margin-left:auto;padding:3px 7px;border:1px solid;border-radius:999px;font-size:10px;font-weight:700;white-space:nowrap;"></span>
+          <div class="sc-quick-actions-head"><span class="sc-quick-actions-label" id="sc-quick-actions-label">Quick copy</span><span id="sc-transcript-quick-status" role="status" aria-live="polite"></span></div>
           <button class="sc-btn sc-btn-primary" id="sc-btn-copy-everything">Everything</button>
           <button class="sc-btn sc-btn-secondary" id="sc-btn-copy-notes">Notes</button>
           <button class="sc-btn sc-btn-secondary" id="sc-btn-copy-description">Description</button>

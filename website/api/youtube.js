@@ -93,6 +93,36 @@ function playlistTitleFromInitialData(data) {
   return title;
 }
 
+function durationLabel(isoDuration) {
+  const parts = String(isoDuration || '').match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!parts) return '';
+  const hours = Number(parts[1] || 0), minutes = Number(parts[2] || 0), seconds = Number(parts[3] || 0);
+  return [hours, String(minutes).padStart(hours ? 2 : 1, '0'), String(seconds).padStart(2, '0')].filter((part, index) => index || hours || minutes).join(':') || `0:${String(seconds).padStart(2, '0')}`;
+}
+
+async function enrichApiVideoMetadata(items, apiKey) {
+  for (let index = 0; index < items.length; index += 50) {
+    const batch = items.slice(index, index + 50).filter((item) => !item.unavailable);
+    if (!batch.length) continue;
+    const url = new URL('https://www.googleapis.com/youtube/v3/videos');
+    url.searchParams.set('part', 'snippet,contentDetails');
+    url.searchParams.set('id', batch.map((item) => item.videoId).join(','));
+    url.searchParams.set('key', apiKey);
+    const response = await fetch(url);
+    if (!response.ok) continue;
+    const data = await response.json();
+    const byId = new Map((data.items || []).map((video) => [video.id, video]));
+    batch.forEach((item) => {
+      const video = byId.get(item.videoId);
+      if (!video) return;
+      item.duration = durationLabel(video.contentDetails?.duration);
+      item.title = video.snippet?.title || item.title;
+      item.channel = video.snippet?.channelTitle || item.channel;
+      item.thumbnail = video.snippet?.thumbnails?.medium?.url || video.snippet?.thumbnails?.default?.url || item.thumbnail;
+    });
+  }
+}
+
 async function playlistFromApi(playlistId, apiKey) {
   const items = [], seen = new Set();
   let pageToken = '';
@@ -116,6 +146,7 @@ async function playlistFromApi(playlistId, apiKey) {
     pageToken = data.nextPageToken || '';
   } while (pageToken && items.length < 500);
   if (!items.length) throw new Error('No videos were returned for that playlist.');
+  await enrichApiVideoMetadata(items, apiKey);
   return items;
 }
 
