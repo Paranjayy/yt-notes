@@ -607,6 +607,18 @@
       });
       return true;
     }
+    if (message.type === "sc_download_visible_playlist_backup") {
+      downloadVisiblePlaylistBackup().then(sendResponse).catch((error) => {
+        sendResponse({ ok: false, reason: error?.message || "Couldn't download the visible playlist backup." });
+      });
+      return true;
+    }
+    if (message.type === "sc_collect_visible_playlist_transcripts") {
+      startVisiblePlaylistTranscriptCollection().then(sendResponse).catch((error) => {
+        sendResponse({ ok: false, reason: error?.message || "Couldn't start playlist transcript collection." });
+      });
+      return true;
+    }
   });
 
   // --- YouTube Scripting & Logic ---
@@ -891,6 +903,11 @@
           playlistBackupItems = data[`sc_playlist_backup_${context.id}`].items;
         }
       });
+      if (progress.status === "complete") {
+        showToast(`✅ Playlist transcript collection finished — ${progress.completeCount || 0} collected, ${progress.noTranscriptCount || 0} unavailable, ${progress.errorCount || 0} errors.`);
+      } else if (progress.status === "error") {
+        showToast(`❌ Playlist transcript collection stopped with an error: ${progress.message || "open the archive for completed results."}`);
+      }
     }
   }
 
@@ -935,6 +952,78 @@
     // background transcript outcomes.
     playlistStatus(`${playlistBackupItems.length} videos collected${found.length ? "." : " — scroll the playlist or load all."}`);
     return playlistBackupItems;
+  }
+
+  async function downloadVisiblePlaylistBackup() {
+    const context = getPlaylistContext();
+    const items = collectPlaylistItems();
+    if (!context || !items.length) {
+      const reason = "Open a playlist and let at least one video row load before exporting.";
+      showToast(`ℹ️ ${reason}`);
+      return { ok: false, reason };
+    }
+    const saved = await new Promise((resolve) => {
+      chrome.runtime.sendMessage({
+        type: "sc_save_playlist_export_backup",
+        playlist: { format: PLAYLIST_BACKUP_FORMAT, schemaVersion: PLAYLIST_BACKUP_SCHEMA_VERSION, ...context },
+        items,
+      }, (response) => {
+        if (chrome.runtime.lastError) resolve({ ok: false, reason: chrome.runtime.lastError.message, items: [] });
+        else resolve(response || { ok: false, reason: "Background did not confirm the playlist save.", items: [] });
+      });
+    });
+    if (!saved.ok && !saved.items?.length) {
+      const reason = saved.reason || "Couldn't prepare this playlist backup.";
+      showToast(`❌ ${reason}`);
+      return { ok: false, reason };
+    }
+    const backupItems = saved.items?.length ? saved.items : items;
+    const safeName = context.title.replace(/[^a-z0-9]+/gi, "_").replace(/^_|_$/g, "") || "youtube_playlist";
+    const content = JSON.stringify({
+      format: PLAYLIST_BACKUP_FORMAT,
+      schemaVersion: PLAYLIST_BACKUP_SCHEMA_VERSION,
+      ...context,
+      exportedAt: new Date().toISOString(),
+      items: backupItems,
+    }, null, 2);
+    const archived = await downloadCaptureText(content, `${safeName}_visible_playlist_backup.json`, "application/json", "captures");
+    showToast(archived
+      ? `📥 Playlist backup saved — ${backupItems.length} visible videos.`
+      : `📥 Playlist backup downloaded — ${backupItems.length} visible videos.`);
+    return { ok: true, items: backupItems.length };
+  }
+
+  async function startVisiblePlaylistTranscriptCollection() {
+    const context = getPlaylistContext();
+    const items = collectPlaylistItems();
+    if (!context || !items.length) {
+      const reason = "Open a playlist and let video rows load before starting collection.";
+      showToast(`ℹ️ ${reason}`);
+      return { ok: false, reason };
+    }
+    if (playlistTranscriptQueueActive) {
+      const reason = "A playlist transcript collection is already running.";
+      showToast(`ℹ️ ${reason}`);
+      return { ok: false, reason };
+    }
+    const response = await new Promise((resolve) => {
+      chrome.runtime.sendMessage({
+        type: "sc_playlist_transcript_queue_start",
+        playlist: { format: PLAYLIST_BACKUP_FORMAT, schemaVersion: PLAYLIST_BACKUP_SCHEMA_VERSION, ...context },
+        items,
+      }, (result) => {
+        if (chrome.runtime.lastError) resolve({ ok: false, reason: chrome.runtime.lastError.message });
+        else resolve(result || { ok: false, reason: "Background did not start the transcript queue." });
+      });
+    });
+    if (!response?.ok) {
+      const reason = response?.reason || "Couldn't start transcript collection.";
+      showToast(`❌ ${reason}`);
+      return { ok: false, reason };
+    }
+    playlistTranscriptQueueActive = true;
+    showToast(`🔮 Collecting transcripts for ${response.total} visible videos in the background.`);
+    return { ok: true, total: response.total };
   }
 
   async function loadAllPlaylistItems() {

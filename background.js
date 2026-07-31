@@ -14,6 +14,18 @@ chrome.runtime.onInstalled.addListener(() => {
       contexts: ["page"],
       documentUrlPatterns: ["https://*.youtube.com/*", "https://youtu.be/*"],
     });
+    chrome.contextMenus.create({
+      id: "sc-save-visible-playlist",
+      title: "Download visible playlist backup (JSON)",
+      contexts: ["page"],
+      documentUrlPatterns: ["https://*.youtube.com/*"],
+    });
+    chrome.contextMenus.create({
+      id: "sc-collect-visible-playlist-transcripts",
+      title: "Collect transcripts for visible playlist videos",
+      contexts: ["page"],
+      documentUrlPatterns: ["https://*.youtube.com/*"],
+    });
   }).catch((error) => console.warn("Couldn't create Social Companion context menus", error));
 });
 
@@ -35,6 +47,12 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     }).catch(() => {
       chrome.tabs.create({ url: chrome.runtime.getURL("dashboard.html") });
     });
+  }
+  if (info.menuItemId === "sc-save-visible-playlist" && tab?.id != null) {
+    chrome.tabs.sendMessage(tab.id, { type: "sc_download_visible_playlist_backup" }).catch(() => {});
+  }
+  if (info.menuItemId === "sc-collect-visible-playlist-transcripts" && tab?.id != null) {
+    chrome.tabs.sendMessage(tab.id, { type: "sc_collect_visible_playlist_transcripts" }).catch(() => {});
   }
 });
 
