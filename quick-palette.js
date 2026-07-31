@@ -25,7 +25,7 @@
         <label class="target"><input type="checkbox" value="claude"> Claude</label>
         <label class="target"><input type="checkbox" value="grok"> Grok</label>
       </div>
-      <div class="row"><label class="check"><input id="send" type="checkbox" checked> Send in my chat</label><label class="check"><input id="newChat" type="checkbox"> New chat</label><span class="spacer"></span><button class="close" id="close">Close</button><button class="run" id="run">Run selected AIs</button></div>
+      <div class="row"><label class="check"><input id="send" type="checkbox" checked> Send in my chat</label><label class="check"><input id="newChat" type="checkbox"> New chat</label><span class="spacer"></span><button class="close" id="close">Close</button><button class="close" id="copy">Copy prompt</button><button class="run" id="run">Run selected AIs</button></div>
       <div class="status" id="status">Ready. The provider's own model picker and history stay in its tab.</div>
       <p class="hint">Uses your selection if present; otherwise a 12k-character page excerpt. <span class="kbd">Esc</span> closes.</p>
     </section>`;
@@ -37,19 +37,36 @@
   const context = selection || readable;
   $('#source').textContent = `${selection ? 'Selection' : 'Page excerpt'} · ${document.title || location.hostname}`;
   const close = () => root.remove();
+  const buildPrompt = () => {
+    const instruction = $('#prompt').value.trim();
+    if (!instruction) throw new Error('Write an instruction first.');
+    if (!context) throw new Error('This page did not expose readable text. Select text first.');
+    return `Request: ${instruction}\n\nSource: ${document.title}\nURL: ${location.href}\n\n${context}`;
+  };
   $('#close').addEventListener('click', close);
   $('.veil').addEventListener('click', close);
   root.addEventListener('keydown', (event) => { if (event.key === 'Escape') { event.preventDefault(); close(); } });
   setTimeout(() => $('#prompt').focus(), 0);
 
+  $('#copy').addEventListener('click', async () => {
+    const status = $('#status');
+    try {
+      await navigator.clipboard.writeText(buildPrompt());
+      status.textContent = 'Prompt copied locally — paste it into any provider if needed.';
+      status.className = 'status good';
+    } catch (error) {
+      status.textContent = error?.message || 'This browser blocked copying the prompt.';
+      status.className = 'status bad';
+    }
+  });
+
   $('#run').addEventListener('click', async () => {
-    const instruction = $('#prompt').value.trim();
     const providers = Array.from(shadow.querySelectorAll('.target input:checked')).map((input) => input.value);
     const status = $('#status');
-    if (!instruction) { status.textContent = 'Write an instruction first.'; status.className = 'status bad'; return; }
-    if (!context) { status.textContent = 'This page did not expose readable text. Select text first.'; status.className = 'status bad'; return; }
     if (!providers.length) { status.textContent = 'Choose at least one AI target.'; status.className = 'status bad'; return; }
-    const prompt = `Request: ${instruction}\n\nSource: ${document.title}\nURL: ${location.href}\n\n${context}`;
+    let prompt;
+    try { prompt = buildPrompt(); }
+    catch (error) { status.textContent = error?.message || 'Could not prepare the prompt.'; status.className = 'status bad'; return; }
     status.textContent = `Opening ${providers.join(', ')}…`;
     status.className = 'status';
     $('#run').disabled = true;
