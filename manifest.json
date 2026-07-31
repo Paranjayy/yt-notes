@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Social Companion & YT Note-Taker",
-  "version": "1.7.4",
+  "version": "1.7.5",
   "description": "Premium companion for YouTube, X (Twitter), Reddit, and Cambridge Dictionary. Take notes, extract transcripts, scrape word lists, and export to markdown/JSON/CSV.",
   "permissions": [
     "storage",
@@ -24,7 +24,9 @@
     "https://chatgpt.com/*",
     "https://gemini.google.com/*",
     "https://claude.ai/*",
-    "https://grok.com/*"
+    "https://grok.com/*",
+    "https://yt-notes-paranjayy-paranjay245s-projects.vercel.app/*",
+    "https://yt-notes-paranjay245s-projects.vercel.app/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -44,6 +46,11 @@
     {
       "matches": ["https://chatgpt.com/*", "https://gemini.google.com/*", "https://claude.ai/*", "https://grok.com/*"],
       "js": ["provider-bridge.js"],
+      "run_at": "document_end"
+    },
+    {
+      "matches": ["https://yt-notes-paranjayy-paranjay245s-projects.vercel.app/*", "https://yt-notes-paranjay245s-projects.vercel.app/*"],
+      "js": ["website-bridge.js"],
       "run_at": "document_end"
     },
     {
