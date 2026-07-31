@@ -1,5 +1,5 @@
 const YT_ORIGINS = new Set(['www.youtube.com', 'youtube.com', 'm.youtube.com', 'youtu.be']);
-const USER_AGENT = 'Mozilla/5.0 (compatible; SocialCompanionArchive/1.0; +https://website-sage-zeta-74.vercel.app/)';
+const USER_AGENT = 'Mozilla/5.0 (compatible; SocialCompanionArchive/1.0; +https://yt-notes-paranjayy-paranjay245s-projects.vercel.app/)';
 
 function json(res, status, body) {
   res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -105,7 +105,7 @@ async function enrichApiVideoMetadata(items, apiKey) {
     const batch = items.slice(index, index + 50).filter((item) => !item.unavailable);
     if (!batch.length) continue;
     const url = new URL('https://www.googleapis.com/youtube/v3/videos');
-    url.searchParams.set('part', 'snippet,contentDetails');
+    url.searchParams.set('part', 'snippet,contentDetails,statistics');
     url.searchParams.set('id', batch.map((item) => item.videoId).join(','));
     url.searchParams.set('key', apiKey);
     const response = await fetch(url);
@@ -119,6 +119,11 @@ async function enrichApiVideoMetadata(items, apiKey) {
       item.title = video.snippet?.title || item.title;
       item.channel = video.snippet?.channelTitle || item.channel;
       item.thumbnail = video.snippet?.thumbnails?.medium?.url || video.snippet?.thumbnails?.default?.url || item.thumbnail;
+      item.description = video.snippet?.description || '';
+      item.publishedAt = video.snippet?.publishedAt || '';
+      item.views = video.statistics?.viewCount || '';
+      item.likes = video.statistics?.likeCount || '';
+      item.commentCount = video.statistics?.commentCount || '';
     });
   }
 }
@@ -203,6 +208,27 @@ async function collectTranscript(videoId) {
   return segments.length ? { status: 'complete', reason: `Collected ${segments.length} caption segments.`, segments, language: track.languageCode || '' } : { status: 'no-transcript', reason: 'YouTube returned an empty caption track.', segments: [] };
 }
 
+async function collectComments(videoId, apiKey) {
+  if (!apiKey) throw new Error('Add your YouTube API key before collecting comments.');
+  if (!/^[A-Za-z0-9_-]{11}$/.test(videoId || '')) throw new Error('That video ID is invalid.');
+  const url = new URL('https://www.googleapis.com/youtube/v3/commentThreads');
+  url.searchParams.set('part', 'snippet');
+  url.searchParams.set('videoId', videoId);
+  url.searchParams.set('maxResults', '10');
+  url.searchParams.set('order', 'relevance');
+  url.searchParams.set('textFormat', 'plainText');
+  url.searchParams.set('key', apiKey);
+  const response = await fetch(url);
+  if (response.status === 403) return { status: 'unavailable', reason: 'Comments are disabled or unavailable for this video.', items: [] };
+  if (!response.ok) throw new Error(`YouTube comments returned ${response.status}. Check the key and quota.`);
+  const data = await response.json();
+  const items = (data.items || []).map((thread) => {
+    const top = thread.snippet?.topLevelComment?.snippet || {};
+    return { author: top.authorDisplayName || 'Unknown', text: top.textDisplay || '', likes: Number(top.likeCount || 0), publishedAt: top.publishedAt || '' };
+  }).filter((comment) => comment.text);
+  return { status: 'complete', reason: `Collected ${items.length} top comment${items.length === 1 ? '' : 's'}.`, items };
+}
+
 async function inspectVideo(videoId) {
   if (!/^[A-Za-z0-9_-]{11}$/.test(videoId || '')) throw new Error('That video ID is invalid.');
   const page = await youtubeFetch(`https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`);
@@ -226,6 +252,7 @@ export default async function handler(req, res) {
     const body = req.body || {};
     if (body.action === 'playlist') return json(res, 200, { ok: true, playlist: await collectPlaylist(body) });
     if (body.action === 'transcript') return json(res, 200, { ok: true, transcript: await collectTranscript(body.videoId) });
+    if (body.action === 'comments') return json(res, 200, { ok: true, comments: await collectComments(body.videoId, body.apiKey) });
     if (body.action === 'inspect') return json(res, 200, { ok: true, video: await inspectVideo(body.videoId) });
     return json(res, 400, { ok: false, reason: 'Unknown YouTube collection action.' });
   } catch (error) {

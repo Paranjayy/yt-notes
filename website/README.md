@@ -2,13 +2,15 @@
 
 A simple, zero-dependency web viewer for YouTube notes and playlist backups exported from the Social Companion browser extension.
 
-**Live:** https://website-sage-zeta-74.vercel.app
+**Live:** [yt-notes-paranjayy-paranjay245s-projects.vercel.app](https://yt-notes-paranjayy-paranjay245s-projects.vercel.app/#collector)
+
+[![Open DeepWiki](https://img.shields.io/badge/DeepWiki-Open-111827?logo=readthedocs)](https://deepwiki.com/Paranjayy/yt-notes)
 
 ## How to Use
 
 1. Open the Social Companion extension on any YouTube video
 2. Go to the Export tab and click **Copy Markdown**
-3. Visit [website-sage-zeta-74.vercel.app](https://website-sage-zeta-74.vercel.app)
+3. Visit [YT Notes](https://yt-notes-paranjayy-paranjay245s-projects.vercel.app/#library)
 4. Paste the markdown — your notes render instantly
 
 ### Playlist backup
