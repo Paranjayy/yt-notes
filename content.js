@@ -565,7 +565,7 @@
 
   function renderTranscriptStatus() {
     const status = document.getElementById("sc-transcript-status");
-    if (!status) return;
+    const quickStatus = document.getElementById("sc-transcript-quick-status");
     const palette = {
       ready: "#34d399",
       waiting: "#fbbf24",
@@ -574,10 +574,18 @@
       error: "#fb7185",
     };
     const color = palette[transcriptState.status] || "#94a3b8";
-    status.textContent = transcriptState.message;
-    status.style.color = color;
-    status.style.borderColor = `${color}55`;
-    status.style.background = `${color}12`;
+    if (status) {
+      status.textContent = transcriptState.message;
+      status.style.color = color;
+      status.style.borderColor = `${color}55`;
+      status.style.background = `${color}12`;
+    }
+    if (quickStatus) {
+      quickStatus.textContent = transcriptState.status === "ready" ? "Transcript verified" : transcriptState.status === "waiting" ? "Checking transcript…" : transcriptState.status === "unavailable" ? "No transcript" : "Transcript mismatch/error";
+      quickStatus.style.color = color;
+      quickStatus.style.borderColor = `${color}55`;
+      quickStatus.style.background = `${color}12`;
+    }
   }
 
   // Load user auto-pause preference from storage
@@ -1300,7 +1308,7 @@
       <!-- Notes tab -->
       <div class="sc-content-panel ${activeTabName === "notes" ? "active" : ""}" id="sc-panel-notes">
         <div class="sc-quick-actions" role="group" aria-labelledby="sc-quick-actions-label">
-          <span class="sc-quick-actions-label" id="sc-quick-actions-label">Quick copy</span>
+          <span class="sc-quick-actions-label" id="sc-quick-actions-label">Quick copy</span><span id="sc-transcript-quick-status" role="status" aria-live="polite" style="margin-left:auto;padding:3px 7px;border:1px solid;border-radius:999px;font-size:10px;font-weight:700;white-space:nowrap;"></span>
           <button class="sc-btn sc-btn-primary" id="sc-btn-copy-everything">Everything</button>
           <button class="sc-btn sc-btn-secondary" id="sc-btn-copy-notes">Notes</button>
           <button class="sc-btn sc-btn-secondary" id="sc-btn-copy-description">Description</button>
