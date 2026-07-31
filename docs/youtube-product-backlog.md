@@ -26,6 +26,8 @@ An intentionally separate backlog for ideas beyond capture/export. It records re
 
 ## Cross-platform research tracks
 
-- Reddit posts/subreddit archives and X thread capture: first identify public/free official or documented access paths, then build a platform-specific collector with local exports and explicit rate-limit receipts.
+- Reddit posts/subreddit archives: website-only, official OAuth/API route with a user-supplied app identity, local caching, and explicit rate-limit receipts. Do not promise a free public firehose.
+- X thread capture: website-only only if a user supplies paid/approved X API access; keep it isolated because X read access and pricing are volatile. No page-scraping fallback presented as a reliable collector.
 - CRX inspection: unpack an extension only for compatibility/security research; never execute or ship third-party code without its licence and a deliberate rewrite.
 - Safari conversion: assess each extension as a WebExtension first. A native Safari wrapper may need Apple tooling/signing; third-party bridge products such as Viaduct can inform the workflow but are not a replacement for review, permissions mapping, or a maintainable source build.
+- Browser research side panel: use focused, user-invoked commands over selected/local capture data; borrow side-panel and recipe ideas only after a permission-minimal design review. See `docs/crx-pattern-audit.md`.
