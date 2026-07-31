@@ -6,6 +6,7 @@ const metaEl = document.getElementById('pageMeta');
 let activeTabId = null;
 let replyPoller = null;
 let lastProviderReply = '';
+let lastProviderName = '';
 
 function setStatus(message, type = '') {
   statusEl.textContent = message;
@@ -105,6 +106,7 @@ async function readProviderReply(silent = false) {
   if (!response?.ok) { if (!silent) setStatus(response?.reason || 'No provider reply is available yet.', 'error'); return; }
   if (response.text !== lastProviderReply) {
     lastProviderReply = response.text;
+    lastProviderName = response.provider || '';
     document.getElementById('replyCard').hidden = false;
     document.getElementById('providerReply').textContent = response.text;
   }
@@ -189,6 +191,18 @@ document.getElementById('openChatGPT').addEventListener('click', async () => {
   if (await copyActivePageContext()) chrome.tabs.create({ url: 'https://chatgpt.com/' });
 });
 document.getElementById('readProviderReply').addEventListener('click', readProviderReply);
+document.getElementById('copyProviderReply').addEventListener('click', async () => {
+  if (!lastProviderReply) return setStatus('Read a provider reply first.', 'error');
+  try { await navigator.clipboard.writeText(lastProviderReply); setStatus('Provider reply copied.', 'success'); }
+  catch { setStatus('This browser blocked copying the reply.', 'error'); }
+});
+document.getElementById('saveProviderReply').addEventListener('click', async () => {
+  if (!lastProviderReply) return setStatus('Read a provider reply first.', 'error');
+  const provider = lastProviderName || 'provider';
+  const response = await chrome.runtime.sendMessage({ type: 'sc_download_archive_file', folder: 'captures', filename: `${provider}_reply_${new Date().toISOString().slice(0, 10)}.md`, mimeType: 'text/markdown', content: `# ${provider} reply\n\n${lastProviderReply}\n` });
+  if (response?.ok) setStatus('Provider reply saved as Markdown.', 'success');
+  else setStatus(response?.reason || 'Could not save the provider reply.', 'error');
+});
 document.getElementById('autoReadReply').addEventListener('change', (event) => setLiveReply(event.target.checked));
 document.getElementById('focusProvider').addEventListener('click', async () => {
   const response = await chrome.runtime.sendMessage({ type: 'sc_provider_focus' });
