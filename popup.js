@@ -4,6 +4,8 @@ const statusEl = document.getElementById('status');
 const titleEl = document.getElementById('pageTitle');
 const metaEl = document.getElementById('pageMeta');
 let activeTabId = null;
+let replyPoller = null;
+let lastProviderReply = '';
 
 function setStatus(message, type = '') {
   statusEl.textContent = message;
@@ -83,7 +85,10 @@ async function askProvider(instruction) {
   setStatus(`Opening ${providers.join(', ')}…`);
   const response = await chrome.runtime.sendMessage({ type: 'sc_provider_prompt_batch', providers, prompt, autoSubmit, startNewChat });
   if (!response?.ok) setStatus(response?.reason || 'Could not open the selected AI targets.', 'error');
-  else setStatus(response.sent ? `Sent to ${response.sent} AI target${response.sent === 1 ? '' : 's'}.` : `Prompt inserted into ${response.inserted} AI target${response.inserted === 1 ? '' : 's'}.`, 'success');
+  else {
+    setStatus(response.sent ? `Sent to ${response.sent} AI target${response.sent === 1 ? '' : 's'}.` : `Prompt inserted into ${response.inserted} AI target${response.inserted === 1 ? '' : 's'}.`, 'success');
+    if (document.getElementById('autoReadReply').checked) setLiveReply(true);
+  }
 }
 
 async function rerunPrompt(record) {
@@ -94,13 +99,27 @@ async function rerunPrompt(record) {
   else setStatus(response.submitted ? `Sent in ${record.provider}.` : `Prompt inserted in ${record.provider}; send it when ready.`, 'success');
 }
 
-async function readProviderReply() {
-  setStatus('Reading the newest visible provider reply…');
+async function readProviderReply(silent = false) {
+  if (!silent) setStatus('Reading the newest visible provider reply…');
   const response = await chrome.runtime.sendMessage({ type: 'sc_provider_read_reply' });
-  if (!response?.ok) return setStatus(response?.reason || 'No provider reply is available yet.', 'error');
-  document.getElementById('replyCard').hidden = false;
-  document.getElementById('providerReply').textContent = response.text;
-  setStatus(`Read latest ${response.provider} reply.`, 'success');
+  if (!response?.ok) { if (!silent) setStatus(response?.reason || 'No provider reply is available yet.', 'error'); return; }
+  if (response.text !== lastProviderReply) {
+    lastProviderReply = response.text;
+    document.getElementById('replyCard').hidden = false;
+    document.getElementById('providerReply').textContent = response.text;
+  }
+  if (!silent) setStatus(`Read latest ${response.provider} reply.`, 'success');
+}
+
+function setLiveReply(enabled) {
+  clearInterval(replyPoller);
+  replyPoller = null;
+  if (!enabled) return;
+  chrome.storage.local.get('sc_provider_last_tab').then((stored) => {
+    if (!stored.sc_provider_last_tab || !document.getElementById('autoReadReply').checked) return;
+    readProviderReply(true);
+    replyPoller = setInterval(() => readProviderReply(true), 1800);
+  });
 }
 
 async function renderPromptHistory() {
@@ -170,6 +189,7 @@ document.getElementById('openChatGPT').addEventListener('click', async () => {
   if (await copyActivePageContext()) chrome.tabs.create({ url: 'https://chatgpt.com/' });
 });
 document.getElementById('readProviderReply').addEventListener('click', readProviderReply);
+document.getElementById('autoReadReply').addEventListener('change', (event) => setLiveReply(event.target.checked));
 document.getElementById('focusProvider').addEventListener('click', async () => {
   const response = await chrome.runtime.sendMessage({ type: 'sc_provider_focus' });
   if (!response?.ok) setStatus(response?.reason || 'No provider tab is available.', 'error');
@@ -202,3 +222,4 @@ document.getElementById('saveRecipe').addEventListener('click', async () => {
 refreshStatus();
 renderPromptHistory();
 renderRecipes();
+setLiveReply(document.getElementById('autoReadReply').checked);
