@@ -85,6 +85,13 @@ document.getElementById('askChatGPT').addEventListener('click', async () => {
   if (!instruction) return setStatus('Write what you want ChatGPT to do first.', 'error');
   if (await copyActivePageContext(instruction)) chrome.tabs.create({ url: 'https://chatgpt.com/' });
 });
+document.querySelectorAll('[data-quick-ask]').forEach((button) => {
+  button.addEventListener('click', async () => {
+    const instruction = button.dataset.quickAsk || '';
+    document.getElementById('chatPrompt').value = instruction;
+    if (await copyActivePageContext(instruction)) chrome.tabs.create({ url: 'https://chatgpt.com/' });
+  });
+});
 document.getElementById('openArchive').addEventListener('click', () => chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') }));
 
 refreshStatus();
