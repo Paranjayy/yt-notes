@@ -27,7 +27,7 @@ The extension can send deliberately captured page context to one or more of Chat
 
 This is a visible-composer bridge, not account automation: it does **not** inspect or export cookies, OAuth/session tokens, private chats, account data, or network traffic. Provider web UIs can change, so a missing composer is reported in the popup instead of silently treated as success. The website intentionally offers copy-and-open handoff only; direct signed-in composer insertion requires the extension.
 
-On the supported YT Notes Vercel site, Prompt Pack also has **Send with extension**. It is an explicit, one-way page-to-extension request for the prompt you just built; the extension replies only with success/failure, never with provider session or account data. Copy & open remains the fallback.
+On the supported YT Notes Vercel site, Prompt Pack also has **Send with extension**. It can hand the same built prompt to the primary provider and optional extra providers in parallel; the extension replies only with success/failure, never with provider session or account data. Copy & open remains the single-provider fallback.
 
 See [the product backlog](docs/youtube-product-backlog.md) for deliberately planned YouTube workflow features and their guardrails.
 
