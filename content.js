@@ -678,6 +678,14 @@
     return url.toString();
   }
 
+  function isExplicitYouTubeVideoRoute(urlString = window.location.href) {
+    const url = new URL(urlString, window.location.origin);
+    if (url.hostname === "youtu.be") return Boolean(url.pathname.split("/").filter(Boolean)[0]);
+    if (url.pathname === "/watch") return Boolean(url.searchParams.get("v"));
+    const parts = url.pathname.split("/").filter(Boolean);
+    return ["live", "shorts"].includes(parts[0]) && Boolean(parts[1]);
+  }
+
   function getYouTubeVideoId(urlString = window.location.href) {
     const url = new URL(urlString, window.location.origin);
 
@@ -1250,7 +1258,10 @@
   }
 
   function injectYouTubeWidget(expectedVideoId = currentVideoId, attempt = 0) {
-    if (!expectedVideoId || currentVideoId !== expectedVideoId) return;
+    if (!expectedVideoId || currentVideoId !== expectedVideoId || !isExplicitYouTubeVideoRoute()) {
+      document.getElementById("sc-youtube-widget")?.remove();
+      return;
+    }
     const target =
       document.querySelector("#secondary-inner") ||
       document.querySelector("#secondary");
@@ -1983,7 +1994,7 @@
           setTranscriptState("mismatch", "Transcript timing/video check failed — not marked ready.");
         } else {
           storage.set({ [`sc_transcript_meta_${currentVideoId}`]: { videoId: currentVideoId, durationSeconds: duration, segmentCount: ytCaptions.length, collectedAt: new Date().toISOString(), source: "caption-track" } });
-          setTranscriptState("ready", `Transcript ready · ${ytCaptions.length} segments · caption track verified.`);
+          setTranscriptState("ready", `Transcript ready · ${ytCaptions.length} segments · caption track verified.`, "caption-track");
         }
       }
     } catch (e) {
@@ -2091,7 +2102,7 @@
           storage.set({ [`sc_transcript_${currentVideoId}`]: ytCaptions });
           storage.set({ [`sc_transcript_meta_${currentVideoId}`]: { videoId: currentVideoId, durationSeconds: Number(document.querySelector("video")?.duration || 0), segmentCount: ytCaptions.length, collectedAt: new Date().toISOString(), source: "YouTube transcript panel" } });
         }
-        setTranscriptState("ready", `Transcript ready · ${ytCaptions.length} segments · page/video verified.`);
+        setTranscriptState("ready", `Transcript ready · ${ytCaptions.length} segments · page/video verified.`, "YouTube transcript panel");
         renderTranscript();
         return;
       }
@@ -2443,6 +2454,11 @@
     if (meta.likes) md += `Likes: ${meta.likes}\n`;
     if (meta.uploadDate) md += `Published: ${meta.uploadDate}\n`;
     if (meta.duration) md += `Duration: ${meta.duration}\n`;
+    if (transcriptState.videoId === currentVideoId) {
+      md += `Transcript Status: ${transcriptState.status}\n`;
+      if (transcriptState.source) md += `Transcript Source: ${transcriptState.source}\n`;
+      if (transcriptState.updatedAt) md += `Transcript Checked: ${transcriptState.updatedAt}\n`;
+    }
     md += `Copied: ${new Date().toISOString().slice(0, 10)}\n`;
     if (meta.description) {
       md += `Description: ${meta.description.trim().replace(/\n/g, ' ')}\n`;

@@ -177,7 +177,15 @@ async function inspectVideo(videoId) {
   const page = await youtubeFetch(`https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`);
   const player = extractJsonAfter(page, 'var ytInitialPlayerResponse =') || extractJsonAfter(page, 'ytInitialPlayerResponse =');
   const details = player?.videoDetails;
-  if (!details?.videoId || details.videoId !== videoId) throw new Error('YouTube did not expose metadata for this video.');
+  if (!details?.videoId || details.videoId !== videoId) {
+    // oEmbed is a small public, no-key metadata fallback. It does not expose
+    // duration/caption state, but it gives the collector a useful title,
+    // channel and preview instead of treating a valid video as unusable.
+    const fallback = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${videoId}`)}&format=json`);
+    if (!fallback.ok) throw new Error('YouTube did not expose metadata for this video.');
+    const embed = await fallback.json();
+    return { videoId, title: embed.title || 'YouTube video', channel: embed.author_name || '', durationSeconds: 0, thumbnail: embed.thumbnail_url || `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`, url: `https://www.youtube.com/watch?v=${videoId}`, captionsAvailable: false, source: 'oembed' };
+  }
   return { videoId, title: details.title || 'YouTube video', channel: details.author || '', durationSeconds: Number(details.lengthSeconds || 0), thumbnail: details.thumbnail?.thumbnails?.at(-1)?.url || `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`, url: `https://www.youtube.com/watch?v=${videoId}`, captionsAvailable: Boolean(player?.captions?.playerCaptionsTracklistRenderer?.captionTracks?.length) };
 }
 
