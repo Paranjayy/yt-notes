@@ -40,7 +40,7 @@ async function refreshStatus() {
   }
 }
 
-async function copyActivePageContext() {
+async function copyActivePageContext(instruction = '') {
   try {
     const tab = await activeTab();
     if (tab?.id == null) throw new Error('No active tab is available.');
@@ -52,8 +52,10 @@ async function copyActivePageContext() {
     if (!page) throw new Error('This page did not expose readable context.');
     const body = page.selection || page.text;
     if (!body) throw new Error('Select text or open a readable page first.');
-    await navigator.clipboard.writeText(`Source: ${page.title}\nURL: ${page.url}\n\n${body}`);
-    setStatus(page.selection ? 'Selected text copied.' : 'Page context copied.', 'success');
+    const request = String(instruction || '').trim();
+    const prefix = request ? `Request: ${request}\n\n` : '';
+    await navigator.clipboard.writeText(`${prefix}Source: ${page.title}\nURL: ${page.url}\n\n${body}`);
+    setStatus(request ? 'Chat prompt and context copied.' : page.selection ? 'Selected text copied.' : 'Page context copied.', 'success');
     return true;
   } catch (error) {
     setStatus(error?.message || 'Could not copy this page context.', 'error');
@@ -77,6 +79,11 @@ document.getElementById('saveTranscript').addEventListener('click', () => runDow
 document.getElementById('copyPageContext').addEventListener('click', copyActivePageContext);
 document.getElementById('openChatGPT').addEventListener('click', async () => {
   if (await copyActivePageContext()) chrome.tabs.create({ url: 'https://chatgpt.com/' });
+});
+document.getElementById('askChatGPT').addEventListener('click', async () => {
+  const instruction = document.getElementById('chatPrompt').value.trim();
+  if (!instruction) return setStatus('Write what you want ChatGPT to do first.', 'error');
+  if (await copyActivePageContext(instruction)) chrome.tabs.create({ url: 'https://chatgpt.com/' });
 });
 document.getElementById('openArchive').addEventListener('click', () => chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') }));
 

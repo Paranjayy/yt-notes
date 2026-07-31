@@ -7,18 +7,20 @@
   <style>
     :root{color-scheme:dark;--bg:#12111a;--card:#1c1a29;--line:#3a3652;--text:#f5f3ff;--muted:#aaa5bd;--accent:#9b72ff;--good:#5ee0b1;--bad:#ff8d9b}
     *{box-sizing:border-box}body{margin:0;width:330px;background:var(--bg);color:var(--text);font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:14px}
-    h1{font-size:15px;margin:0 0 3px}.sub{color:var(--muted);margin:0 0 12px}.card{border:1px solid var(--line);background:var(--card);border-radius:10px;padding:11px;margin-bottom:10px}.title{font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.meta{color:var(--muted);font-size:12px;margin-top:3px}.actions{display:grid;grid-template-columns:1fr 1fr;gap:7px}.btn{border:1px solid var(--line);background:#27233a;color:var(--text);border-radius:8px;padding:9px;cursor:pointer;font:600 12px inherit}.btn:hover{border-color:var(--accent)}.btn.primary{background:var(--accent);border-color:var(--accent);color:#160e29}.btn.archive{grid-column:1/-1}.status{min-height:18px;color:var(--muted);font-size:12px;margin-top:9px}.status.error{color:var(--bad)}.status.success{color:var(--good)}
+    h1{font-size:15px;margin:0 0 3px}.sub{color:var(--muted);margin:0 0 12px}.card{border:1px solid var(--line);background:var(--card);border-radius:10px;padding:11px;margin-bottom:10px}.title{font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.meta{color:var(--muted);font-size:12px;margin-top:3px}.prompt-label{display:block;color:var(--muted);font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px}.prompt{width:100%;min-height:58px;resize:vertical;border:1px solid var(--line);border-radius:7px;background:#12111a;color:var(--text);padding:8px;font:12px/1.4 inherit}.prompt:focus{outline:none;border-color:var(--accent)}.prompt-hint{color:var(--muted);font-size:11px;margin:6px 0 0}.actions{display:grid;grid-template-columns:1fr 1fr;gap:7px}.btn{border:1px solid var(--line);background:#27233a;color:var(--text);border-radius:8px;padding:9px;cursor:pointer;font:600 12px inherit}.btn:hover{border-color:var(--accent)}.btn.primary{background:var(--accent);border-color:var(--accent);color:#160e29}.btn.archive{grid-column:1/-1}.status{min-height:18px;color:var(--muted);font-size:12px;margin-top:9px}.status.error{color:var(--bad)}.status.success{color:var(--good)}
   </style>
 </head>
 <body>
   <h1>🔮 Social Companion</h1>
   <p class="sub">Use this tab deliberately. Nothing is sent to a server.</p>
   <div class="card"><div class="title" id="pageTitle">Checking this tab…</div><div class="meta" id="pageMeta">YouTube captures unlock more actions; any page can share selected context.</div></div>
+  <div class="card"><label class="prompt-label" for="chatPrompt">Ask ChatGPT</label><textarea class="prompt" id="chatPrompt" placeholder="What should ChatGPT do with this page or selection?"></textarea><p class="prompt-hint">Copies your request + selected/page context, then opens your normal ChatGPT tab.</p></div>
   <div class="actions">
     <button class="btn primary" id="saveMarkdown">Save Markdown</button>
     <button class="btn" id="saveTranscript">Transcript .txt</button>
     <button class="btn" id="copyPageContext">Copy page context</button>
     <button class="btn" id="openChatGPT">Open ChatGPT</button>
+    <button class="btn primary" id="askChatGPT">Ask with context</button>
     <button class="btn archive" id="openArchive">Open capture archive</button>
   </div>
   <div class="status" id="status" role="status" aria-live="polite"></div>
