@@ -26,6 +26,19 @@ chrome.runtime.onInstalled.addListener(() => {
       contexts: ["page"],
       documentUrlPatterns: ["https://*.youtube.com/*"],
     });
+    chrome.contextMenus.create({
+      id: "sc-ask-selection",
+      title: "Ask selected text with",
+      contexts: ["selection"],
+    });
+    ["chatgpt", "gemini", "claude", "grok"].forEach((provider) => {
+      chrome.contextMenus.create({
+        id: `sc-ask-selection-${provider}`,
+        parentId: "sc-ask-selection",
+        title: provider === "chatgpt" ? "ChatGPT" : provider[0].toUpperCase() + provider.slice(1),
+        contexts: ["selection"],
+      });
+    });
   }).catch((error) => console.warn("Couldn't create Social Companion context menus", error));
 });
 
@@ -35,6 +48,17 @@ chrome.action.onClicked.addListener((tab) => {
 });
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId.startsWith("sc-ask-selection-") && info.selectionText) {
+    const provider = info.menuItemId.slice("sc-ask-selection-".length);
+    const source = tab?.url ? `\n\nSource: ${tab.url}` : "";
+    deliverProviderPrompt({
+      provider,
+      prompt: `Explain, analyze, or answer questions about this selected text. Keep useful nuance and clearly flag uncertainty.\n\nSelected text:\n${info.selectionText}${source}`,
+      autoSubmit: true,
+      startNewChat: false,
+    }).catch((error) => console.warn("Couldn't send selected text to AI provider", error));
+    return;
+  }
   if (info.menuItemId === "sc-open-capture-archive") {
     chrome.tabs.create({ url: chrome.runtime.getURL("dashboard.html") });
     return;
