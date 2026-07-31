@@ -76,17 +76,18 @@ async function copyActivePageContext(instruction = '') {
 async function askProvider(instruction) {
   const prompt = await copyActivePageContext(instruction);
   if (!prompt) return;
-  const provider = document.getElementById('chatProvider').value;
+  const providers = Array.from(document.querySelectorAll('[data-provider-target]:checked')).map((input) => input.dataset.providerTarget);
+  if (!providers.length) return setStatus('Choose at least one AI target.', 'error');
   const autoSubmit = document.getElementById('sendAutomatically').checked;
   const startNewChat = document.getElementById('startNewChat').checked;
-  setStatus(`Opening ${provider}…`);
-  const response = await chrome.runtime.sendMessage({ type: 'sc_provider_prompt', provider, prompt, autoSubmit, startNewChat });
-  if (!response?.ok) setStatus(response?.reason || `Could not open ${provider}.`, 'error');
-  else setStatus(response.submitted ? `Sent in ${provider}.` : `Prompt inserted in ${provider}; send it when ready.`, 'success');
+  setStatus(`Opening ${providers.join(', ')}…`);
+  const response = await chrome.runtime.sendMessage({ type: 'sc_provider_prompt_batch', providers, prompt, autoSubmit, startNewChat });
+  if (!response?.ok) setStatus(response?.reason || 'Could not open the selected AI targets.', 'error');
+  else setStatus(response.sent ? `Sent to ${response.sent} AI target${response.sent === 1 ? '' : 's'}.` : `Prompt inserted into ${response.inserted} AI target${response.inserted === 1 ? '' : 's'}.`, 'success');
 }
 
 async function rerunPrompt(record) {
-  document.getElementById('chatProvider').value = record.provider;
+  document.querySelectorAll('[data-provider-target]').forEach((input) => { input.checked = input.dataset.providerTarget === record.provider; });
   setStatus(`Reopening ${record.provider}…`);
   const response = await chrome.runtime.sendMessage({ type: 'sc_provider_prompt', provider: record.provider, prompt: record.prompt, autoSubmit: document.getElementById('sendAutomatically').checked, startNewChat: document.getElementById('startNewChat').checked });
   if (!response?.ok) setStatus(response?.reason || `Could not open ${record.provider}.`, 'error');

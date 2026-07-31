@@ -57,6 +57,10 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 });
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg.type === "sc_provider_prompt_batch") {
+    deliverProviderBatch(msg).then(sendResponse).catch((error) => sendResponse({ ok: false, reason: error?.message || "Could not open the AI providers." }));
+    return true;
+  }
   if (msg.type === "sc_provider_prompt") {
     deliverProviderPrompt(msg).then(sendResponse).catch((error) => sendResponse({ ok: false, reason: error?.message || "Could not open the AI provider." }));
     return true;
@@ -136,6 +140,15 @@ async function deliverProviderPrompt(message) {
   const failure = { ok: false, reason: lastError?.message || "Open a signed-in provider chat and try again." };
   await chrome.storage.local.set({ sc_provider_last_status: { provider: message.provider, error: failure.reason, at: new Date().toISOString() } });
   return failure;
+}
+
+async function deliverProviderBatch(message) {
+  const providers = [...new Set(Array.isArray(message.providers) ? message.providers : [])].filter((provider) => PROVIDERS[provider]);
+  if (!providers.length) return { ok: false, reason: "Choose at least one supported AI target." };
+  const results = [];
+  for (const provider of providers) results.push({ provider, ...(await deliverProviderPrompt({ ...message, provider })) });
+  const successful = results.filter((result) => result.ok);
+  return { ok: successful.length > 0, sent: successful.filter((result) => result.submitted).length, inserted: successful.filter((result) => !result.submitted).length, results, reason: successful.length ? '' : results.map((result) => result.reason).filter(Boolean).join(' · ') };
 }
 
 // A single, deliberately sequential queue for playlist transcript backups.
