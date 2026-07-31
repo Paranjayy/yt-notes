@@ -658,6 +658,18 @@
         transcriptAvailable: ytCaptions.length > 0,
       });
     }
+    if (message.type === "sc_get_current_markdown") {
+      if (!currentVideoId) {
+        sendResponse({ ok: false, reason: "Open a watch, live, or Shorts video first." });
+        return;
+      }
+      generateMarkdown().then((markdown) => {
+        sendResponse({ ok: true, markdown, title: extractYouTubeMetadata().title || "YouTube capture" });
+      }).catch((error) => {
+        sendResponse({ ok: false, reason: error?.message || "Could not prepare this YouTube capture." });
+      });
+      return true;
+    }
     if (message.type === "sc_download_current_markdown") {
       downloadMarkdownFile({ toast: true }).then(sendResponse).catch((error) => {
         sendResponse({ ok: false, reason: error?.message || "Couldn't save this page's capture." });

@@ -23,6 +23,7 @@ The extension can send deliberately captured page context to one or more of Chat
 - The provider’s own model picker and chat history remain the source of truth.
 - Use the page-selection right-click menu for a fast single-provider handoff.
 - Save local prompt recipes, re-run recent local prompts, and copy or save the newest visible provider reply as Markdown.
+- On a synced YouTube watch/live/Shorts page, choose **Use saved YouTube capture** to send the structured local Markdown—metadata, notes, transcript, and visible comments—rather than a generic page excerpt. Prompt size is explicit: 4k, 12k, 30k, or full saved capture.
 
 This is a visible-composer bridge, not account automation: it does **not** inspect or export cookies, OAuth/session tokens, private chats, account data, or network traffic. Provider web UIs can change, so a missing composer is reported in the popup instead of silently treated as success. The website intentionally offers copy-and-open handoff only; direct signed-in composer insertion requires the extension.
 

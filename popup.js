@@ -31,15 +31,21 @@ async function refreshStatus() {
     if (!response?.videoId) {
       titleEl.textContent = 'No active YouTube video';
       metaEl.textContent = 'Open a watch, live, or Shorts video to capture it.';
+      document.getElementById('preferCapture').checked = false;
+      document.getElementById('preferCapture').disabled = true;
     } else {
       titleEl.textContent = response.title || 'Current YouTube video';
       metaEl.textContent = response.transcriptAvailable ? 'Transcript is ready locally.' : 'Transcript not saved yet — Sync it in the page widget.';
+      document.getElementById('preferCapture').disabled = false;
+      document.getElementById('preferCapture').checked = true;
     }
   } catch {
     const tab = await activeTab().catch(() => null);
     activeTabId = tab?.id ?? null;
     titleEl.textContent = tab?.title || 'Active page';
     metaEl.textContent = 'Copy selected text or a short page context, then choose where to use it.';
+    document.getElementById('preferCapture').checked = false;
+    document.getElementById('preferCapture').disabled = true;
   }
   const last = await chrome.storage.local.get('sc_provider_last_status').catch(() => ({}));
   const receipt = last?.sc_provider_last_status;
@@ -55,6 +61,20 @@ async function copyActivePageContext(instruction = '') {
   try {
     const tab = await activeTab();
     if (tab?.id == null) throw new Error('No active tab is available.');
+    const request = String(instruction || '').trim();
+    const prefix = request ? `Request: ${request}\n\n` : '';
+    if (document.getElementById('preferCapture').checked) {
+      const capture = await chrome.tabs.sendMessage(tab.id, { type: 'sc_get_current_markdown' }).catch(() => null);
+      if (capture?.ok && capture.markdown) {
+        const max = pageContextLimit();
+        const markdown = String(capture.markdown);
+        const limited = markdown.length > max ? `${markdown.slice(0, max)}\n\n[Capture truncated at ${max.toLocaleString()} characters. Choose “Full saved capture” to include more.]` : markdown;
+        const prompt = `${prefix}Structured local YouTube capture:\n\n${limited}`;
+        await navigator.clipboard.writeText(prompt);
+        setStatus(markdown.length > max ? 'Structured capture copied (truncated to selected size).' : 'Structured YouTube capture copied.', 'success');
+        return prompt;
+      }
+    }
     const result = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: (limit) => ({ title: document.title, url: location.href, selection: window.getSelection()?.toString().trim() || '', text: document.body?.innerText?.replace(/\s+/g, ' ').trim().slice(0, limit) || '' }),
@@ -64,8 +84,6 @@ async function copyActivePageContext(instruction = '') {
     if (!page) throw new Error('This page did not expose readable context.');
     const body = page.selection || page.text;
     if (!body) throw new Error('Select text or open a readable page first.');
-    const request = String(instruction || '').trim();
-    const prefix = request ? `Request: ${request}\n\n` : '';
     const prompt = `${prefix}Source: ${page.title}\nURL: ${page.url}\n\n${body}`;
     await navigator.clipboard.writeText(prompt);
     setStatus(request ? 'Chat prompt and context copied.' : page.selection ? 'Selected text copied.' : 'Page context copied.', 'success');
