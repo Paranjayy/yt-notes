@@ -42,6 +42,13 @@ an extension folder, but Safari conversion then goes through Safari Web
 Extension Converter and Xcode. Chrome-only APIs, app packaging, signing, and
 review requirements may require source changes.
 
+### Podcast Finder
+
+Podcast Finder reads public Spotify oEmbed metadata and opens official Spotify
+and YouTube discovery links. It does not download Spotify audio or listener
+transcripts. Creator-provided VTT/SRT/RSS transcripts and matched YouTube
+videos can be brought into the local archive separately.
+
 ## Deploy to Vercel
 
 ```bash
