@@ -33,6 +33,14 @@ For complete public or unlisted playlist metadata, the extension also offers **F
 - **Zero dependencies** — pure HTML/CSS/JS, no build step needed
 - **Local playlist imports** — view Social Companion JSON/CSV playlist backups, including unavailable/private entries
 - **Playlist re-exports** — download an imported playlist as JSON, CSV, or Markdown directly from the viewer
+- **CRX Lab** — download a Chrome Web Store package and inspect a user-selected, extracted `manifest.json` locally; packages are never executed, installed, uploaded, or treated as a security verdict
+
+### Safari note
+
+Safari cannot install a Chrome `.crx` directly. A CRX can be extracted to obtain
+an extension folder, but Safari conversion then goes through Safari Web
+Extension Converter and Xcode. Chrome-only APIs, app packaging, signing, and
+review requirements may require source changes.
 
 ## Deploy to Vercel
 

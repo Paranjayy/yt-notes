@@ -43,6 +43,13 @@ This is an idea backlog, not a promise to bypass platform rules, paid access, DR
 - A local desktop helper could handle large permitted downloads, muxing, resumable files, and Safari/macOS integration without shipping risky browser-side download logic.
 - Evaluate a Chrome-extension-to-Safari conversion path after the web-extension APIs used by the queue and native helper are mapped.
 
+### Safari conversion assistant (future)
+
+- Input: an extracted Chromium extension folder, source ZIP, or source repository — never a promise that a CRX installs in Safari.
+- Output: a local compatibility report and guided invocation of `safari-web-extension-converter`, with the original manifest, host permissions, service worker, content scripts, commands, and Chrome-only APIs surfaced first.
+- Keep signing, provisioning, Xcode project review, and installation explicit user steps. A future tool can generate an auditable checklist but must not silently convert, sign, or install third-party code.
+- Treat Viaduct-like convenience as product inspiration only: Safari produces an app-extension project, so conversion can require manual API rewrites and Apple review constraints.
+
 ## Product references and lessons
 
 - Twitch Chat Downloader: deliberately narrow flow, no-registration language, desktop-first UX. Reuse the “one URL, one clear export” interaction rather than its implementation.
