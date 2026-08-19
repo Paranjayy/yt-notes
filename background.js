@@ -78,13 +78,10 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     return;
   }
   if (info.menuItemId === 'sc-open-channel-uploads' && tab?.id != null) {
-    // First try parsing the tab URL directly (works on /@handle, /channel/UC..., /c/... pages)
     const tabUrl = tab.url || '';
     let directChannelId = null;
-    // Direct /channel/UC... URL
     const ucMatch = tabUrl.match(/\/channel\/(UC[A-Za-z0-9_-]{22})/);
     if (ucMatch) directChannelId = ucMatch[1];
-    // UU... playlist URL (already an uploads playlist)
     const uuMatch = tabUrl.match(/list=(UU[A-Za-z0-9_-]{22})/);
 
     if (directChannelId) {
@@ -92,23 +89,46 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
       return;
     }
     if (uuMatch) {
-      // Already viewing an uploads playlist
       chrome.tabs.create({ url: 'https://www.youtube.com/playlist?list=' + uuMatch[1] });
       return;
     }
-    // Fallback: ask content script (async, with error handling)
-    chrome.tabs.sendMessage(tab.id, { type: 'sc_get_channel_id' }, (res) => {
-      if (chrome.runtime.lastError) {
-        // Content script not ready; show notification if possible
-        chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          func: () => alert('Social Companion: Could not detect channel ID. Try navigating to the channel page first.')
-        }).catch(() => {});
-        return;
-      }
+
+    // Try asking content script first
+    chrome.tabs.sendMessage(tab.id, { type: 'sc_get_channel_id' }, async (res) => {
       if (res?.channelId) {
         chrome.tabs.create({ url: 'https://www.youtube.com/playlist?list=UU' + res.channelId.slice(2) });
+        return;
       }
+
+      // Background direct fetch fallback for /@handle or watch pages
+      try {
+        if (tabUrl.includes('youtube.com')) {
+          console.log('[Social Companion BG] Resolving channel ID via direct fetch:', tabUrl);
+          const fetchResp = await fetch(tabUrl, { credentials: 'omit' });
+          if (fetchResp.ok) {
+            const html = await fetchResp.text();
+            const mExt = html.match(/"externalId"\s*:\s*"(UC[A-Za-z0-9_-]{22})"/);
+            if (mExt) {
+              console.log('[Social Companion BG] Resolved externalId:', mExt[1]);
+              chrome.tabs.create({ url: 'https://www.youtube.com/playlist?list=UU' + mExt[1].slice(2) });
+              return;
+            }
+            const mChan = html.match(/channel_id=(UC[A-Za-z0-9_-]{22})/);
+            if (mChan) {
+              console.log('[Social Companion BG] Resolved channel_id:', mChan[1]);
+              chrome.tabs.create({ url: 'https://www.youtube.com/playlist?list=UU' + mChan[1].slice(2) });
+              return;
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[Social Companion BG] Direct fetch failed:', err);
+      }
+
+      chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: () => alert('Social Companion: Could not detect channel ID. Try opening a video or channel page first.')
+      }).catch(() => {});
     });
     return;
   }

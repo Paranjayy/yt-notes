@@ -590,6 +590,9 @@
   let hasAttemptedAutoClick = false; // flag to prevent duplicate auto-clicks per video
   let playlistBackupItems = [];
   let playlistTranscriptQueueActive = false;
+  let _recoObserver = null;
+  let _channelHeaderObserver = null;
+  let _cachedChannelId = { url: "", id: "" };
 
   function setTranscriptState(status, message, source = "") {
     transcriptState = { status, videoId: currentVideoId, message, source, updatedAt: new Date().toISOString() };
@@ -644,16 +647,6 @@
       autoPauseOnType = data.sc_preference_autopause;
     }
   });
-
-  // Initialize script depending on host
-  const host = location.hostname;
-  if (host.includes("youtube.com") || host === "youtu.be") {
-    initYouTubeWatcher();
-  } else if (host.includes("twitter.com") || host.includes("x.com")) {
-    initSocialCompanion("x");
-  } else if (host.includes("reddit.com")) {
-    initSocialCompanion("reddit");
-  }
 
   // Used by the background-owned playlist queue. This intentionally avoids the
   // normal widget/UI path: the inactive queue tab should only return factual
@@ -737,13 +730,6 @@
   });
 
   // --- YouTube Scripting & Logic ---
-  // Declare module-level observers BEFORE initYouTubeWatcher so they are
-  // available (not in the temporal dead zone) when onYouTubeUrlChange() fires
-  // on the very first call from inside initYouTubeWatcher().
-  let _recoObserver = null;
-  let _channelHeaderObserver = null;
-  let _cachedChannelId = { url: "", id: "" };
-
   function initYouTubeWatcher() {
     let lastUrl = location.href;
     const requestActivation = () => {
@@ -939,10 +925,14 @@
     if (!target) return;
 
     const cid = await getOrExtractChannelId();
-    if (!cid) return;
+    if (!cid) {
+      console.log("[Social Companion] Could not resolve channel ID yet for button injection.");
+      return;
+    }
 
     if (document.getElementById("sc-channel-playlist-btn")) return;
 
+    console.log("[Social Companion] Injecting uploads playlist button, target:", target.tagName, "channelId:", cid);
     const uploadsUrl = "https://www.youtube.com/playlist?list=UU" + cid.slice(2);
 
     const wrapper = document.createElement("div");
@@ -1728,6 +1718,8 @@
           <button class="sc-btn sc-btn-secondary" id="sc-btn-copy-metadata">Stats & Info</button>
           <button class="sc-btn sc-btn-secondary" id="sc-btn-copy-transcript-quick">Transcript</button>
           <button class="sc-btn sc-btn-secondary" id="sc-btn-sync-transcript-quick">↻ Sync transcript</button>
+          <button class="sc-btn sc-btn-secondary" id="sc-btn-quick-playlist" title="Copy playlist or queue videos as Markdown">🎵 Queue/Playlist</button>
+          <button class="sc-btn sc-btn-secondary" id="sc-btn-quick-uploads" title="Open channel uploads playlist">🎬 Uploads</button>
         </div>
         <div class="sc-notes-input-group">
           <textarea class="sc-textarea" id="sc-note-input" placeholder="Type a timestamped note... (Auto-pauses video)"></textarea>
@@ -1864,6 +1856,36 @@
     container.querySelector("#sc-btn-copy-metadata").addEventListener("click", () => copyMetadata());
     container.querySelector("#sc-btn-copy-transcript-quick").addEventListener("click", () => copyTranscript());
     container.querySelector("#sc-btn-sync-transcript-quick").addEventListener("click", () => forceSyncTranscript());
+
+    container.querySelector("#sc-btn-quick-playlist")?.addEventListener("click", async () => {
+      try {
+        const pData = await extractPlaylistVideosFromPage();
+        if (pData?.videos?.length) {
+          const title = pData.playlistTitle || "Playlist";
+          const vids = pData.videos;
+          const md = `# ${title}\n\n` + vids.map(v => `${v.position}. [${v.title}](${v.url}) — ${v.channel} ${v.duration ? `(${v.duration})` : ""}`).join("\n");
+          await navigator.clipboard.writeText(md);
+          showToast(`📋 Copied ${vids.length} ${pData.isQueue ? "queue" : "playlist"} videos as Markdown!`);
+        } else {
+          showToast("ℹ️ No active playlist or queue found on this page.");
+        }
+      } catch (err) {
+        showToast("❌ Could not extract playlist: " + err.message);
+      }
+    });
+
+    container.querySelector("#sc-btn-quick-uploads")?.addEventListener("click", async () => {
+      try {
+        const cid = await getOrExtractChannelId();
+        if (cid) {
+          window.open("https://www.youtube.com/playlist?list=UU" + cid.slice(2), "_blank");
+        } else {
+          showToast("ℹ️ Could not find channel ID.");
+        }
+      } catch (err) {
+        showToast("❌ " + err.message);
+      }
+    });
 
     // Sync button
     container
@@ -3400,5 +3422,20 @@
       md += `**Stats**: ${data.stats}\n`;
     }
     return md;
+  }
+
+  // Initialize content script after all functions and variables are fully declared and defined
+  try {
+    const host = location.hostname;
+    console.log("[Social Companion] Initializing on host:", host);
+    if (host.includes("youtube.com") || host === "youtu.be") {
+      initYouTubeWatcher();
+    } else if (host.includes("twitter.com") || host.includes("x.com")) {
+      initSocialCompanion("x");
+    } else if (host.includes("reddit.com")) {
+      initSocialCompanion("reddit");
+    }
+  } catch (err) {
+    console.error("[Social Companion] Initialization error:", err);
   }
 })();
