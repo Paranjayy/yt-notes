@@ -737,6 +737,13 @@
   });
 
   // --- YouTube Scripting & Logic ---
+  // Declare module-level observers BEFORE initYouTubeWatcher so they are
+  // available (not in the temporal dead zone) when onYouTubeUrlChange() fires
+  // on the very first call from inside initYouTubeWatcher().
+  let _recoObserver = null;
+  let _channelHeaderObserver = null;
+  let _cachedChannelId = { url: "", id: "" };
+
   function initYouTubeWatcher() {
     let lastUrl = location.href;
     const requestActivation = () => {
@@ -758,10 +765,7 @@
     onYouTubeUrlChange();
   }
 
-  // Tracks the sidebar observer so we can disconnect on video change
-  let _recoObserver = null;
-  let _channelHeaderObserver = null;
-  let _cachedChannelId = { url: "", id: "" };
+
 
   function canonicalYouTubeUrl(videoId, timestamp = null) {
     const url = new URL("https://www.youtube.com/watch");
