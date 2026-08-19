@@ -77,12 +77,16 @@ function showToast(msg, duration = 2800) {
   setTimeout(() => t.classList.remove('show'), duration);
 }
 
-function copyText(text) {
+async function copyText(text) {
   if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(text).catch(() => copyFallback(text));
-  } else {
-    copyFallback(text);
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      return copyFallback(text);
+    }
   }
+  return copyFallback(text);
 }
 
 function copyFallback(text) {
@@ -175,6 +179,17 @@ function generateMarkdownForVideo({ videoId, notes, screenshots, transcript, met
   }
 
   return md;
+}
+
+function generateTranscriptForVideo({ videoId, transcript, meta }) {
+  const title = meta?.title || `Video ${videoId}`;
+  return [
+    title,
+    ytUrl(videoId),
+    `Saved: ${new Date().toISOString()}`,
+    '',
+    ...(transcript || []).map(c => `[${formatTime(c.start)}] ${c.text}`),
+  ].join('\n');
 }
 
 // ─── Load data from storage ───────────────────────────────────────────────────
@@ -326,6 +341,7 @@ function renderGrid() {
             <button class="btn btn-primary btn-sm" data-action="view" data-id="${escapeHtml(v.videoId)}">View Details</button>
             <a class="btn btn-secondary btn-sm" href="${ytUrl(v.videoId)}" target="_blank" rel="noreferrer">▶ Open</a>
             <button class="btn btn-secondary btn-sm" data-action="export-md" data-id="${escapeHtml(v.videoId)}">⬇ MD</button>
+            <button class="btn btn-secondary btn-sm" data-action="export-transcript" data-id="${escapeHtml(v.videoId)}">📜 TXT</button>
           </div>
         </div>
       </div>
@@ -345,6 +361,12 @@ function renderGrid() {
       exportVideoMd(e.target.dataset.id);
     });
   });
+  grid.querySelectorAll('[data-action="export-transcript"]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      exportVideoTranscript(e.target.dataset.id);
+    });
+  });
   grid.querySelectorAll('.video-card').forEach(card => {
     card.addEventListener('click', () => openModal(card.dataset.id));
   });
@@ -358,6 +380,17 @@ function exportVideoMd(videoId) {
   const filename = `${(video.meta?.title || videoId).replace(/[^a-z0-9]/gi, '_').toLowerCase()}_notes.md`;
   downloadFile(md, filename);
   showToast('✅ Markdown file downloaded!');
+}
+
+function exportVideoTranscript(videoId) {
+  const video = allVideos.find(v => v.videoId === videoId);
+  if (!video?.transcript?.length) {
+    showToast('ℹ️ No saved transcript for this video yet. Sync it on YouTube first.');
+    return;
+  }
+  const filename = `${(video.meta?.title || videoId).replace(/[^a-z0-9]/gi, '_').toLowerCase()}_transcript.txt`;
+  downloadFile(generateTranscriptForVideo(video), filename, 'text/plain');
+  showToast(`✅ Transcript downloaded — ${video.transcript.length} segments.`);
 }
 
 // ─── Export all data as JSON ──────────────────────────────────────────────────
@@ -412,13 +445,15 @@ function openModal(videoId) {
     <a class="btn btn-primary btn-sm" href="${ytUrl(videoId)}" target="_blank" rel="noreferrer">▶ Open on YouTube</a>
     <button class="btn btn-secondary btn-sm" id="modal-copy-md">📋 Copy Markdown</button>
     <button class="btn btn-secondary btn-sm" id="modal-dl-md">⬇ Download MD</button>
+    <button class="btn btn-secondary btn-sm" id="modal-dl-transcript">📜 Download transcript</button>
     <button class="btn btn-danger btn-sm" id="modal-delete">🗑 Delete All Data</button>
   `;
-  document.getElementById('modal-copy-md').addEventListener('click', () => {
-    copyText(generateMarkdownForVideo(video));
-    showToast('📋 Markdown copied to clipboard!');
+  document.getElementById('modal-copy-md').addEventListener('click', async () => {
+    const copied = await copyText(generateMarkdownForVideo(video));
+    showToast(copied ? '📋 Markdown copied to clipboard!' : '❌ Could not copy Markdown — use Download instead.');
   });
   document.getElementById('modal-dl-md').addEventListener('click', () => exportVideoMd(videoId));
+  document.getElementById('modal-dl-transcript').addEventListener('click', () => exportVideoTranscript(videoId));
   document.getElementById('modal-delete').addEventListener('click', () => deleteVideoData(videoId));
 
   // Modal body

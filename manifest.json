@@ -1,21 +1,32 @@
 {
   "manifest_version": 3,
   "name": "Social Companion & YT Note-Taker",
-  "version": "1.3.0",
+  "version": "1.8.0",
   "description": "Premium companion for YouTube, X (Twitter), Reddit, and Cambridge Dictionary. Take notes, extract transcripts, scrape word lists, and export to markdown/JSON/CSV.",
   "permissions": [
     "storage",
+    "activeTab",
     "clipboardWrite",
     "clipboardRead",
     "tabs",
-    "scripting"
+    "scripting",
+    "contextMenus",
+    "downloads"
   ],
   "host_permissions": [
     "https://*.youtube.com/*",
+    "https://youtu.be/*",
+    "https://www.googleapis.com/*",
     "https://*.twitter.com/*",
     "https://*.x.com/*",
     "https://*.reddit.com/*",
-    "https://*.dictionary.cambridge.org/*"
+    "https://*.dictionary.cambridge.org/*",
+    "https://chatgpt.com/*",
+    "https://gemini.google.com/*",
+    "https://claude.ai/*",
+    "https://grok.com/*",
+    "https://yt-notes-paranjayy-paranjay245s-projects.vercel.app/*",
+    "https://yt-notes-paranjay245s-projects.vercel.app/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -24,11 +35,22 @@
     {
       "matches": [
         "https://*.youtube.com/*",
+        "https://youtu.be/*",
         "https://*.twitter.com/*",
         "https://*.x.com/*",
         "https://*.reddit.com/*"
       ],
       "js": ["helpers.js", "content.js"],
+      "run_at": "document_end"
+    },
+    {
+      "matches": ["https://chatgpt.com/*", "https://gemini.google.com/*", "https://claude.ai/*", "https://grok.com/*"],
+      "js": ["provider-bridge.js"],
+      "run_at": "document_end"
+    },
+    {
+      "matches": ["https://yt-notes-paranjayy-paranjay245s-projects.vercel.app/*", "https://yt-notes-paranjay245s-projects.vercel.app/*"],
+      "js": ["website-bridge.js"],
       "run_at": "document_end"
     },
     {
@@ -48,10 +70,20 @@
   },
   "action": {
     "default_title": "Social Companion — Open Dashboard",
+    "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon-16.png",
       "48": "icons/icon-48.png",
       "128": "icons/icon-128.png"
+    }
+  },
+  "commands": {
+    "sc-toggle-quick-palette": {
+      "suggested_key": {
+        "default": "Alt+Shift+A",
+        "mac": "MacCtrl+Shift+A"
+      },
+      "description": "Open Social Companion's active-page AI palette"
     }
   },
   "web_accessible_resources": [

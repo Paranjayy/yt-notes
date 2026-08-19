@@ -1,0 +1,71 @@
+'use strict';
+
+// Only handles a user-triggered draft/submit. It does not inspect account data,
+// cookies, storage, prior chats, or network traffic.
+(() => {
+  const provider = location.hostname === 'chatgpt.com' ? 'chatgpt'
+    : location.hostname === 'gemini.google.com' ? 'gemini'
+      : location.hostname === 'claude.ai' ? 'claude'
+        : location.hostname === 'grok.com' ? 'grok' : '';
+  const composers = {
+    chatgpt: ['#prompt-textarea', '[data-testid="textbox"]', 'textarea[placeholder*="Message"]', '[data-testid*="composer"] [contenteditable="true"]', 'form [contenteditable="true"]', '[contenteditable="true"][data-lexical-editor="true"]'],
+    gemini: ['rich-textarea [contenteditable="true"]', '[contenteditable="true"][aria-label*="Enter a prompt"]', '[contenteditable="true"]'],
+    claude: ['[contenteditable="true"][data-placeholder]', 'div[contenteditable="true"]', 'textarea'],
+    grok: ['textarea', '[contenteditable="true"]'],
+  };
+  const sendButtons = {
+    chatgpt: ['[data-testid="send-button"]', 'button[aria-label*="Send"]'],
+    gemini: ['button[aria-label*="Send"]', 'button[aria-label*="Submit"]'],
+    claude: ['button[aria-label*="Send"]', 'button[type="submit"]'],
+    grok: ['button[aria-label*="Send"]', 'button[type="submit"]'],
+  };
+  function visible(selectors) {
+    return selectors.flatMap((selector) => Array.from(document.querySelectorAll(selector))).find((element) => {
+      const style = window.getComputedStyle(element);
+      return element.getClientRects().length && style.visibility !== 'hidden' && style.display !== 'none';
+    });
+  }
+  function write(composer, prompt) {
+    composer.focus();
+    if (composer instanceof HTMLTextAreaElement || composer instanceof HTMLInputElement) {
+      const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(composer), 'value')?.set;
+      setter ? setter.call(composer, prompt) : composer.value = prompt;
+    } else {
+      document.execCommand('selectAll', false, null);
+      document.execCommand('insertText', false, prompt);
+      if (!composer.textContent?.trim()) composer.textContent = prompt;
+    }
+    composer.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: prompt }));
+    composer.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  function newestReply() {
+    const selectors = [
+      '[data-message-author-role="assistant"]',
+      '[data-testid*="assistant"]',
+      'model-response',
+      '.model-response-text',
+      '.assistant-message',
+    ];
+    const nodes = selectors.flatMap((selector) => Array.from(document.querySelectorAll(selector))).filter((node) => node.getClientRects().length && node.innerText?.trim());
+    const node = nodes.at(-1);
+    return node?.innerText?.trim().slice(-30000) || '';
+  }
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.type === 'sc_read_provider_reply' && message.provider === provider) {
+      const text = newestReply();
+      sendResponse(text ? { ok: true, text } : { ok: false, reason: `No visible ${provider} reply yet; it may still be generating.` });
+      return;
+    }
+    if (message?.type !== 'sc_insert_provider_prompt' || message.provider !== provider) return;
+    try {
+      const composer = visible(composers[provider] || []);
+      if (!composer) return sendResponse({ ok: false, reason: `Could not find the ${provider} composer. Sign in and open a new chat first.` });
+      write(composer, String(message.prompt || ''));
+      const button = message.autoSubmit ? visible(sendButtons[provider] || []) : null;
+      if (button) button.click();
+      sendResponse({ ok: true, submitted: Boolean(button) });
+    } catch (error) {
+      sendResponse({ ok: false, reason: error?.message || `Could not write into ${provider}.` });
+    }
+  });
+})();
