@@ -1007,28 +1007,37 @@
       _channelHeaderObserver = null;
     }
     const path = location.pathname;
-    const isChannel = path.startsWith("/@") || path.startsWith("/channel/") || path.startsWith("/c/") || path.startsWith("/user/");
+    const isChannel = path.startsWith('/@') || path.startsWith('/channel/') || path.startsWith('/c/') || path.startsWith('/user/');
     if (!isChannel) {
-      document.getElementById("sc-channel-playlist-wrapper")?.remove();
-      document.getElementById("sc-channel-playlist-btn")?.remove();
+      document.getElementById('sc-channel-playlist-wrapper')?.remove();
+      document.getElementById('sc-channel-playlist-btn')?.remove();
       return;
     }
 
-    injectChannelPlaylistButton();
+    // Try injection immediately, then with backoff
+    injectChannelPlaylistButtonWithRetry(5, 500);
 
+    // Also watch for DOM changes (header mounts asynchronously in SPA)
     _channelHeaderObserver = new MutationObserver(() => {
-      if (document.querySelector("yt-flexible-actions-view-model, yt-page-header-view-model, #channel-header") && !document.getElementById("sc-channel-playlist-btn")) {
+      if (
+        document.querySelector('yt-flexible-actions-view-model, yt-page-header-view-model, #channel-header') &&
+        !document.getElementById('sc-channel-playlist-btn')
+      ) {
         injectChannelPlaylistButton();
       }
     });
-
     _channelHeaderObserver.observe(document.body, { childList: true, subtree: true });
-    setTimeout(() => {
-      if (_channelHeaderObserver) {
-        _channelHeaderObserver.disconnect();
-        _channelHeaderObserver = null;
-      }
-    }, 25000);
+    // Observer stays alive — will be disconnected on next onYouTubeUrlChange() when not on channel page
+  }
+
+  async function injectChannelPlaylistButtonWithRetry(attemptsLeft, delayMs) {
+    if (attemptsLeft <= 0) return;
+    if (document.getElementById('sc-channel-playlist-btn')) return; // Already injected
+    await injectChannelPlaylistButton();
+    if (!document.getElementById('sc-channel-playlist-btn')) {
+      // Not injected yet, retry after delay
+      setTimeout(() => injectChannelPlaylistButtonWithRetry(attemptsLeft - 1, Math.min(delayMs * 2, 6000)), delayMs);
+    }
   }
 
   async function extractPlaylistVideosFromPage() {
@@ -1205,12 +1214,8 @@
         document.getElementById("sc-playlist-backup-widget")?.remove();
       }
 
-      if (path.startsWith("/@") || path.startsWith("/channel/") || path.startsWith("/c/") || path.startsWith("/user/")) {
-        watchChannelHeader();
-      } else {
-        document.getElementById("sc-channel-playlist-wrapper")?.remove();
-        document.getElementById("sc-channel-playlist-btn")?.remove();
-      }
+      // watchChannelHeader handles both channel and non-channel pages internally
+      watchChannelHeader();
     }
   }
 

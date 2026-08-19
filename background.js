@@ -77,10 +77,37 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     }).catch((error) => console.warn("Couldn't send selected text to AI provider", error));
     return;
   }
-  if (info.menuItemId === "sc-open-channel-uploads" && tab?.id != null) {
-    chrome.tabs.sendMessage(tab.id, { type: "sc_get_channel_id" }, (res) => {
+  if (info.menuItemId === 'sc-open-channel-uploads' && tab?.id != null) {
+    // First try parsing the tab URL directly (works on /@handle, /channel/UC..., /c/... pages)
+    const tabUrl = tab.url || '';
+    let directChannelId = null;
+    // Direct /channel/UC... URL
+    const ucMatch = tabUrl.match(/\/channel\/(UC[A-Za-z0-9_-]{22})/);
+    if (ucMatch) directChannelId = ucMatch[1];
+    // UU... playlist URL (already an uploads playlist)
+    const uuMatch = tabUrl.match(/list=(UU[A-Za-z0-9_-]{22})/);
+
+    if (directChannelId) {
+      chrome.tabs.create({ url: 'https://www.youtube.com/playlist?list=UU' + directChannelId.slice(2) });
+      return;
+    }
+    if (uuMatch) {
+      // Already viewing an uploads playlist
+      chrome.tabs.create({ url: 'https://www.youtube.com/playlist?list=' + uuMatch[1] });
+      return;
+    }
+    // Fallback: ask content script (async, with error handling)
+    chrome.tabs.sendMessage(tab.id, { type: 'sc_get_channel_id' }, (res) => {
+      if (chrome.runtime.lastError) {
+        // Content script not ready; show notification if possible
+        chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: () => alert('Social Companion: Could not detect channel ID. Try navigating to the channel page first.')
+        }).catch(() => {});
+        return;
+      }
       if (res?.channelId) {
-        chrome.tabs.create({ url: "https://www.youtube.com/playlist?list=UU" + res.channelId.slice(2) });
+        chrome.tabs.create({ url: 'https://www.youtube.com/playlist?list=UU' + res.channelId.slice(2) });
       }
     });
     return;
