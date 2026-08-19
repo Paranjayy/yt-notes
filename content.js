@@ -744,6 +744,8 @@
     }, 1500);
 
     onYouTubeUrlChange();
+    // Also try channel button immediately on load (channel pages may not fire yt-navigate-finish)
+    setTimeout(injectChannelPlaylistButton, 2000);
   }
 
   // Tracks the sidebar observer so we can disconnect on video change
@@ -829,48 +831,61 @@
     return cid;
   }
 
+  let _channelBtnAttempts = 0;
   function injectChannelPlaylistButton() {
-    // Only on channel pages
     const host = location.hostname;
     if (!host.includes("youtube.com")) return;
     const path = location.pathname;
     if (!path.startsWith("/@") && !path.startsWith("/channel/") && !path.startsWith("/c/")) return;
-    
-    // Wait for the action buttons area to appear
-    const target = document.querySelector('#page-header yt-page-header-renderer yt-page-header-view-model #flexible-actions, yt-page-header-view-model #flexible-actions, #channel-header #buttons, #channel-header-container');
+
+    // Don't inject twice
+    if (document.getElementById('sc-channel-playlist-btn')) return;
+
+    // YouTube's new page-header structure:
+    // #page-header > yt-page-header-renderer > yt-page-header-view-model > div > div > div > yt-flexible-actions-view-model
+    const target =
+      document.querySelector('yt-flexible-actions-view-model') ||
+      document.querySelector('#page-header yt-page-header-view-model') ||
+      document.querySelector('yt-page-header-view-model') ||
+      document.querySelector('#channel-header #buttons') ||
+      document.querySelector('#channel-header-container');
+
     if (!target) {
+      _channelBtnAttempts++;
+      if (_channelBtnAttempts < 15) setTimeout(injectChannelPlaylistButton, 1200);
+      return;
+    }
+    _channelBtnAttempts = 0;
+
+    const cid = extractChannelId();
+    if (!cid) {
+      // Channel ID not ready yet — retry once
       setTimeout(injectChannelPlaylistButton, 1500);
       return;
     }
-    
-    // Don't inject twice
-    if (document.getElementById('sc-channel-playlist-btn')) return;
-    
-    const cid = extractChannelId();
-    if (!cid) return;
-    
-    const uploadsUrl = 'https://www.youtube.com/playlist?list=UU' + cid.substr(2);
-    
+
+    const uploadsUrl = 'https://www.youtube.com/playlist?list=UU' + cid.slice(2);
+
     const btn = document.createElement('a');
     btn.id = 'sc-channel-playlist-btn';
     btn.href = uploadsUrl;
-    btn.textContent = '📋 View Uploads as Playlist';
-    btn.style.cssText = `
-      display: inline-flex; align-items: center; gap: 6px;
-      padding: 8px 16px; border-radius: 20px;
-      background: linear-gradient(135deg, #9b72ff, #6e44ff);
-      color: #fff; font-size: 13px; font-weight: 600;
-      text-decoration: none; cursor: pointer;
-      box-shadow: 0 2px 8px rgba(155,114,255,0.3);
-      transition: transform 0.15s, box-shadow 0.15s;
-      margin-left: 8px;
-    `;
-    btn.onmouseenter = () => { btn.style.transform = 'scale(1.05)'; btn.style.boxShadow = '0 4px 14px rgba(155,114,255,0.45)'; };
-    btn.onmouseleave = () => { btn.style.transform = ''; btn.style.boxShadow = '0 2px 8px rgba(155,114,255,0.3)'; };
-    
-    // Try multiple insertion points
-    const actionsContainer = target.querySelector('#flexible-actions') || target;
-    actionsContainer.appendChild(btn);
+    btn.title = 'View all uploads as a playlist (Social Companion)';
+    btn.innerHTML = '<span style="font-size:15px;">📋</span> <span>Uploads Playlist</span>';
+    btn.style.cssText = [
+      'display:inline-flex', 'align-items:center', 'gap:6px',
+      'padding:8px 16px', 'border-radius:20px',
+      'background:linear-gradient(135deg,#9b72ff,#6e44ff)',
+      'color:#fff', 'font-size:13px', 'font-weight:600',
+      'text-decoration:none', 'cursor:pointer',
+      'box-shadow:0 2px 8px rgba(155,114,255,0.35)',
+      'transition:transform 0.15s,box-shadow 0.15s',
+      'margin-left:8px', 'white-space:nowrap', 'vertical-align:middle',
+      'border:none', 'font-family:inherit',
+    ].join(';');
+    btn.onmouseenter = () => { btn.style.transform = 'scale(1.04)'; btn.style.boxShadow = '0 4px 14px rgba(155,114,255,0.5)'; };
+    btn.onmouseleave = () => { btn.style.transform = ''; btn.style.boxShadow = '0 2px 8px rgba(155,114,255,0.35)'; };
+
+    target.appendChild(btn);
   }
 
   async function extractPlaylistVideosFromPage() {
