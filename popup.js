@@ -317,3 +317,289 @@ renderPromptHistory();
 renderProviderActivity();
 renderRecipes();
 setLiveReply(document.getElementById('autoReadReply').checked);
+
+// ─── Playlist Hub & Batch Transcript ─────────────────────────────────────────
+
+let currentPlaylistVideos = [];
+let selectedVideoIndices = new Set();
+let activePlaylistId = null;
+
+function escapeHtml(str) {
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+
+function fmtSeconds(s) {
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+function parseDuration(dur) {
+  if (!dur) return 0;
+  const p = dur.trim().split(':').map(Number);
+  if (p.length === 3) return p[0] * 3600 + p[1] * 60 + p[2];
+  if (p.length === 2) return p[0] * 60 + p[1];
+  return 0;
+}
+
+// Check if current tab is a channel page and show uploads shortcut
+async function checkUploadsShortcut() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab || !tab.url || !tab.url.includes('youtube.com')) return;
+  const path = new URL(tab.url).pathname;
+  if (!path.startsWith('/@') && !path.startsWith('/channel/') && !path.startsWith('/c/')) return;
+  chrome.tabs.sendMessage(tab.id, { type: 'sc_get_channel_id' }, (res) => {
+    if (chrome.runtime.lastError || !res?.ok || !res.channelId) return;
+    const card = document.getElementById('uploadsCard');
+    const nameEl = document.getElementById('uploadsChannelName');
+    if (!card || !nameEl) return;
+    card.hidden = false;
+    nameEl.textContent = res.channelId;
+    document.getElementById('goToUploads').onclick = () => {
+      chrome.tabs.create({ url: 'https://www.youtube.com/playlist?list=UU' + res.channelId.slice(2) });
+    };
+  });
+}
+
+// Render the playlist hub from all saved backups
+function renderPlaylistHub() {
+  chrome.runtime.sendMessage({ type: 'sc_list_playlist_backups' }, (res) => {
+    const listEl = document.getElementById('playlistHubList');
+    const card = document.getElementById('playlistHubCard');
+    if (!listEl || !card) return;
+    card.hidden = false;
+
+    const backups = res?.backups || [];
+    if (backups.length === 0) {
+      listEl.innerHTML = '<span class="history-empty">No saved playlists yet — use "Load all videos" on a playlist page.</span>';
+      return;
+    }
+
+    backups.sort((a, b) => new Date(b.exportedAt || 0) - new Date(a.exportedAt || 0));
+
+    listEl.innerHTML = backups.map(e => {
+      const totalSec = (e.items || []).reduce((s, i) => s + parseDuration(i.duration), 0);
+      const dur = totalSec > 0 ? fmtSeconds(totalSec) : '—';
+      const tBadge = e.hasTranscripts ? `<span style="color:#5ee0b1;font-size:10px;">✓ transcripts</span>` : '';
+      const src = e.source === 'youtube-data-api' ? `<span style="color:#9b72ff;font-size:10px;">API</span>` : '';
+      const isQ = (e.playlistId || '').startsWith('WL') || (e.playlistId || '').startsWith('LL');
+      const typeIcon = isQ ? '📋' : '🎵';
+      return `<div class="history-item" style="flex-direction:column;align-items:stretch;">
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span>${typeIcon}</span>
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:600;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(e.playlistTitle)}">${escapeHtml(e.playlistTitle)}</div>
+            <div style="font-size:10px;color:#aaa5bd;margin-top:2px;">${e.videoCount} vids · ${dur} ${tBadge} ${src}</div>
+          </div>
+          <div style="display:flex;gap:4px;flex-shrink:0;">
+            <button class="btn load-pl" data-pid="${e.playlistId}" style="font-size:10px;padding:3px 7px;">Load</button>
+            <button class="btn exp-pl" data-pid="${e.playlistId}" style="font-size:10px;padding:3px 7px;">⋯</button>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+
+    listEl.querySelectorAll('.load-pl').forEach(btn => {
+      btn.onclick = (ev) => { ev.stopPropagation(); loadPlaylistFromBackup(btn.dataset.pid, res.backups); };
+    });
+    listEl.querySelectorAll('.exp-pl').forEach(btn => {
+      btn.onclick = (ev) => { ev.stopPropagation(); showExportMenu(btn.dataset.pid, res.backups, btn); };
+    });
+  });
+}
+
+function loadPlaylistFromBackup(playlistId, backups) {
+  const backup = backups.find(b => b.playlistId === playlistId);
+  if (!backup || !backup.items) return;
+  activePlaylistId = playlistId;
+  currentPlaylistVideos = backup.items.map((item, i) => ({
+    position: item.position || i + 1,
+    videoId: item.videoId || '',
+    title: item.title || `Video ${i + 1}`,
+    channel: item.channel || '',
+    duration: item.duration || '',
+    hasTranscript: item.transcriptCollection?.status === 'complete',
+    segments: item.transcriptCollection?.segments || [],
+  }));
+  selectedVideoIndices = new Set(currentPlaylistVideos.map((_, i) => i));
+  const batchCard = document.getElementById('batchTranscriptCard');
+  if (batchCard) batchCard.hidden = false;
+  renderBatchList();
+  renderPlaylistStats(backup);
+}
+
+function renderBatchList() {
+  const el = document.getElementById('batchTranscriptList');
+  if (!el) return;
+  if (currentPlaylistVideos.length === 0) {
+    el.innerHTML = '<span class="history-empty">No videos loaded.</span>';
+    return;
+  }
+  el.innerHTML = currentPlaylistVideos.map((v, i) => {
+    const dot = v.hasTranscript ? '🟢' : '⚪';
+    const chk = selectedVideoIndices.has(i) ? 'checked' : '';
+    return `<label style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:11px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.05);">
+      <input type="checkbox" class="vsel" data-i="${i}" ${chk} style="margin:0;flex-shrink:0;">
+      <span>${dot}</span>
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(v.title)}">${escapeHtml(v.title)}</span>
+      <span style="color:#aaa5bd;font-size:10px;flex-shrink:0;">${v.duration}</span>
+    </label>`;
+  }).join('');
+  el.querySelectorAll('.vsel').forEach(cb => {
+    cb.onchange = () => {
+      const i = parseInt(cb.dataset.i);
+      cb.checked ? selectedVideoIndices.add(i) : selectedVideoIndices.delete(i);
+    };
+  });
+}
+
+function renderPlaylistStats(backup) {
+  const el = document.getElementById('playlistStats');
+  if (!el || !backup?.items) return;
+  const items = backup.items;
+  const total = items.length;
+  const withT = items.filter(i => i.transcriptCollection?.status === 'complete').length;
+  const totalSec = items.reduce((s, i) => s + parseDuration(i.duration), 0);
+  el.innerHTML = `<strong>${total}</strong> videos · <span style="color:#5ee0b1;">${withT}</span> with transcripts · total <strong>${fmtSeconds(totalSec)}</strong>`;
+}
+
+// ─── Export helpers ───────────────────────────────────────────────────────────
+
+function showExportMenu(playlistId, backups, anchor) {
+  document.getElementById('sc-exp-menu')?.remove();
+  const menu = document.createElement('div');
+  menu.id = 'sc-exp-menu';
+  menu.style.cssText = 'position:fixed;z-index:9999;background:#1c1a29;border:1px solid #3a3652;border-radius:8px;padding:4px;box-shadow:0 4px 16px rgba(0,0,0,0.5);';
+  const r = anchor.getBoundingClientRect();
+  menu.style.left = Math.max(4, r.right - 130) + 'px';
+  menu.style.top = (r.bottom + 4) + 'px';
+  [['JSON', 'json'], ['CSV', 'csv'], ['Markdown', 'md'], ['Copy URLs', 'urls'], ['Copy Titles', 'titles']].forEach(([label, fmt]) => {
+    const b = document.createElement('button');
+    b.textContent = label;
+    b.style.cssText = 'display:block;width:100%;text-align:left;padding:6px 10px;font-size:12px;background:none;border:none;color:#f5f3ff;cursor:pointer;border-radius:4px;white-space:nowrap;';
+    b.onmouseenter = () => b.style.background = 'rgba(155,114,255,0.15)';
+    b.onmouseleave = () => b.style.background = 'none';
+    b.onclick = () => { menu.remove(); exportPlaylist(playlistId, backups, fmt); };
+    menu.appendChild(b);
+  });
+  document.body.appendChild(menu);
+  setTimeout(() => document.addEventListener('click', function h(e) {
+    if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('click', h); }
+  }), 10);
+}
+
+function exportPlaylist(playlistId, backups, fmt) {
+  const backup = backups.find(b => b.playlistId === playlistId);
+  if (!backup) return;
+  const items = backup.items || [];
+  const title = backup.playlistTitle || playlistId;
+
+  if (fmt === 'urls') {
+    navigator.clipboard.writeText(items.map(i => `https://www.youtube.com/watch?v=${i.videoId}`).join('\n'));
+    setStatus('URLs copied!', 'success'); return;
+  }
+  if (fmt === 'titles') {
+    navigator.clipboard.writeText(items.map((i, n) => `${i.position || n + 1}. ${i.title}`).join('\n'));
+    setStatus('Titles copied!', 'success'); return;
+  }
+
+  let content = '', filename = `playlist_${playlistId}`, mime = 'text/plain';
+  if (fmt === 'json') {
+    content = JSON.stringify({ playlistId, title, exportedAt: backup.exportedAt, videoCount: items.length, items }, null, 2);
+    filename += '.json'; mime = 'application/json';
+  } else if (fmt === 'csv') {
+    content = 'Position,VideoID,Title,Channel,Duration,URL\n' + items.map(i =>
+      `${i.position || ''},"${i.videoId || ''}","${(i.title || '').replace(/"/g, '""')}","${(i.channel || '').replace(/"/g, '""')}",${i.duration || ''},https://www.youtube.com/watch?v=${i.videoId || ''}`
+    ).join('\n');
+    filename += '.csv'; mime = 'text/csv';
+  } else if (fmt === 'md') {
+    content = `# ${title}\n\nExported: ${backup.exportedAt || new Date().toISOString()}\n${items.length} videos\n\n` +
+      items.map(i => `${i.position || ''}. [${i.title || 'Untitled'}](https://www.youtube.com/watch?v=${i.videoId || ''}) — ${i.channel || ''} ${i.duration ? `(${i.duration})` : ''}`).join('\n');
+    filename += '.md';
+  }
+  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([content], { type: mime })), download: filename });
+  a.click(); URL.revokeObjectURL(a.href);
+  setStatus(`Exported ${fmt.toUpperCase()}`, 'success');
+}
+
+// Current-playlist export buttons (for loaded batch list)
+function exportCurrentPlaylist(fmt) {
+  if (!activePlaylistId) { setStatus('Load a playlist first.', 'error'); return; }
+  chrome.runtime.sendMessage({ type: 'sc_list_playlist_backups' }, (res) => {
+    exportPlaylist(activePlaylistId, res?.backups || [], fmt);
+  });
+}
+
+// ─── Batch Transcript Extraction ─────────────────────────────────────────────
+
+async function copyTranscripts() {
+  const indices = Array.from(selectedVideoIndices).sort((a, b) => a - b);
+  if (!indices.length) { setStatus('No videos selected.', 'error'); return; }
+  const statusEl = document.getElementById('batchTranscriptStatus');
+  const results = [];
+
+  for (let n = 0; n < indices.length; n++) {
+    const v = currentPlaylistVideos[indices[n]];
+    if (!v?.videoId) continue;
+    if (statusEl) statusEl.textContent = `Processing ${n + 1}/${indices.length}: ${v.title.slice(0, 45)}…`;
+
+    // Use cached segments from storage first
+    if (v.segments?.length > 0) {
+      results.push({ title: v.title, videoId: v.videoId, text: v.segments.map(s => s.text).join(' ') });
+      continue;
+    }
+
+    // Fall back: open background tab
+    try {
+      const tab = await chrome.tabs.create({ url: `https://www.youtube.com/watch?v=${v.videoId}`, active: false });
+      await new Promise(r => setTimeout(r, 5000));
+      const resp = await new Promise(r => chrome.tabs.sendMessage(tab.id, { type: 'sc_collect_transcript' }, r));
+      await chrome.tabs.remove(tab.id).catch(() => {});
+      const text = resp?.segments?.length > 0 ? resp.segments.map(s => s.text).join(' ') : '[No transcript available]';
+      results.push({ title: v.title, videoId: v.videoId, text });
+    } catch (e) {
+      results.push({ title: v.title, videoId: v.videoId, text: `[Error: ${e.message}]` });
+    }
+  }
+
+  const out = results.map(r =>
+    `## ${r.title}\nURL: https://www.youtube.com/watch?v=${r.videoId}\n\n${r.text}\n\n---`
+  ).join('\n\n');
+  await navigator.clipboard.writeText(out);
+  if (statusEl) statusEl.textContent = `Done — ${results.length} transcripts copied to clipboard.`;
+  setStatus(`Copied ${results.length} transcripts`, 'success');
+}
+
+// ─── Event listeners ──────────────────────────────────────────────────────────
+
+document.getElementById('refreshPlaylistHub')?.addEventListener('click', renderPlaylistHub);
+document.getElementById('goToUploads'); // wired up inside checkUploadsShortcut
+document.getElementById('selectAllVideos')?.addEventListener('click', () => {
+  selectedVideoIndices = new Set(currentPlaylistVideos.map((_, i) => i));
+  renderBatchList();
+});
+document.getElementById('deselectAllVideos')?.addEventListener('click', () => {
+  selectedVideoIndices.clear();
+  renderBatchList();
+});
+document.getElementById('copySelectedTranscripts')?.addEventListener('click', copyTranscripts);
+document.getElementById('copyAllTranscripts')?.addEventListener('click', () => {
+  selectedVideoIndices = new Set(currentPlaylistVideos.map((_, i) => i));
+  copyTranscripts();
+});
+document.getElementById('exportPlaylistJson')?.addEventListener('click', () => exportCurrentPlaylist('json'));
+document.getElementById('exportPlaylistCsv')?.addEventListener('click', () => exportCurrentPlaylist('csv'));
+document.getElementById('exportPlaylistMd')?.addEventListener('click', () => exportCurrentPlaylist('md'));
+document.getElementById('copyPlaylistUrls')?.addEventListener('click', () => {
+  const urls = currentPlaylistVideos.map(v => `https://www.youtube.com/watch?v=${v.videoId}`).join('\n');
+  navigator.clipboard.writeText(urls).then(() => setStatus('URLs copied!', 'success'));
+});
+document.getElementById('copyPlaylistTitles')?.addEventListener('click', () => {
+  const titles = currentPlaylistVideos.map((v, i) => `${i + 1}. ${v.title}`).join('\n');
+  navigator.clipboard.writeText(titles).then(() => setStatus('Titles copied!', 'success'));
+});
+
+// Init
+checkUploadsShortcut();
+renderPlaylistHub();
