@@ -1759,6 +1759,16 @@
           <button class="sc-btn sc-btn-secondary" style="width: 100%; justify-content: center;" id="sc-btn-dl-md">Download Markdown File</button>
           <button class="sc-btn sc-btn-secondary" style="width: 100%; justify-content: center; margin-top: 6px;" id="sc-btn-dl-transcript">Download Transcript (.txt)</button>
 
+          <div style="margin-top: 14px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.08);">
+            <strong style="font-size: 13px;">🎵 Queue &amp; Playlist Batch Export:</strong>
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px; margin-top:8px;">
+              <button class="sc-btn sc-btn-primary" id="sc-btn-auto-collect-queue" style="grid-column: 1 / -1; justify-content: center;">⚡ Auto-Collect &amp; Download Bundle (.MD)</button>
+              <button class="sc-btn sc-btn-secondary" id="sc-btn-dl-queue-json" style="justify-content: center;">📥 Queue JSON</button>
+              <button class="sc-btn sc-btn-secondary" id="sc-btn-dl-queue-csv" style="justify-content: center;">📥 Queue CSV</button>
+              <button class="sc-btn sc-btn-secondary" id="sc-btn-copy-queue-md" style="grid-column: 1 / -1; justify-content: center;">📋 Copy Full Queue Transcripts</button>
+            </div>
+          </div>
+
           <div style="margin-top: 12px;">
             <strong style="font-size: 13px;">Markdown Preview:</strong>
             <pre id="sc-export-preview" style="font-size: 11px; white-space: pre-wrap; background: rgba(0,0,0,0.05); padding: 8px; border-radius: 6px; margin-top: 6px; max-height: 180px; overflow-y: auto;"></pre>
@@ -1916,6 +1926,58 @@
     container
       .querySelector("#sc-btn-dl-transcript")
       .addEventListener("click", () => downloadTranscriptFile());
+
+    container.querySelector("#sc-btn-auto-collect-queue")?.addEventListener("click", async () => {
+      showToast("⚡ Scanning queue & playlist videos...");
+      const pData = await extractPlaylistVideosFromPage();
+      if (!pData?.videos?.length) {
+        showToast("ℹ️ No active playlist or queue found on this page.");
+        return;
+      }
+      showToast(`⚡ Extracting transcripts for ${pData.videos.length} videos...`);
+      const gathered = [];
+      for (let n = 0; n < pData.videos.length; n++) {
+        const v = pData.videos[n];
+        try {
+          const meta = await new Promise(r => storage.get([`sc_meta_${v.videoId}`], r));
+          if (meta?.[`sc_meta_${v.videoId}`]?.transcript) {
+            gathered.push({ ...v, transcript: meta[`sc_meta_${v.videoId}`].transcript });
+            continue;
+          }
+        } catch {}
+        gathered.push(v);
+      }
+      const title = pData.playlistTitle || "Queue_Transcripts";
+      const md = `# ${title}\n\nExported: ${new Date().toISOString()}\nTotal Videos: ${gathered.length}\n\n` +
+        gathered.map((v, i) => `### ${i + 1}. [${v.title}](${v.url})\n- **Channel**: ${v.channel}\n- **Duration**: ${v.duration}\n\n#### Transcript\n\n${v.transcript || "[Transcript in cache or sync in popup]"}\n\n---`).join("\n\n");
+      await downloadCaptureText(md, `${title.replace(/[^a-z0-9_-]+/gi, '_')}_bundle.md`, "text/markdown");
+      showToast(`📥 Downloaded Markdown bundle with ${gathered.length} videos!`);
+    });
+
+    container.querySelector("#sc-btn-dl-queue-json")?.addEventListener("click", async () => {
+      const pData = await extractPlaylistVideosFromPage();
+      if (!pData?.videos?.length) { showToast("ℹ️ No active playlist/queue."); return; }
+      const json = JSON.stringify(pData, null, 2);
+      await downloadCaptureText(json, `${(pData.playlistTitle || 'queue').replace(/[^a-z0-9_-]+/gi, '_')}.json`, "application/json");
+      showToast(`📥 Downloaded JSON list (${pData.videos.length} videos)`);
+    });
+
+    container.querySelector("#sc-btn-dl-queue-csv")?.addEventListener("click", async () => {
+      const pData = await extractPlaylistVideosFromPage();
+      if (!pData?.videos?.length) { showToast("ℹ️ No active playlist/queue."); return; }
+      const csv = "Position,VideoID,Title,Channel,Duration,URL\n" + pData.videos.map(v => `${v.position},"${v.videoId}","${(v.title||'').replace(/"/g,'""')}","${(v.channel||'').replace(/"/g,'""')}",${v.duration||''},${v.url}`).join("\n");
+      await downloadCaptureText(csv, `${(pData.playlistTitle || 'queue').replace(/[^a-z0-9_-]+/gi, '_')}.csv`, "text/csv");
+      showToast(`📥 Downloaded CSV list (${pData.videos.length} videos)`);
+    });
+
+    container.querySelector("#sc-btn-copy-queue-md")?.addEventListener("click", async () => {
+      const pData = await extractPlaylistVideosFromPage();
+      if (!pData?.videos?.length) { showToast("ℹ️ No active playlist/queue."); return; }
+      const md = `# ${pData.playlistTitle}\n\n` + pData.videos.map(v => `${v.position}. [${v.title}](${v.url}) — ${v.channel} ${v.duration ? `(${v.duration})` : ""}`).join("\n");
+      await navigator.clipboard.writeText(md);
+      showToast(`📋 Copied ${pData.videos.length} videos to clipboard!`);
+    });
+
     container.querySelectorAll(".sc-llm-routing button").forEach((btn) => {
       btn.addEventListener("click", () => sendToLLM(btn.dataset.llm));
     });

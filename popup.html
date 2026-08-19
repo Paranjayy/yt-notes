@@ -52,12 +52,21 @@
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
       <button class="btn" id="selectAllVideos" style="font-size:11px;">Select All</button>
       <button class="btn" id="deselectAllVideos" style="font-size:11px;">Deselect All</button>
+      <button class="btn primary" id="autoVerifyAllTranscripts" style="font-size:11px;flex:1;">⚡ Auto-Verify &amp; Collect Transcripts</button>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
       <button class="btn primary" id="copySelectedTranscripts" style="font-size:11px;">⚡ Copy Selected Transcripts</button>
       <button class="btn" id="copyAllTranscripts" style="font-size:11px;">Copy All Transcripts</button>
       <button class="btn" id="copyNotesList" style="font-size:11px;">📝 Copy Notes List</button>
     </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
+      <span class="prompt-label" style="width:100%;margin-bottom:2px;">Download Bundle (Videos + Transcripts)</span>
+      <button class="btn primary" id="dlBundleMd" style="font-size:11px;">📥 Bundle .MD</button>
+      <button class="btn" id="dlBundleJson" style="font-size:11px;">📥 Bundle .JSON</button>
+      <button class="btn" id="dlBundleCsv" style="font-size:11px;">📥 Bundle .CSV</button>
+    </div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;">
-      <span class="prompt-label" style="width:100%;margin-bottom:2px;">Export Video List</span>
+      <span class="prompt-label" style="width:100%;margin-bottom:2px;">Quick Video List Export</span>
       <button class="btn" id="exportPlaylistJson" style="font-size:11px;">JSON</button>
       <button class="btn" id="exportPlaylistCsv" style="font-size:11px;">CSV</button>
       <button class="btn" id="exportPlaylistMd" style="font-size:11px;">Markdown</button>

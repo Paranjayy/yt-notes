@@ -602,7 +602,120 @@ function exportCurrentPlaylist(fmt) {
   exportPlaylist(backup.playlistId, [backup], fmt);
 }
 
-// ─── Batch Transcript Extraction ─────────────────────────────────────────────
+// ─── Batch Transcript Extraction & Auto-Verification ───────────────────────────
+
+async function extractSingleVideoTranscript(v, onProgress) {
+  if (!v?.videoId) return { title: v.title || '', videoId: '', channel: v.channel || '', text: '' };
+
+  // 1. In-memory cached segments
+  if (v.segments?.length > 0) {
+    const text = v.segments.map(s => s.text).join(' ');
+    v.hasTranscript = true;
+    v.transcript = text;
+    return { title: v.title, videoId: v.videoId, channel: v.channel, text, segments: v.segments };
+  }
+
+  // 2. Pre-saved metadata transcript
+  try {
+    const meta = await chrome.storage.local.get([`sc_meta_${v.videoId}`]);
+    const stored = meta?.[`sc_meta_${v.videoId}`];
+    if (stored?.transcript) {
+      v.hasTranscript = true;
+      v.transcript = stored.transcript;
+      v.segments = stored.segments || [];
+      return { title: v.title, videoId: v.videoId, channel: v.channel, text: stored.transcript, segments: v.segments };
+    }
+  } catch {}
+
+  // 3. Background tab fetch with polling
+  try {
+    if (onProgress) onProgress(`Opening tab for ${v.title.slice(0, 30)}…`);
+    const tab = await chrome.tabs.create({ url: `https://www.youtube.com/watch?v=${v.videoId}`, active: false });
+
+    let transcriptResp = null;
+    const maxPolls = 18;
+    for (let poll = 0; poll < maxPolls; poll++) {
+      await new Promise(r => setTimeout(r, 1000));
+      if (onProgress) onProgress(`Waiting for captions… ${poll + 1}/${maxPolls}s (${v.title.slice(0, 22)})`);
+      try {
+        const checkStatus = await new Promise(r => chrome.tabs.sendMessage(tab.id, { type: 'sc_get_capture_status' }, r));
+        if (checkStatus?.transcriptAvailable) {
+          transcriptResp = await new Promise(r => chrome.tabs.sendMessage(tab.id, { type: 'sc_collect_transcript' }, r));
+          break;
+        }
+      } catch {}
+    }
+
+    if (!transcriptResp) {
+      transcriptResp = await new Promise(r => chrome.tabs.sendMessage(tab.id, { type: 'sc_collect_transcript' }, r)).catch(() => null);
+    }
+    await chrome.tabs.remove(tab.id).catch(() => {});
+
+    const segs = transcriptResp?.segments || [];
+    const text = segs.length > 0 ? segs.map(s => s.text).join(' ') : '[No transcript available]';
+
+    if (segs.length > 0) {
+      v.hasTranscript = true;
+      v.segments = segs;
+      v.transcript = text;
+      // Persist in local storage
+      chrome.storage.local.set({
+        [`sc_meta_${v.videoId}`]: {
+          title: v.title,
+          channel: v.channel,
+          transcript: text,
+          segments: segs,
+          duration: v.duration,
+          updatedAt: new Date().toISOString(),
+        }
+      }).catch(() => {});
+    }
+
+    return { title: v.title, videoId: v.videoId, channel: v.channel, text, segments: segs };
+  } catch (e) {
+    return { title: v.title, videoId: v.videoId, channel: v.channel, text: `[Error: ${e.message}]`, segments: [] };
+  }
+}
+
+async function autoVerifyAllTranscripts() {
+  const indices = Array.from(selectedVideoIndices).sort((a, b) => a - b);
+  if (!indices.length) { setStatus('Select at least one video.', 'error'); return; }
+  const statusEl = document.getElementById('batchTranscriptStatus');
+
+  let successCount = 0;
+  for (let n = 0; n < indices.length; n++) {
+    const idx = indices[n];
+    const v = currentPlaylistVideos[idx];
+    if (!v?.videoId) continue;
+
+    if (statusEl) statusEl.textContent = `⚡ [${n + 1}/${indices.length}] Verifying: ${v.title.slice(0, 35)}…`;
+    const res = await extractSingleVideoTranscript(v, (sub) => {
+      if (statusEl) statusEl.textContent = `⚡ [${n + 1}/${indices.length}] ${sub}`;
+    });
+
+    if (v.hasTranscript) successCount++;
+    renderBatchList();
+    renderPlaylistStats({ items: currentPlaylistVideos });
+  }
+
+  // Save updated playlist backup with collected transcripts
+  if (activePlaylistId) {
+    const key = 'sc_playlist_backup_' + activePlaylistId;
+    const backup = {
+      format: 'social-companion-playlist-backup',
+      schemaVersion: 1,
+      playlistId: activePlaylistId,
+      playlistTitle: document.getElementById('activePlaylistTitle')?.textContent || 'Playlist',
+      exportedAt: new Date().toISOString(),
+      items: currentPlaylistVideos,
+      hasTranscripts: successCount > 0,
+    };
+    chrome.storage.local.set({ [key]: backup }, () => renderPlaylistHub());
+  }
+
+  if (statusEl) statusEl.textContent = `✓ Verification complete: ${successCount}/${indices.length} transcripts verified and saved locally!`;
+  setStatus(`Verified ${successCount}/${indices.length} transcripts`, 'success');
+}
 
 async function copyTranscripts(onlySelected = true) {
   const indices = onlySelected ? Array.from(selectedVideoIndices).sort((a, b) => a - b) : currentPlaylistVideos.map((_, i) => i);
@@ -613,62 +726,94 @@ async function copyTranscripts(onlySelected = true) {
   for (let n = 0; n < indices.length; n++) {
     const v = currentPlaylistVideos[indices[n]];
     if (!v?.videoId) continue;
-    if (statusEl) statusEl.textContent = `Processing ${n + 1}/${indices.length}: ${v.title.slice(0, 40)}…`;
-
-    // 1. Cached segments
-    if (v.segments?.length > 0) {
-      results.push({ title: v.title, videoId: v.videoId, channel: v.channel, text: v.segments.map(s => s.text).join(' ') });
-      continue;
-    }
-
-    // 2. Pre-saved metadata transcript
-    try {
-      const meta = await chrome.storage.local.get([`sc_meta_${v.videoId}`]);
-      if (meta?.[`sc_meta_${v.videoId}`]?.transcript) {
-        results.push({ title: v.title, videoId: v.videoId, channel: v.channel, text: meta[`sc_meta_${v.videoId}`].transcript });
-        continue;
-      }
-    } catch {}
-
-    // 3. Background tab fetch with polling
-    try {
-      const statusEl2 = document.getElementById('batchTranscriptStatus');
-      if (statusEl2) statusEl2.textContent = `Opening tab for ${v.title.slice(0,35)}…`;
-      const tab = await chrome.tabs.create({ url: `https://www.youtube.com/watch?v=${v.videoId}`, active: false });
-
-      // Poll until transcript is ready (max 18s)
-      let transcriptResp = null;
-      const maxPolls = 18;
-      for (let poll = 0; poll < maxPolls; poll++) {
-        await new Promise(r => setTimeout(r, 1000));
-        if (statusEl2) statusEl2.textContent = `Waiting for transcript… ${poll + 1}/${maxPolls}s (${v.title.slice(0,25)})`;
-        try {
-          const checkStatus = await new Promise(r => chrome.tabs.sendMessage(tab.id, { type: 'sc_get_capture_status' }, r));
-          if (checkStatus?.transcriptAvailable) {
-            transcriptResp = await new Promise(r => chrome.tabs.sendMessage(tab.id, { type: 'sc_collect_transcript' }, r));
-            break;
-          }
-        } catch { /* content script not yet ready */ }
-      }
-
-      if (!transcriptResp) {
-        // Final attempt
-        transcriptResp = await new Promise(r => chrome.tabs.sendMessage(tab.id, { type: 'sc_collect_transcript' }, r)).catch(() => null);
-      }
-      await chrome.tabs.remove(tab.id).catch(() => {});
-      const text = transcriptResp?.segments?.length > 0 ? transcriptResp.segments.map(s => s.text).join(' ') : '[No transcript available]';
-      results.push({ title: v.title, videoId: v.videoId, channel: v.channel, text });
-    } catch (e) {
-      results.push({ title: v.title, videoId: v.videoId, channel: v.channel, text: `[Error: ${e.message}]` });
-    }
+    if (statusEl) statusEl.textContent = `[${n + 1}/${indices.length}] Extracting: ${v.title.slice(0, 35)}…`;
+    const res = await extractSingleVideoTranscript(v, (sub) => {
+      if (statusEl) statusEl.textContent = `[${n + 1}/${indices.length}] ${sub}`;
+    });
+    results.push(res);
+    renderBatchList();
   }
 
-  const out = results.map(r =>
-    `## ${r.title}\nURL: https://www.youtube.com/watch?v=${r.videoId}${r.channel ? `\nChannel: ${r.channel}` : ''}\n\n${r.text}\n\n---`
+  const out = results.map((r, i) =>
+    `## ${i + 1}. ${r.title}\nURL: https://www.youtube.com/watch?v=${r.videoId}${r.channel ? `\nChannel: ${r.channel}` : ''}\n\n${r.text}\n\n---`
   ).join('\n\n');
   await navigator.clipboard.writeText(out);
   if (statusEl) statusEl.textContent = `✓ Copied ${results.length} transcripts to clipboard!`;
   setStatus(`Copied ${results.length} transcripts`, 'success');
+}
+
+async function downloadBundle(fmt) {
+  if (!currentPlaylistVideos.length) { setStatus('Load a playlist first.', 'error'); return; }
+  const indices = Array.from(selectedVideoIndices).sort((a, b) => a - b);
+  if (!indices.length) { setStatus('Select at least one video.', 'error'); return; }
+
+  const statusEl = document.getElementById('batchTranscriptStatus');
+  if (statusEl) statusEl.textContent = `Preparing ${fmt.toUpperCase()} bundle for ${indices.length} videos…`;
+
+  // Ensure transcripts are gathered for selected videos
+  const gathered = [];
+  for (let n = 0; n < indices.length; n++) {
+    const v = currentPlaylistVideos[indices[n]];
+    if (!v?.videoId) continue;
+    if (!v.hasTranscript) {
+      if (statusEl) statusEl.textContent = `[${n + 1}/${indices.length}] Fetching transcript: ${v.title.slice(0, 30)}…`;
+      await extractSingleVideoTranscript(v, (sub) => {
+        if (statusEl) statusEl.textContent = `[${n + 1}/${indices.length}] ${sub}`;
+      });
+      renderBatchList();
+    }
+    gathered.push(v);
+  }
+
+  const title = document.getElementById('activePlaylistTitle')?.textContent?.replace(/^[^\w]+/, '') || 'YouTube_Playlist';
+  const safeName = title.replace(/[^a-z0-9_-]+/gi, '_').slice(0, 50) || 'playlist_bundle';
+
+  let content = '', filename = `${safeName}_bundle.${fmt}`, mime = 'text/plain';
+
+  if (fmt === 'md') {
+    content = `# ${title}\n\nExported: ${new Date().toISOString()}\nTotal Videos: ${gathered.length}\n\n## Table of Contents\n\n` +
+      gathered.map((v, i) => `${i + 1}. [${v.title}](#video-${i + 1}-${v.videoId}) ${v.duration ? `(${v.duration})` : ''}`).join('\n') +
+      '\n\n---\n\n' +
+      gathered.map((v, i) =>
+        `<a name="video-${i + 1}-${v.videoId}"></a>\n### ${i + 1}. [${v.title}](https://www.youtube.com/watch?v=${v.videoId})\n- **Channel**: ${v.channel || 'Unknown'}\n- **Duration**: ${v.duration || 'N/A'}\n- **URL**: https://www.youtube.com/watch?v=${v.videoId}\n\n#### Transcript\n\n${v.transcript || (v.segments?.length ? v.segments.map(s => s.text).join(' ') : '[No transcript available]')}\n\n---`
+      ).join('\n\n');
+    mime = 'text/markdown';
+  } else if (fmt === 'json') {
+    content = JSON.stringify({
+      playlistTitle: title,
+      exportedAt: new Date().toISOString(),
+      videoCount: gathered.length,
+      items: gathered.map((v, i) => ({
+        position: i + 1,
+        videoId: v.videoId,
+        title: v.title,
+        channel: v.channel,
+        duration: v.duration,
+        url: `https://www.youtube.com/watch?v=${v.videoId}`,
+        transcript: v.transcript || (v.segments?.length ? v.segments.map(s => s.text).join(' ') : ''),
+        segments: v.segments || [],
+      })),
+    }, null, 2);
+    mime = 'application/json';
+  } else if (fmt === 'csv') {
+    content = 'Position,VideoID,Title,Channel,Duration,URL,Transcript\n' + gathered.map((v, i) => {
+      const tEsc = (v.transcript || (v.segments?.length ? v.segments.map(s => s.text).join(' ') : '')).replace(/"/g, '""');
+      const titleEsc = (v.title || '').replace(/"/g, '""');
+      const chanEsc = (v.channel || '').replace(/"/g, '""');
+      return `${i + 1},"${v.videoId}","${titleEsc}","${chanEsc}","${v.duration || ''}","https://www.youtube.com/watch?v=${v.videoId}","${tEsc}"`;
+    }).join('\n');
+    mime = 'text/csv';
+  }
+
+  const a = Object.assign(document.createElement('a'), {
+    href: URL.createObjectURL(new Blob([content], { type: mime })),
+    download: filename,
+  });
+  a.click();
+  URL.revokeObjectURL(a.href);
+
+  if (statusEl) statusEl.textContent = `✓ Downloaded ${fmt.toUpperCase()} bundle with ${gathered.length} videos and transcripts!`;
+  setStatus(`Downloaded ${fmt.toUpperCase()} bundle`, 'success');
 }
 
 async function copyNotesList() {
@@ -693,9 +838,13 @@ document.getElementById('deselectAllVideos')?.addEventListener('click', () => {
   selectedVideoIndices.clear();
   renderBatchList();
 });
+document.getElementById('autoVerifyAllTranscripts')?.addEventListener('click', autoVerifyAllTranscripts);
 document.getElementById('copySelectedTranscripts')?.addEventListener('click', () => copyTranscripts(true));
 document.getElementById('copyAllTranscripts')?.addEventListener('click', () => copyTranscripts(false));
 document.getElementById('copyNotesList')?.addEventListener('click', copyNotesList);
+document.getElementById('dlBundleMd')?.addEventListener('click', () => downloadBundle('md'));
+document.getElementById('dlBundleJson')?.addEventListener('click', () => downloadBundle('json'));
+document.getElementById('dlBundleCsv')?.addEventListener('click', () => downloadBundle('csv'));
 document.getElementById('exportPlaylistJson')?.addEventListener('click', () => exportCurrentPlaylist('json'));
 document.getElementById('exportPlaylistCsv')?.addEventListener('click', () => exportCurrentPlaylist('csv'));
 document.getElementById('exportPlaylistMd')?.addEventListener('click', () => exportCurrentPlaylist('md'));
