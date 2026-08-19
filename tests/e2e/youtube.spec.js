@@ -57,6 +57,31 @@ test.describe('YouTube Extension E2E Suite', () => {
     expect(markdownContent).toContain('Views: 5,000 views');
   });
 
+  for (const videoPath of ['live', 'shorts']) {
+    test(`should inject the widget on a /${videoPath}/<id> URL`, async () => {
+      await mockYouTubePage(page, {
+        title: `${videoPath} video`,
+        videoPath,
+      });
+
+      await page.goto(`https://www.youtube.com/${videoPath}/route123`);
+
+      await expect(page.locator('#sc-youtube-widget')).toBeVisible({ timeout: 10000 });
+    });
+  }
+
+  test('should inject the widget on a youtu.be short URL', async () => {
+    await mockYouTubePage(page, {
+      title: 'Short URL video',
+      videoPath: 'route123',
+      videoHost: 'youtu.be',
+    });
+
+    await page.goto('https://youtu.be/route123');
+
+    await expect(page.locator('#sc-youtube-widget')).toBeVisible({ timeout: 10000 });
+  });
+
   test('should support note-taking workflow (create, edit, delete, and search)', async () => {
     await mockYouTubePage(page, {
       title: 'Note Taking Test Video',

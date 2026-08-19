@@ -6,3 +6,7 @@ playwright-report/
 dist/
 safari/
 *.zip
+
+# Local-only knowledge exports generated from Raycast and Social Companion.
+clipboard-vault/
+raycast-transcripts/

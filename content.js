@@ -58,7 +58,8 @@
     }
 
     .sc-header {
-      background: linear-gradient(135deg, var(--sc-primary), var(--sc-secondary));
+      background: #24212d;
+      border-bottom: 1px solid rgba(167, 139, 250, 0.28);
       color: white;
       padding: 16px 20px;
       font-weight: 800;
@@ -585,14 +586,31 @@
   let notesSearchQuery = "";
   let transcriptSearchQuery = "";
   let cachedMarkdown = ""; // pre-cached export markdown for sync clipboard copy
+  const autoCaptureAttempts = new Set();
   let hasAttemptedAutoClick = false; // flag to prevent duplicate auto-clicks per video
   let playlistBackupItems = [];
   let playlistTranscriptQueueActive = false;
-  let _recoObserver = null;
 
   function setTranscriptState(status, message, source = "") {
     transcriptState = { status, videoId: currentVideoId, message, source, updatedAt: new Date().toISOString() };
     renderTranscriptStatus();
+    if (status === "ready") maybeAutoCaptureCurrentVideo().catch((error) => console.warn("Auto-capture check failed", error));
+  }
+
+  async function maybeAutoCaptureCurrentVideo() {
+    const captureVideoId = currentVideoId;
+    if (!captureVideoId || autoCaptureAttempts.has(captureVideoId) || transcriptState.videoId !== captureVideoId || transcriptState.status !== "ready") return;
+    const config = await chrome.storage.local.get(["sc_auto_capture_mode"]);
+    if (!config.sc_auto_capture_mode || config.sc_auto_capture_mode === "off") return;
+    autoCaptureAttempts.add(captureVideoId);
+    const markdown = await generateMarkdown();
+    const metadata = extractYouTubeMetadata();
+    if (currentVideoId !== captureVideoId || !new RegExp(`^URL: https://www\\.youtube\\.com/watch\\?v=${captureVideoId}(?:&|$)`, "m").test(markdown)) {
+      autoCaptureAttempts.delete(captureVideoId);
+      return;
+    }
+    const response = await chrome.runtime.sendMessage({ type: "sc_auto_capture_verified", videoId: captureVideoId, channel: metadata.channel || "Unknown", title: metadata.title || "video", content: markdown });
+    if (!response?.ok && !response?.skipped) autoCaptureAttempts.delete(captureVideoId);
   }
 
   function renderTranscriptStatus() {
@@ -641,33 +659,6 @@
   // normal widget/UI path: the inactive queue tab should only return factual
   // caption-track results, never click controls or surface a toast.
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (message.type === "sc_get_channel_id") {
-      let cid = null;
-      try {
-        if (window.ytInitialData?.metadata?.channelMetadataRenderer?.externalId) {
-          cid = window.ytInitialData.metadata.channelMetadataRenderer.externalId;
-        }
-      } catch (e) {}
-      if (!cid) {
-        const m = document.querySelector('meta[itemprop="channelId"]');
-        if (m) cid = m.content;
-      }
-      if (!cid) {
-        const c = document.querySelector('link[rel="canonical"]');
-        if (c) {
-          const p = c.href.match(/\/channel\/(UC[A-Za-z0-9_-]{22})/);
-          if (p) cid = p[1];
-        }
-      }
-      if (!cid) {
-        const a = document.querySelector('ytd-channel-name a, ytd-video-owner-renderer a, #owner-name a');
-        if (a) {
-          const p = a.href.match(/\/channel\/(UC[A-Za-z0-9_-]{22})/);
-          if (p) cid = p[1];
-        }
-      }
-      sendResponse({ ok: Boolean(cid), channelId: cid });
-    }
     if (message.type === "sc_collect_transcript") {
       collectTranscriptForBackground().then(sendResponse).catch((error) => {
         sendResponse({ status: "error", reason: error?.message || "Transcript collection failed.", segments: [] });
@@ -721,31 +712,6 @@
       });
       return true;
     }
-    if (message.type === "sc_get_playlist_videos") {
-      const listId = new URL(window.location.href).searchParams.get("list");
-      if (!listId) {
-        sendResponse({ ok: false, reason: "Not on a playlist page.", videos: [] });
-        return;
-      }
-      const backupKey = `sc_playlist_backup_${listId}`;
-      chrome.storage.local.get([backupKey]).then((stored) => {
-        const backup = stored[backupKey];
-        const items = Array.isArray(backup?.items) ? backup.items : [];
-        sendResponse({
-          ok: true,
-          playlistId: listId,
-          title: backup?.title || document.querySelector("ytd-playlist-header-renderer #title, ytd-playlist-header-renderer h1")?.innerText?.trim() || "Playlist",
-          videos: items.map((item) => ({
-            videoId: item.videoId,
-            title: item.title,
-            position: item.position,
-            hasTranscript: Boolean(item.transcriptCollection?.collectedAt && item.transcriptCollection?.segments?.length),
-            transcriptSegments: item.transcriptCollection?.segments || [],
-          })),
-        });
-      }).catch((error) => sendResponse({ ok: false, reason: error?.message || "Could not load playlist.", videos: [] }));
-      return true;
-    }
   });
 
   // --- YouTube Scripting & Logic ---
@@ -769,6 +735,9 @@
 
     onYouTubeUrlChange();
   }
+
+  // Tracks the sidebar observer so we can disconnect on video change
+  let _recoObserver = null;
 
   function canonicalYouTubeUrl(videoId, timestamp = null) {
     const url = new URL("https://www.youtube.com/watch");

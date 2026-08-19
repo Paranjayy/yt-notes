@@ -93,6 +93,38 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 });
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg.type === "sc_auto_capture_verified") {
+    const videoId = String(msg.videoId || "").trim();
+    const channel = String(msg.channel || "").trim();
+    const title = String(msg.title || "video").trim();
+    const content = typeof msg.content === "string" ? msg.content : "";
+    if (!videoId || !content || !new RegExp(`^URL: https://www\\.youtube\\.com/watch\\?v=${videoId}(?:&|$)`, "m").test(content)) {
+      sendResponse({ ok: false, reason: "Auto-capture rejected: current video ID and Markdown URL did not match." });
+      return;
+    }
+    chrome.storage.local.get(["sc_auto_capture_mode", "sc_auto_capture_channels", `sc_auto_capture_${videoId}`]).then(async (stored) => {
+      const mode = stored.sc_auto_capture_mode || "off";
+      const whitelist = String(stored.sc_auto_capture_channels || "").split(/[\n,]/).map((value) => value.trim().toLowerCase()).filter(Boolean);
+      if (mode === "off" || (mode === "whitelist" && !whitelist.includes(channel.toLowerCase()))) {
+        sendResponse({ ok: false, skipped: true, reason: mode === "off" ? "Auto-capture is off." : "Channel is not whitelisted." });
+        return;
+      }
+      const bytes = new TextEncoder().encode(content);
+      const hash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+      const prior = stored[`sc_auto_capture_${videoId}`];
+      if (prior?.latestHash === hash) {
+        sendResponse({ ok: true, skipped: true, reason: "This exact video version was already captured." });
+        return;
+      }
+      const filename = `${title.replace(/[\\/:*?"<>|]/g, "_").slice(0, 100)}__${videoId}__${hash.slice(0, 10)}.md`;
+      const dataUrl = `data:text/markdown;charset=utf-8,${encodeURIComponent(content)}`;
+      const downloadId = await chrome.downloads.download({ url: dataUrl, filename: `Social Companion/captures/${filename}`, saveAs: false });
+      const versions = Array.isArray(prior?.versions) ? prior.versions : [];
+      await chrome.storage.local.set({ [`sc_auto_capture_${videoId}`]: { latestHash: hash, versions: [...versions, { hash, capturedAt: new Date().toISOString(), downloadId }] } });
+      sendResponse({ ok: true, versioned: Boolean(prior?.latestHash), downloadId });
+    }).catch((error) => sendResponse({ ok: false, reason: error?.message || "Could not auto-capture this video." }));
+    return true;
+  }
   if (msg.type === "sc_provider_activity_log") {
     chrome.storage.local.get('sc_provider_activity_log').then((stored) => sendResponse({ ok: true, entries: Array.isArray(stored.sc_provider_activity_log) ? stored.sc_provider_activity_log : [] })).catch(() => sendResponse({ ok: true, entries: [] }));
     return true;
@@ -115,47 +147,6 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
   if (msg.type === "sc_provider_prompt") {
     deliverProviderPrompt(msg).then(sendResponse).catch((error) => sendResponse({ ok: false, reason: error?.message || "Could not open the AI provider." }));
-    return true;
-  }
-  if (msg.type === "sc_list_playlist_backups") {
-    chrome.storage.local.get(null).then((all) => {
-      const backups = [];
-      for (const [key, value] of Object.entries(all)) {
-        if (!key.startsWith("sc_playlist_backup_")) continue;
-        if (!value || typeof value !== "object") continue;
-        const playlistId = key.replace("sc_playlist_backup_", "");
-        const itemCount = Array.isArray(value.items) ? value.items.length : 0;
-        const collectedCount = Array.isArray(value.items)
-          ? value.items.filter((item) => item.transcriptCollection?.collectedAt).length
-          : 0;
-        const totalDuration = Array.isArray(value.items)
-          ? value.items.reduce((sum, item) => {
-              const d = item.duration || "";
-              const parts = d.split(":").map(Number);
-              if (parts.length === 3) return sum + parts[0] * 3600 + parts[1] * 60 + parts[2];
-              if (parts.length === 2) return sum + parts[0] * 60 + parts[1];
-              return sum;
-            }, 0)
-          : 0;
-        backups.push({
-          playlistId,
-          title: value.title || "Untitled Playlist",
-          url: value.url || `https://www.youtube.com/playlist?list=${playlistId}`,
-          itemCount,
-          collectedCount,
-          totalDuration,
-          exportedAt: value.exportedAt || null,
-          source: value.source || "visible",
-        });
-      }
-      backups.sort((a, b) => {
-        if (a.exportedAt && b.exportedAt) return new Date(b.exportedAt) - new Date(a.exportedAt);
-        if (a.exportedAt) return -1;
-        if (b.exportedAt) return 1;
-        return 0;
-      });
-      sendResponse({ ok: true, backups });
-    }).catch((error) => sendResponse({ ok: false, reason: error?.message || "Could not list playlist backups.", backups: [] }));
     return true;
   }
   if (msg.type !== "sc_download_archive_file") return;

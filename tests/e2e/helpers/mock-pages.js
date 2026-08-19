@@ -16,16 +16,22 @@ async function mockYouTubePage(page, options = {}) {
     playlistTitle = 'My Playlist',
     playlistIndex = '1',
     hasTranscript = true,
+    videoPath = 'watch',
+    videoHost = 'www.youtube.com',
   } = options;
 
-  const urlPattern = playlistId
-    ? `https://www.youtube.com/watch?v=*&list=${playlistId}*`
-    : 'https://www.youtube.com/watch?v=*';
+  const urlPattern = videoHost === 'youtu.be'
+    ? `https://${videoHost}/*`
+    : videoPath === 'watch'
+    ? (playlistId
+      ? `https://${videoHost}/watch?v=*&list=${playlistId}*`
+      : `https://${videoHost}/watch?v=*`)
+    : `https://${videoHost}/${videoPath}/*`;
 
   await page.route(urlPattern, async (route) => {
     // Determine video ID
     const url = new URL(route.request().url());
-    const videoId = url.searchParams.get('v') || 'default_id';
+    const videoId = url.searchParams.get('v') || url.pathname.split('/').filter(Boolean).at(-1) || 'default_id';
 
     const html = `
       <!DOCTYPE html>

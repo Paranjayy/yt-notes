@@ -1,15 +1,29 @@
 # YT Notes Viewer
 
-A simple, zero-dependency web viewer for YouTube video notes exported from the Social Companion browser extension.
+A simple, zero-dependency web viewer for YouTube notes and playlist backups exported from the Social Companion browser extension.
 
-**Live:** https://website-sage-zeta-74.vercel.app
+**Live:** [yt-notes-paranjayy-paranjay245s-projects.vercel.app](https://yt-notes-paranjayy-paranjay245s-projects.vercel.app/#collector)
+
+[![Open DeepWiki](https://img.shields.io/badge/DeepWiki-Open-111827?logo=readthedocs)](https://deepwiki.com/Paranjayy/yt-notes)
 
 ## How to Use
 
 1. Open the Social Companion extension on any YouTube video
 2. Go to the Export tab and click **Copy Markdown**
-3. Visit [website-sage-zeta-74.vercel.app](https://website-sage-zeta-74.vercel.app)
+3. Visit [YT Notes](https://yt-notes-paranjayy-paranjay245s-projects.vercel.app/#library)
 4. Paste the markdown — your notes render instantly
+
+### Playlist backup
+
+1. Open a YouTube playlist in the extension.
+2. Use **Playlist Backup** and, if needed, **Load all videos**.
+3. Download a JSON or CSV backup.
+4. Choose **Import playlist backup** on the viewer and select that file.
+5. Use **Download JSON**, **Download CSV**, or **Download Markdown** in the viewer to make a new local copy or switch formats.
+
+The backup uses the playlist page you can already access. It does not require an API key, account, server, or paid service.
+
+For complete public or unlisted playlist metadata, the extension also offers **Fetch with API**. Create and supply your own YouTube Data API key; it stays in browser storage and is never bundled or sent to this project. The API route is optional. YouTube documents `playlistItems.list` and `videos.list` as one quota unit per request, and projects have a default 10,000-unit daily allocation, subject to Google's current policy. See the [quota overview](https://developers.google.com/youtube/v3/getting-started) and [playlist endpoint](https://developers.google.com/youtube/v3/docs/playlistItems/list).
 
 ## Features
 
@@ -17,6 +31,23 @@ A simple, zero-dependency web viewer for YouTube video notes exported from the S
 - **Dark mode** — follows your system preference
 - **Collapsible sections** — transcript, comments, and recommendations
 - **Zero dependencies** — pure HTML/CSS/JS, no build step needed
+- **Local playlist imports** — view Social Companion JSON/CSV playlist backups, including unavailable/private entries
+- **Playlist re-exports** — download an imported playlist as JSON, CSV, or Markdown directly from the viewer
+- **CRX Lab** — download a Chrome Web Store package and inspect a user-selected, extracted `manifest.json` locally; packages are never executed, installed, uploaded, or treated as a security verdict
+
+### Safari note
+
+Safari cannot install a Chrome `.crx` directly. A CRX can be extracted to obtain
+an extension folder, but Safari conversion then goes through Safari Web
+Extension Converter and Xcode. Chrome-only APIs, app packaging, signing, and
+review requirements may require source changes.
+
+### Podcast Finder
+
+Podcast Finder reads public Spotify oEmbed metadata and opens official Spotify
+and YouTube discovery links. It does not download Spotify audio or listener
+transcripts. Creator-provided VTT/SRT/RSS transcripts and matched YouTube
+videos can be brought into the local archive separately.
 
 ## Deploy to Vercel
 
