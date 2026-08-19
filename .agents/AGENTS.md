@@ -1,6 +1,6 @@
 # Social Companion & YT Note-Taker — Agent Guide
 
-> Last updated: 2026-08-20 | Version: 1.11.0
+> Last updated: 2026-08-20 | Version: 1.12.0
 
 This file documents everything an AI agent needs to know to work on this codebase without regressions.
 
@@ -18,10 +18,10 @@ This file documents everything an AI agent needs to know to work on this codebas
 | File | Role |
 |------|------|
 | `manifest.json` | Extension manifest (MV3). Bump `version` here. |
-| `content.js` | Main content script injected into YouTube, X, Reddit, Cambridge. ~3400 lines. All YouTube DOM interaction lives here. |
+| `content.js` | Main content script injected into YouTube, X, Reddit, Cambridge. ~3700 lines. All YouTube DOM interaction lives here. |
 | `background.js` | Service worker. Context menus, keyboard commands, message bus, playlist queue orchestration, auto-capture. |
-| `popup.html` | Extension popup UI shell. ~85 lines. |
-| `popup.js` | Popup logic: AI providers, batch transcripts, playlist hub, uploads shortcut. |
+| `popup.html` | Extension popup UI shell. ~95 lines. |
+| `popup.js` | Popup logic: AI providers, batch transcripts, playlist hub, uploads shortcut, AI snapshots. |
 | `helpers.js` | Tiny utility loaded before content.js. |
 | `provider-bridge.js` | Injected into ChatGPT/Gemini/Claude/Grok pages to deliver prompts. |
 | `quick-palette.js` | Injected on demand (Alt+Shift+A) for quick command palette on any page. |
@@ -78,6 +78,8 @@ Results are cached in `_cachedChannelId = { url, id }`.
 | `sc_collect_visible_playlist_transcripts` | popup → content | Start batch transcript collection |
 | `sc_auto_capture_verified` | content → bg | Auto-capture a verified video |
 | `sc_list_playlist_backups` | popup → bg | List all saved playlist backups |
+| `sc_get_ai_snapshot` | popup → content | Token-optimized clean DOM snapshot |
+| `sc_start_element_annotator` | popup → content | Start visual element annotator |
 
 ## YouTube DOM Selectors (as of 2026)
 
@@ -105,11 +107,13 @@ Results are cached in `_cachedChannelId = { url, id }`.
 | X/Twitter social capture | ✅ Stable | content.js |
 | Cambridge word list export | ✅ Stable | dictionary.js |
 | Dashboard/archive viewer | ✅ Stable | dashboard.html, dashboard.js |
-| Channel uploads playlist button | 🔧 In Progress | content.js |
-| Right-click context menu | 🔧 In Progress | background.js |
-| Playlist/queue tracker | 🔧 In Progress | content.js, popup.js |
-| Batch transcript extraction | 🔧 In Progress | popup.js, background.js |
-| Playlist hub (saved backups) | 🔧 In Progress | popup.js, background.js |
+| Channel uploads playlist button | ✅ Stable | content.js |
+| Right-click context menu | ✅ Stable | background.js |
+| Playlist/queue tracker & batch exports | ✅ Stable | content.js, popup.js |
+| Dual-mode Queue Transcripts (Fast Direct & Auto-Step) | ✅ Stable | content.js, popup.js |
+| AI Token-Optimized DOM Cleaner & Snapshot | ✅ Stable | content.js, popup.js |
+| Interactive Element Annotator Tool | ✅ Stable | content.js, popup.js |
+| Playlist hub (saved backups) | ✅ Stable | popup.js, background.js |
 
 ## Git Commit Format
 ```

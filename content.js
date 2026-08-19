@@ -727,6 +727,24 @@
       });
       return true;
     }
+    if (message.type === "sc_get_ai_snapshot") {
+      try {
+        const snapshot = getAiSnapshotContext();
+        sendResponse({ ok: true, snapshot });
+      } catch (err) {
+        sendResponse({ ok: false, error: err.message });
+      }
+      return true;
+    }
+    if (message.type === "sc_start_element_annotator") {
+      try {
+        startElementAnnotator();
+        sendResponse({ ok: true });
+      } catch (err) {
+        sendResponse({ ok: false, error: err.message });
+      }
+      return true;
+    }
   });
 
   // --- YouTube Scripting & Logic ---
@@ -921,24 +939,31 @@
       document.querySelector("#page-header yt-flexible-actions-view-model") ||
       document.querySelector("yt-page-header-view-model yt-flexible-actions-view-model");
 
+    const joinBtn =
+      document.querySelector("button[aria-label*='Join']") ||
+      document.querySelector("yt-button-view-model:has(button[aria-label*='Join'])");
+
     const subBtn =
       document.querySelector("yt-subscribe-button-view-model") ||
       document.querySelector("ytd-subscribe-button-renderer") ||
-      document.querySelector("button[aria-label*='Join']");
+      document.querySelector("button[aria-label*='Subscribe']") ||
+      document.querySelector("button[aria-label*='Subscribed']");
+
+    const anchorEl = joinBtn || subBtn;
 
     const fallbackTarget =
       flexContainer ||
-      subBtn?.parentElement ||
+      anchorEl?.parentElement ||
       document.querySelector("#page-header yt-page-header-view-model") ||
       document.querySelector("yt-page-header-view-model") ||
       document.querySelector("#channel-header #buttons") ||
       document.querySelector("#channel-header-container") ||
       document.querySelector("#page-header");
 
-    if (!fallbackTarget) return;
+    if (!fallbackTarget && !anchorEl) return;
 
     const wrapper = document.createElement("div");
-    wrapper.className = "ytFlexibleActionsViewModelAction";
+    wrapper.className = "ytFlexibleActionsViewModelAction sc-channel-action-wrapper";
     wrapper.id = "sc-channel-playlist-wrapper";
     wrapper.style.cssText = "display: inline-flex; align-items: center; margin-left: 8px; vertical-align: middle; flex-shrink: 0;";
 
@@ -998,21 +1023,21 @@
 
     btn.onmouseenter = () => {
       btn.style.transform = "translateY(-1px)";
-      btn.style.boxShadow = "0 4px 16px rgba(139, 92, 246, 0.65)";
-      btn.style.background = "linear-gradient(135deg, #9333ea, #7c3aed)";
+      btn.style.boxShadow = "0 4px 14px rgba(139, 92, 246, 0.65)";
     };
     btn.onmouseleave = () => {
-      btn.style.transform = "none";
+      btn.style.transform = "translateY(0)";
       btn.style.boxShadow = "0 2px 10px rgba(139, 92, 246, 0.45)";
-      btn.style.background = "linear-gradient(135deg, #8b5cf6, #6d28d9)";
     };
 
     wrapper.appendChild(btn);
-    if (flexContainer) {
+
+    if (anchorEl) {
+      const containerAction = anchorEl.closest(".ytFlexibleActionsViewModelAction, .yt-flexible-actions-view-model-wiz__action, ytd-button-renderer, yt-button-view-model") || anchorEl;
+      containerAction.insertAdjacentElement("afterend", wrapper);
+    } else if (flexContainer) {
       flexContainer.appendChild(wrapper);
-    } else if (subBtn && subBtn.parentElement) {
-      subBtn.parentElement.appendChild(wrapper);
-    } else {
+    } else if (fallbackTarget) {
       fallbackTarget.appendChild(wrapper);
     }
   }
@@ -1031,19 +1056,18 @@
     }
 
     // Try injection immediately, then with backoff
-    injectChannelPlaylistButtonWithRetry(5, 500);
+    injectChannelPlaylistButtonWithRetry(6, 400);
 
     // Also watch for DOM changes (header mounts asynchronously in SPA)
     _channelHeaderObserver = new MutationObserver(() => {
       if (
-        document.querySelector('yt-flexible-actions-view-model, yt-page-header-view-model, yt-subscribe-button-view-model, ytd-subscribe-button-renderer, #channel-header, button[aria-label*="Join"]') &&
+        document.querySelector('yt-flexible-actions-view-model, yt-page-header-view-model, yt-subscribe-button-view-model, ytd-subscribe-button-renderer, #channel-header, button[aria-label*="Join"], button[aria-label*="Subscribe"]') &&
         !document.getElementById('sc-channel-playlist-btn')
       ) {
         injectChannelPlaylistButton();
       }
     });
     _channelHeaderObserver.observe(document.body, { childList: true, subtree: true });
-    // Observer stays alive — will be disconnected on next onYouTubeUrlChange() when not on channel page
   }
 
   async function injectChannelPlaylistButtonWithRetry(attemptsLeft, delayMs) {
@@ -1051,8 +1075,7 @@
     if (document.getElementById('sc-channel-playlist-btn')) return; // Already injected
     await injectChannelPlaylistButton();
     if (!document.getElementById('sc-channel-playlist-btn')) {
-      // Not injected yet, retry after delay
-      setTimeout(() => injectChannelPlaylistButtonWithRetry(attemptsLeft - 1, Math.min(delayMs * 2, 6000)), delayMs);
+      setTimeout(() => injectChannelPlaylistButtonWithRetry(attemptsLeft - 1, Math.min(delayMs * 1.6, 5000)), delayMs);
     }
   }
 
@@ -1745,8 +1768,11 @@
           <button class="sc-btn sc-btn-secondary" id="sc-btn-copy-transcript-quick">Transcript</button>
           <button class="sc-btn sc-btn-secondary" id="sc-btn-sync-transcript-quick">↻ Sync transcript</button>
           <button class="sc-btn sc-btn-secondary" id="sc-btn-quick-playlist" title="Copy playlist or queue videos as Markdown">🎵 Queue/Playlist</button>
-          <button class="sc-btn sc-btn-secondary" id="sc-btn-quick-auto-collect" title="Auto-collect transcripts for all videos in queue/playlist and copy comprehensive Markdown bundle">⚡ Auto-Collect & Copy All</button>
+          <button class="sc-btn sc-btn-secondary" id="sc-btn-quick-auto-collect" title="Instantly auto-collect transcripts for all videos in queue/playlist and copy full bundle">⚡ Auto-Collect All</button>
+          <button class="sc-btn sc-btn-secondary" id="sc-btn-quick-step-next" title="Auto-advance through each video in queue, copying transcripts one by one">⏩ Auto-Step Queue</button>
           <button class="sc-btn sc-btn-secondary" id="sc-btn-quick-uploads" title="Open channel uploads playlist">🎬 Uploads</button>
+          <button class="sc-btn sc-btn-secondary" id="sc-btn-quick-ai-snapshot" title="Copy Token-Optimized Clean DOM Snapshot for AI">🤖 AI Snapshot</button>
+          <button class="sc-btn sc-btn-secondary" id="sc-btn-quick-annotate" title="Click any element to annotate & capture for AI">🎯 Annotate</button>
         </div>
         <div class="sc-notes-input-group">
           <textarea class="sc-textarea" id="sc-note-input" placeholder="Type a timestamped note... (Auto-pauses video)"></textarea>
@@ -1790,6 +1816,7 @@
             <strong style="font-size: 13px;">🎵 Queue &amp; Playlist Batch Export:</strong>
             <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px; margin-top:8px;">
               <button class="sc-btn sc-btn-primary" id="sc-btn-auto-collect-queue" style="grid-column: 1 / -1; justify-content: center;">⚡ Auto-Collect &amp; Download Bundle (.MD)</button>
+              <button class="sc-btn sc-btn-secondary" id="sc-btn-autorun-queue-step" style="grid-column: 1 / -1; justify-content: center;">⏩ Auto-Step Queue in Page (Next Video)</button>
               <button class="sc-btn sc-btn-secondary" id="sc-btn-dl-queue-json" style="justify-content: center;">📥 Queue JSON</button>
               <button class="sc-btn sc-btn-secondary" id="sc-btn-dl-queue-csv" style="justify-content: center;">📥 Queue CSV</button>
               <button class="sc-btn sc-btn-secondary" id="sc-btn-copy-queue-md" style="grid-column: 1 / -1; justify-content: center;">📋 Copy Full Queue Transcripts</button>
@@ -1924,14 +1951,15 @@
       }
     });
 
+    // Dual mode queue actions
     container.querySelector("#sc-btn-quick-auto-collect")?.addEventListener("click", async () => {
       const quickStatus = document.getElementById("sc-transcript-quick-status");
       try {
-        if (quickStatus) quickStatus.textContent = "Scanning videos…";
+        if (quickStatus) quickStatus.textContent = "Scanning…";
         showToast("⚡ Scanning playlist/queue videos…");
         const pData = await extractPlaylistVideosFromPage();
         if (!pData?.videos?.length) {
-          if (quickStatus) quickStatus.textContent = "No playlist/queue";
+          if (quickStatus) quickStatus.textContent = "No queue";
           showToast("ℹ️ No active playlist or queue found on this page.");
           return;
         }
@@ -1943,90 +1971,57 @@
           const v = pData.videos[i];
           const progressMsg = `[${i + 1}/${total}] ${v.title.slice(0, 20)}…`;
           if (quickStatus) quickStatus.textContent = `⚡ ${progressMsg}`;
-          showToast(`⚡ Collecting transcript ${progressMsg}`);
+          showToast(`⚡ Extracting transcript ${progressMsg}`);
 
-          // Check cache
-          let text = "";
           let notes = [];
           try {
             const cachedNotes = await new Promise(r => storage.get([`sc_notes_${v.videoId}`], r));
             notes = cachedNotes?.[`sc_notes_${v.videoId}`] || [];
-            const cached = await new Promise(r => storage.get([`sc_transcript_${v.videoId}`, `sc_meta_${v.videoId}`], r));
-            const cMeta = cached?.[`sc_meta_${v.videoId}`];
-            const cTrans = cached?.[`sc_transcript_${v.videoId}`];
-            if (cTrans && Array.isArray(cTrans) && cTrans.length > 0) {
-              text = cTrans.map(s => `[${formatTime(s.start)}] ${s.text}`).join("\n");
-            } else if (cMeta?.transcript) {
-              text = cMeta.transcript;
-            }
           } catch {}
 
-          if (!text) {
-            // Fetch via background
-            try {
-              const bgResp = await new Promise(r => chrome.runtime.sendMessage({ type: "sc_fetch_video_transcript", videoId: v.videoId }, r));
-              if (bgResp?.segments?.length > 0) {
-                text = bgResp.segments.map(s => `[${formatTime(s.start)}] ${s.text}`).join("\n");
-              } else if (bgResp?.transcript) {
-                text = bgResp.transcript;
-              }
-            } catch (err) {
-              console.warn("Background fetch error for", v.videoId, err);
-            }
-          }
+          const tResult = await fetchDirectVideoTranscript(v.videoId);
 
           gathered.push({
             ...v,
-            transcript: text || "[No transcript available for this video]",
+            transcript: tResult.transcript || "[No transcript available for this video]",
             notes: notes
           });
         }
 
-        const title = pData.playlistTitle || (pData.isQueue ? "YouTube Queue" : "YouTube Playlist");
-        let md = `# ${title}\n\n`;
-        md += `> Generated by Social Companion on ${new Date().toISOString().slice(0, 10)} | Total Videos: ${gathered.length}\n\n`;
-        md += `## Table of Contents\n\n`;
-        gathered.forEach((v, idx) => {
-          md += `${idx + 1}. [${v.title}](${v.url}) — ${v.channel} ${v.duration ? `(${v.duration})` : ""}\n`;
-        });
-        md += `\n---\n\n`;
-
-        gathered.forEach((v, idx) => {
-          md += `---\n`;
-          md += `Title: ${v.title}\n`;
-          md += `Channel: ${v.channel}\n`;
-          md += `URL: ${v.url}\n`;
-          md += `Thumbnail: ${v.thumbnail || `https://img.youtube.com/vi/${v.videoId}/hqdefault.jpg`}\n`;
-          md += `Playlist: ${title}\n`;
-          md += `Playlist Index: ${idx + 1}\n`;
-          if (v.duration) md += `Duration: ${v.duration}\n`;
-          md += `Transcript Status: ${v.transcript && !v.transcript.startsWith("[No") ? "ready" : "unavailable"}\n`;
-          md += `Copied: ${new Date().toISOString().slice(0, 10)}\n`;
-          md += `---\n\n`;
-
-          md += `# Personal Notes & Markers\n\n`;
-          if (v.notes && v.notes.length > 0) {
-            v.notes.forEach(n => {
-              md += `- **[${formatTime(n.time)}]** (${canonicalYouTubeUrl(v.videoId, n.time)}): ${n.text}\n`;
-            });
-            md += `\n`;
-          } else {
-            md += `*No notes added yet.*\n\n`;
-          }
-
-          md += `# Transcript\n\n`;
-          md += `${v.transcript}\n\n`;
-          md += `---\n\n`;
-        });
-
+        const md = buildQueueMarkdownBundle(pData, gathered);
         await navigator.clipboard.writeText(md);
         if (quickStatus) quickStatus.textContent = `✓ ${gathered.length} copied!`;
-        showToast(`🎉 Copied all ${gathered.length} video transcripts & notes to clipboard!`);
+        showToast(`🎉 Copied full bundle with ${gathered.length} video transcripts to clipboard!`);
       } catch (err) {
         if (quickStatus) quickStatus.textContent = "Error";
         showToast("❌ Auto-collect error: " + err.message);
       }
     });
+
+    container.querySelector("#sc-btn-quick-ai-snapshot")?.addEventListener("click", async () => {
+      await copyAiSnapshotContext();
+    });
+
+    container.querySelector("#sc-btn-quick-annotate")?.addEventListener("click", () => {
+      startElementAnnotator();
+    });
+
+    container.querySelector("#sc-btn-quick-step-next")?.addEventListener("click", () => {
+      startInPageQueueAutoRun();
+    });
+
+    container.querySelector("#sc-btn-quick-stop-autorun")?.addEventListener("click", () => {
+      stopInPageQueueAutoRun();
+    });
+
+    container.querySelector("#sc-btn-autorun-queue-step")?.addEventListener("click", () => {
+      startInPageQueueAutoRun();
+    });
+
+    // Check if auto-runner is active on render
+    if (sessionStorage.getItem("sc_queue_autorun")) {
+      updateQueueAutoRunUI(true);
+    }
 
     // Sync button
     container
@@ -2071,71 +2066,18 @@
       for (let n = 0; n < total; n++) {
         const v = pData.videos[n];
         showToast(`⚡ Extracting [${n + 1}/${total}] ${v.title.slice(0, 20)}...`);
-        let text = "";
         let notes = [];
         try {
           const cachedNotes = await new Promise(r => storage.get([`sc_notes_${v.videoId}`], r));
           notes = cachedNotes?.[`sc_notes_${v.videoId}`] || [];
-          const cached = await new Promise(r => storage.get([`sc_transcript_${v.videoId}`, `sc_meta_${v.videoId}`], r));
-          const cMeta = cached?.[`sc_meta_${v.videoId}`];
-          const cTrans = cached?.[`sc_transcript_${v.videoId}`];
-          if (cTrans && Array.isArray(cTrans) && cTrans.length > 0) {
-            text = cTrans.map(s => `[${formatTime(s.start)}] ${s.text}`).join("\n");
-          } else if (cMeta?.transcript) {
-            text = cMeta.transcript;
-          }
         } catch {}
 
-        if (!text) {
-          try {
-            const bgResp = await new Promise(r => chrome.runtime.sendMessage({ type: "sc_fetch_video_transcript", videoId: v.videoId }, r));
-            if (bgResp?.segments?.length > 0) {
-              text = bgResp.segments.map(s => `[${formatTime(s.start)}] ${s.text}`).join("\n");
-            } else if (bgResp?.transcript) {
-              text = bgResp.transcript;
-            }
-          } catch {}
-        }
-        gathered.push({ ...v, transcript: text || "[No transcript available for this video]", notes });
+        const tResult = await fetchDirectVideoTranscript(v.videoId);
+        gathered.push({ ...v, transcript: tResult.transcript || "[No transcript available for this video]", notes });
       }
 
+      const md = buildQueueMarkdownBundle(pData, gathered);
       const title = pData.playlistTitle || (pData.isQueue ? "YouTube Queue" : "YouTube Playlist");
-      let md = `# ${title}\n\n`;
-      md += `> Generated by Social Companion on ${new Date().toISOString().slice(0, 10)} | Total Videos: ${gathered.length}\n\n`;
-      md += `## Table of Contents\n\n`;
-      gathered.forEach((v, idx) => {
-        md += `${idx + 1}. [${v.title}](${v.url}) — ${v.channel} ${v.duration ? `(${v.duration})` : ""}\n`;
-      });
-      md += `\n---\n\n`;
-
-      gathered.forEach((v, idx) => {
-        md += `---\n`;
-        md += `Title: ${v.title}\n`;
-        md += `Channel: ${v.channel}\n`;
-        md += `URL: ${v.url}\n`;
-        md += `Thumbnail: ${v.thumbnail || `https://img.youtube.com/vi/${v.videoId}/hqdefault.jpg`}\n`;
-        md += `Playlist: ${title}\n`;
-        md += `Playlist Index: ${idx + 1}\n`;
-        if (v.duration) md += `Duration: ${v.duration}\n`;
-        md += `Transcript Status: ${v.transcript && !v.transcript.startsWith("[No") ? "ready" : "unavailable"}\n`;
-        md += `Copied: ${new Date().toISOString().slice(0, 10)}\n`;
-        md += `---\n\n`;
-
-        md += `# Personal Notes & Markers\n\n`;
-        if (v.notes && v.notes.length > 0) {
-          v.notes.forEach(n => {
-            md += `- **[${formatTime(n.time)}]** (${canonicalYouTubeUrl(v.videoId, n.time)}): ${n.text}\n`;
-          });
-          md += `\n`;
-        } else {
-          md += `*No notes added yet.*\n\n`;
-        }
-
-        md += `# Transcript\n\n`;
-        md += `${v.transcript}\n\n`;
-        md += `---\n\n`;
-      });
-
       await downloadCaptureText(md, `${title.replace(/[^a-z0-9_-]+/gi, '_')}_bundle.md`, "text/markdown");
       showToast(`📥 Downloaded Markdown bundle with ${gathered.length} videos!`);
     });
@@ -2300,6 +2242,491 @@
       video.currentTime = parseFloat(seconds);
       video.play().catch(() => {});
     }
+  }
+
+  // --- Fast Direct Caption Extraction & Bundle Generator ---
+  async function fetchDirectVideoTranscript(videoId) {
+    if (!videoId) return { ok: false, transcript: "" };
+
+    // 1. Check local cache
+    try {
+      const cached = await new Promise(r => storage.get([`sc_transcript_${videoId}`, `sc_meta_${videoId}`], r));
+      const cTrans = cached?.[`sc_transcript_${videoId}`];
+      if (cTrans && Array.isArray(cTrans) && cTrans.length > 0) {
+        return { ok: true, transcript: cTrans.map(s => `[${formatTime(s.start)}] ${s.text}`).join("\n"), segments: cTrans };
+      }
+      if (cached?.[`sc_meta_${videoId}`]?.transcript) {
+        return { ok: true, transcript: cached[`sc_meta_${videoId}`].transcript, segments: [] };
+      }
+    } catch {}
+
+    // 2. If it's currently active video in page and captions ready
+    if (videoId === currentVideoId && ytCaptions.length > 0) {
+      return { ok: true, transcript: ytCaptions.map(s => `[${formatTime(s.start)}] ${s.text}`).join("\n"), segments: ytCaptions };
+    }
+
+    // 3. Direct fetch from YouTube HTML (same-origin fetch in content script)
+    try {
+      const res = await fetch(`https://www.youtube.com/watch?v=${videoId}`, { credentials: "omit" });
+      if (res.ok) {
+        const html = await res.text();
+        const m = html.match(/"captionTracks":\s*(\[[^\]]+\])/);
+        if (m) {
+          const rawTracks = JSON.parse(m[1].replace(/\\u0026/g, "&"));
+          const englishTrack = rawTracks.find(t => t.languageCode === "en") || rawTracks[0];
+          if (englishTrack?.baseUrl) {
+            const capRes = await fetch(englishTrack.baseUrl);
+            if (capRes.ok) {
+              const xml = await capRes.text();
+              const parser = new DOMParser();
+              const xmlDoc = parser.parseFromString(xml, "text/xml");
+              const textNodes = xmlDoc.getElementsByTagName("text");
+              const segments = Array.from(textNodes).map(node => ({
+                start: parseFloat(node.getAttribute("start")) || 0,
+                dur: parseFloat(node.getAttribute("dur")) || 0,
+                text: decodeHtmlEntities(node.textContent).trim()
+              })).filter(s => s.text);
+              if (segments.length > 0) {
+                const text = segments.map(s => `[${formatTime(s.start)}] ${s.text}`).join("\n");
+                storage.set({ [`sc_transcript_${videoId}`]: segments });
+                return { ok: true, transcript: text, segments };
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Direct caption fetch failed for", videoId, e);
+    }
+
+    // 4. Fallback to background script fetch
+    try {
+      const bgResp = await new Promise(r => chrome.runtime.sendMessage({ type: "sc_fetch_video_transcript", videoId }, r));
+      if (bgResp?.segments?.length > 0) {
+        const text = bgResp.segments.map(s => `[${formatTime(s.start)}] ${s.text}`).join("\n");
+        return { ok: true, transcript: text, segments: bgResp.segments };
+      } else if (bgResp?.transcript) {
+        return { ok: true, transcript: bgResp.transcript, segments: [] };
+      }
+    } catch {}
+
+    return { ok: false, transcript: "[No transcript available for this video]", segments: [] };
+  }
+
+  function buildQueueMarkdownBundle(pData, gathered) {
+    const title = pData.playlistTitle || (pData.isQueue ? "YouTube Queue" : "YouTube Playlist");
+    let md = `# ${title}\n\n`;
+    md += `> Generated by Social Companion on ${new Date().toISOString().slice(0, 10)} | Total Videos: ${gathered.length}\n\n`;
+    md += `## Table of Contents\n\n`;
+    gathered.forEach((v, idx) => {
+      md += `${idx + 1}. [${v.title}](${v.url}) — ${v.channel} ${v.duration ? `(${v.duration})` : ""}\n`;
+    });
+    md += `\n---\n\n`;
+
+    gathered.forEach((v, idx) => {
+      md += `---\n`;
+      md += `Title: ${v.title}\n`;
+      md += `Channel: ${v.channel}\n`;
+      md += `URL: ${v.url}\n`;
+      md += `Thumbnail: ${v.thumbnail || `https://img.youtube.com/vi/${v.videoId}/hqdefault.jpg`}\n`;
+      md += `Playlist: ${title}\n`;
+      md += `Playlist Index: ${idx + 1}\n`;
+      if (v.duration) md += `Duration: ${v.duration}\n`;
+      md += `Transcript Status: ${v.transcript && !v.transcript.startsWith("[No") ? "ready" : "unavailable"}\n`;
+      md += `Copied: ${new Date().toISOString().slice(0, 10)}\n`;
+      md += `---\n\n`;
+
+      md += `# Personal Notes & Markers\n\n`;
+      if (v.notes && v.notes.length > 0) {
+        v.notes.forEach(n => {
+          md += `- **[${formatTime(n.time)}]** (${canonicalYouTubeUrl(v.videoId, n.time)}): ${n.text}\n`;
+        });
+        md += `\n`;
+      } else {
+        md += `*No notes added yet.*\n\n`;
+      }
+
+      md += `# Transcript\n\n`;
+      md += `${v.transcript}\n\n`;
+      md += `---\n\n`;
+    });
+    return md;
+  }
+
+  // --- Foreground In-Page Sequential Queue Auto-Runner ---
+  async function startInPageQueueAutoRun() {
+    try {
+      showToast("⚡ Starting In-Page Queue Auto-Runner…");
+      const pData = await extractPlaylistVideosFromPage();
+      if (!pData?.videos?.length) {
+        showToast("ℹ️ No active playlist or queue found on this page.");
+        return;
+      }
+      let curIdx = pData.videos.findIndex(v => v.videoId === currentVideoId);
+      if (curIdx < 0) curIdx = 0;
+
+      const state = {
+        active: true,
+        listId: pData.playlistId,
+        playlistTitle: pData.playlistTitle,
+        isQueue: pData.isQueue,
+        currentIndex: curIdx,
+        total: pData.videos.length,
+        videos: pData.videos,
+        gathered: []
+      };
+      sessionStorage.setItem("sc_queue_autorun", JSON.stringify(state));
+      updateQueueAutoRunUI(true);
+      showToast(`⚡ Auto-Runner active on [${curIdx + 1}/${state.total}]! Processing current video…`);
+      processCurrentQueueAutoRunStep();
+    } catch (err) {
+      showToast("❌ Auto-Runner error: " + err.message);
+    }
+  }
+
+  function stopInPageQueueAutoRun() {
+    sessionStorage.removeItem("sc_queue_autorun");
+    updateQueueAutoRunUI(false);
+    showToast("⏹ In-Page Queue Auto-Runner stopped.");
+  }
+
+  function updateQueueAutoRunUI(isRunning) {
+    const btnStep = document.getElementById("sc-btn-quick-step-next");
+    const btnStop = document.getElementById("sc-btn-quick-stop-autorun");
+    if (btnStep) btnStep.style.display = isRunning ? "none" : "inline-flex";
+    if (btnStop) btnStop.style.display = isRunning ? "inline-flex" : "none";
+  }
+
+  async function processCurrentQueueAutoRunStep() {
+    const raw = sessionStorage.getItem("sc_queue_autorun");
+    if (!raw) {
+      updateQueueAutoRunUI(false);
+      return;
+    }
+    let state;
+    try {
+      state = JSON.parse(raw);
+    } catch {
+      return;
+    }
+    if (!state.active) return;
+    updateQueueAutoRunUI(true);
+
+    const quickStatus = document.getElementById("sc-transcript-quick-status");
+    const v = state.videos[state.currentIndex] || { videoId: currentVideoId, title: document.title, channel: "", duration: "", url: location.href };
+    const progressMsg = `[${state.currentIndex + 1}/${state.total}] ${v.title.slice(0, 20)}…`;
+    if (quickStatus) quickStatus.textContent = `⚡ ${progressMsg}`;
+    showToast(`⚡ Auto-Capturing ${progressMsg}`);
+
+    // Wait up to 5s for captions on current page if not ready
+    let transcriptText = "";
+    if (currentVideoId === v.videoId && ytCaptions.length > 0) {
+      transcriptText = ytCaptions.map(s => `[${formatTime(s.start)}] ${s.text}`).join("\n");
+    } else {
+      for (let w = 0; w < 6; w++) {
+        if (ytCaptions.length > 0 && currentVideoId === v.videoId) {
+          transcriptText = ytCaptions.map(s => `[${formatTime(s.start)}] ${s.text}`).join("\n");
+          break;
+        }
+        await new Promise(r => setTimeout(r, 800));
+      }
+    }
+
+    if (!transcriptText) {
+      const res = await fetchDirectVideoTranscript(v.videoId);
+      transcriptText = res.transcript;
+    }
+
+    let notes = [];
+    try {
+      const cachedNotes = await new Promise(r => storage.get([`sc_notes_${v.videoId}`], r));
+      notes = cachedNotes?.[`sc_notes_${v.videoId}`] || [];
+    } catch {}
+
+    const gatheredItem = {
+      ...v,
+      transcript: transcriptText || "[No transcript available for this video]",
+      notes
+    };
+    state.gathered.push(gatheredItem);
+
+    try {
+      const singleMd = await generateMarkdown();
+      await navigator.clipboard.writeText(singleMd);
+    } catch {}
+
+    if (quickStatus) quickStatus.textContent = `✓ [${state.currentIndex + 1}/${state.total}]`;
+    showToast(`✓ Captured [${state.currentIndex + 1}/${state.total}]!`);
+
+    // Advance or finish
+    if (state.currentIndex + 1 < state.total) {
+      state.currentIndex++;
+      sessionStorage.setItem("sc_queue_autorun", JSON.stringify(state));
+      const nextVid = state.videos[state.currentIndex];
+      showToast(`⚡ Stepping to [${state.currentIndex + 1}/${state.total}] "${nextVid.title.slice(0, 20)}…" in 2s...`);
+      setTimeout(() => {
+        if (!sessionStorage.getItem("sc_queue_autorun")) return;
+        const nextBtn = document.querySelector(".ytp-next-button");
+        if (nextBtn && state.isQueue) {
+          nextBtn.click();
+        } else if (nextVid.url) {
+          window.location.href = nextVid.url;
+        }
+      }, 2000);
+    } else {
+      sessionStorage.removeItem("sc_queue_autorun");
+      updateQueueAutoRunUI(false);
+      const fullBundle = buildQueueMarkdownBundle(state, state.gathered);
+      await navigator.clipboard.writeText(fullBundle);
+      await downloadCaptureText(fullBundle, `${(state.playlistTitle || "queue").replace(/[^a-z0-9_-]+/gi, "_")}_full_bundle.md`, "text/markdown");
+      if (quickStatus) quickStatus.textContent = `🎉 All ${state.total} captured!`;
+      showToast(`🎉 Finished! Full bundle with ${state.total} video transcripts copied & downloaded!`);
+    }
+  }
+
+  // --- Token-Optimized DOM Cleaner & AI Snapshot Context ---
+  function detectTechStack() {
+    const stack = [];
+    if (document.querySelector("[class*='tw-'], [class*='bg-'], [class*='text-'], [class*='flex'], [class*='grid']")) {
+      stack.push("Tailwind");
+    }
+    if (window.customElements || document.querySelector("yt-icon, ytd-app, tp-yt-paper-button")) {
+      stack.push("Web Components / Polymer / Lit");
+    }
+    if (document.querySelector("[data-reactroot], [data-reacthost], #__next")) {
+      stack.push("React / Next.js");
+    }
+    if (document.querySelector("[data-v-], #app, [data-vue]")) {
+      stack.push("Vue");
+    }
+    if (stack.length === 0) stack.push("HTML5 / CSS / Vanilla JS");
+    return stack;
+  }
+
+  function generateCleanDOM(targetElement) {
+    const root = targetElement || document.querySelector("ytd-app, #content, main, body") || document.documentElement;
+    const clone = root.cloneNode(true);
+
+    // Remove noise elements
+    const elementsToRemove = clone.querySelectorAll(
+      "script, style, link[rel='stylesheet'], noscript, iframe, template, [data-sc-ignore], #sc-youtube-widget, #sc-annotator-overlay, #sc-floating-action-button, #sc-social-panel, #sc-annotation-modal"
+    );
+    elementsToRemove.forEach(el => el.remove());
+
+    // Clean SVGs - strip bulky paths/polygons and replace with lightweight comment
+    const svgs = clone.querySelectorAll("svg");
+    svgs.forEach(svg => {
+      svg.innerHTML = "<!-- [SVG CONTENT STRIPPED] -->";
+    });
+
+    // Clean attributes and images
+    const all = clone.querySelectorAll("*");
+    all.forEach(el => {
+      if (el.tagName === "IMG") {
+        if (el.src && el.src.startsWith("data:")) el.removeAttribute("src");
+        if (el.srcset) el.removeAttribute("srcset");
+      }
+      if (el.hasAttribute("style")) {
+        const style = el.getAttribute("style");
+        if (style && style.length > 120) {
+          el.removeAttribute("style");
+        }
+      }
+      Array.from(el.attributes).forEach(attr => {
+        if (attr.name.startsWith("data-sc-") || attr.name.startsWith("__react") || attr.name.startsWith("data-google-") || attr.name.startsWith("data-analytics-")) {
+          el.removeAttribute(attr.name);
+        }
+      });
+    });
+
+    return clone.outerHTML;
+  }
+
+  function getAiSnapshotContext(targetElement) {
+    const cleanHtml = generateCleanDOM(targetElement);
+    return {
+      metadata: {
+        timestamp: new Date().toISOString(),
+        url: window.location.href,
+        title: document.title,
+        type: "Token-Optimized"
+      },
+      stack: detectTechStack(),
+      clean_dom: cleanHtml
+    };
+  }
+
+  async function copyAiSnapshotContext(targetElement) {
+    try {
+      const snapshot = getAiSnapshotContext(targetElement);
+      const json = JSON.stringify(snapshot, null, 2);
+      await navigator.clipboard.writeText(json);
+      showToast("🤖 Token-Optimized Clean DOM Snapshot copied to clipboard!");
+      return snapshot;
+    } catch (e) {
+      showToast("❌ Snapshot error: " + e.message);
+      return null;
+    }
+  }
+
+  // --- Interactive Element Annotator Tool ---
+  let _annotatorActive = false;
+  let _annotatorOverlay = null;
+  let _annotatorHoverEl = null;
+
+  function startElementAnnotator() {
+    if (_annotatorActive) {
+      stopElementAnnotator();
+      return;
+    }
+    _annotatorActive = true;
+    showToast("🎯 Annotator active! Hover and click any element to annotate for AI (Press Esc to cancel).");
+
+    _annotatorOverlay = document.createElement("div");
+    _annotatorOverlay.id = "sc-annotator-overlay";
+    _annotatorOverlay.style.cssText = "position:fixed;pointer-events:none;z-index:2147483647;border:2px solid #8b5cf6;border-radius:4px;box-shadow:0 0 12px rgba(139,92,246,0.6);background:rgba(139,92,246,0.12);transition:all 0.05s ease-out;display:none;";
+    
+    const badge = document.createElement("div");
+    badge.id = "sc-annotator-badge";
+    badge.style.cssText = "position:absolute;top:-26px;left:0;background:#8b5cf6;color:#ffffff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:4px;white-space:nowrap;font-family:ui-monospace,monospace;box-shadow:0 2px 6px rgba(0,0,0,0.4);pointer-events:none;";
+    badge.textContent = "Click to Annotate";
+    _annotatorOverlay.appendChild(badge);
+    document.body.appendChild(_annotatorOverlay);
+
+    const onMouseMove = (e) => {
+      if (!_annotatorActive) return;
+      const target = document.elementFromPoint(e.clientX, e.clientY);
+      if (!target || target.closest("#sc-youtube-widget, #sc-annotator-overlay, #sc-annotation-modal")) {
+        _annotatorOverlay.style.display = "none";
+        _annotatorHoverEl = null;
+        return;
+      }
+      _annotatorHoverEl = target;
+      const rect = target.getBoundingClientRect();
+      _annotatorOverlay.style.display = "block";
+      _annotatorOverlay.style.top = `${rect.top}px`;
+      _annotatorOverlay.style.left = `${rect.left}px`;
+      _annotatorOverlay.style.width = `${rect.width}px`;
+      _annotatorOverlay.style.height = `${rect.height}px`;
+
+      const selector = getCssSelector(target);
+      badge.textContent = selector.length > 35 ? selector.slice(0, 32) + "…" : selector;
+    };
+
+    const onClick = (e) => {
+      if (!_annotatorActive || !_annotatorHoverEl) return;
+      if (e.target.closest("#sc-youtube-widget, #sc-annotator-overlay, #sc-annotation-modal")) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+      const target = _annotatorHoverEl;
+      stopElementAnnotator();
+      openAnnotationPromptModal(target);
+    };
+
+    const onKeyDown = (e) => {
+      if (e.key === "Escape" && _annotatorActive) {
+        stopElementAnnotator();
+        showToast("⏹ Annotator cancelled.");
+      }
+    };
+
+    window._annotatorMoveHandler = onMouseMove;
+    window._annotatorClickHandler = onClick;
+    window._annotatorKeyHandler = onKeyDown;
+
+    document.addEventListener("mousemove", onMouseMove, { capture: true });
+    document.addEventListener("click", onClick, { capture: true, once: true });
+    document.addEventListener("keydown", onKeyDown, { capture: true });
+  }
+
+  function stopElementAnnotator() {
+    _annotatorActive = false;
+    if (_annotatorOverlay) {
+      _annotatorOverlay.remove();
+      _annotatorOverlay = null;
+    }
+    if (window._annotatorMoveHandler) {
+      document.removeEventListener("mousemove", window._annotatorMoveHandler, { capture: true });
+    }
+    if (window._annotatorClickHandler) {
+      document.removeEventListener("click", window._annotatorClickHandler, { capture: true });
+    }
+    if (window._annotatorKeyHandler) {
+      document.removeEventListener("keydown", window._annotatorKeyHandler, { capture: true });
+    }
+  }
+
+  function getCssSelector(el) {
+    if (!el || el.nodeType !== Node.ELEMENT_NODE) return "";
+    if (el.id) return `#${el.id}`;
+    let path = [];
+    while (el && el.nodeType === Node.ELEMENT_NODE && el.tagName !== "BODY" && el.tagName !== "HTML") {
+      let selector = el.tagName.toLowerCase();
+      if (el.id) {
+        selector = `#${el.id}`;
+        path.unshift(selector);
+        break;
+      } else {
+        let sibling = el;
+        let nth = 1;
+        while (sibling = sibling.previousElementSibling) {
+          if (sibling.tagName.toLowerCase() === selector) nth++;
+        }
+        if (nth !== 1) selector += `:nth-of-type(${nth})`;
+      }
+      path.unshift(selector);
+      el = el.parentElement;
+    }
+    return path.join(" > ");
+  }
+
+  function openAnnotationPromptModal(target) {
+    const selector = getCssSelector(target);
+    const modal = document.createElement("div");
+    modal.id = "sc-annotation-modal";
+    modal.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:2147483647;width:420px;max-width:90vw;background:#181726;color:#f5f3ff;border:1px solid #4a4468;border-radius:14px;padding:18px;box-shadow:0 12px 36px rgba(0,0,0,0.7);font-family:-apple-system,BlinkMacSystemFont,sans-serif;";
+    
+    modal.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <strong style="font-size:14px;color:#a78bfa;">🎯 Annotate Element for AI</strong>
+        <button id="sc-modal-close" style="background:none;border:none;color:#aaa;font-size:16px;cursor:pointer;">✕</button>
+      </div>
+      <div style="font-size:11px;color:#a5a0c0;margin-bottom:8px;">Target Selector:</div>
+      <div style="font-family:ui-monospace,monospace;font-size:11px;background:#100f1c;padding:6px 8px;border-radius:6px;border:1px solid #332f4a;color:#c084fc;margin-bottom:12px;overflow-x:auto;">${escapeHtml(selector)}</div>
+      <div style="font-size:11px;color:#a5a0c0;margin-bottom:6px;">Describe the issue or feature to build/modify here:</div>
+      <textarea id="sc-annotation-text" placeholder="e.g. maybe here quick thingy yk what i mean mun..." style="width:100%;height:80px;box-sizing:border-box;background:#100f1c;border:1px solid #4a4468;border-radius:8px;color:#fff;padding:8px;font-size:12px;resize:vertical;outline:none;margin-bottom:14px;"></textarea>
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button id="sc-modal-cancel" style="background:#27233a;border:1px solid #4a4468;color:#ddd;padding:7px 12px;border-radius:8px;font-size:12px;cursor:pointer;">Cancel</button>
+        <button id="sc-modal-copy" style="background:#8b5cf6;border:none;color:#fff;padding:7px 14px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;">📋 Copy AI Snapshot &amp; Annotation</button>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+    const textarea = modal.querySelector("#sc-annotation-text");
+    textarea.focus();
+
+    const closeModal = () => modal.remove();
+
+    modal.querySelector("#sc-modal-close").onclick = closeModal;
+    modal.querySelector("#sc-modal-cancel").onclick = closeModal;
+
+    modal.querySelector("#sc-modal-copy").onclick = async () => {
+      const taskText = textarea.value.trim() || "No specific instructions provided.";
+      const snapshot = getAiSnapshotContext();
+      
+      const payload = `### AI TASK ANNOTATIONS
+
+- **ELEMENT**: \`${selector}\`
+  **TASK**: ${taskText}
+
+### AI SNAPSHOT CONTEXT
+${JSON.stringify(snapshot, null, 2)}
+`;
+      await navigator.clipboard.writeText(payload);
+      closeModal();
+      showToast("🎉 AI Task Annotation & Clean DOM Snapshot copied to clipboard!");
+    };
   }
 
   // Storage and Notes Management

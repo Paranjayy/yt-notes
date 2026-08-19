@@ -76,9 +76,10 @@
   </div>
   <div class="card" id="replyCard" hidden><span class="prompt-label">Provider replies</span><pre class="reply" id="providerReply"></pre><div class="provider-row"><button class="btn" id="copyProviderReply">Copy replies</button><button class="btn" id="saveProviderReply">Save replies .md</button></div></div>
   <div class="card"><span class="prompt-label">YouTube vault auto-capture</span><div class="provider-row"><select class="context-limit" id="autoCaptureMode"><option value="off">Off — manual saves only</option><option value="yolo">YOLO — every verified watched video</option><option value="whitelist">Whitelist — selected channels only</option></select></div><div class="provider-row"><input class="recipe-name" id="autoCaptureChannels" placeholder="Channels, comma-separated"><span class="meta">Used in whitelist mode</span></div><p class="prompt-hint">Captures only after YouTube video ID, URL, and transcript match. Changed captures become local versions; nothing is uploaded.</p></div>
-  <div class="actions">
     <button class="btn primary" id="saveMarkdown">Save Markdown</button>
     <button class="btn" id="saveTranscript">Transcript .txt</button>
+    <button class="btn" id="copyAiSnapshot">🤖 AI Clean DOM</button>
+    <button class="btn" id="startAnnotator">🎯 Annotate for AI</button>
     <button class="btn" id="copyPageContext">Copy page context</button>
     <button class="btn" id="openChatGPT">Open ChatGPT</button>
     <button class="btn primary" id="askChatGPT">Run selected AIs</button>

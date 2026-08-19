@@ -857,6 +857,35 @@ document.getElementById('copyPlaylistTitles')?.addEventListener('click', () => {
   navigator.clipboard.writeText(titles).then(() => setStatus('Titles copied!', 'success'));
 });
 
+document.getElementById('copyAiSnapshot')?.addEventListener('click', async () => {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id) { setStatus('No active tab', 'error'); return; }
+  setStatus('Capturing clean DOM snapshot…');
+  try {
+    const res = await new Promise(r => chrome.tabs.sendMessage(tab.id, { type: 'sc_get_ai_snapshot' }, r));
+    if (res?.ok && res.snapshot) {
+      await navigator.clipboard.writeText(JSON.stringify(res.snapshot, null, 2));
+      setStatus('🤖 Clean DOM snapshot copied to clipboard!', 'success');
+    } else {
+      setStatus('Could not capture DOM from this page', 'error');
+    }
+  } catch (e) {
+    setStatus('Error: ' + e.message, 'error');
+  }
+});
+
+document.getElementById('startAnnotator')?.addEventListener('click', async () => {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id) { setStatus('No active tab', 'error'); return; }
+  try {
+    await chrome.tabs.sendMessage(tab.id, { type: 'sc_start_element_annotator' });
+    setStatus('🎯 Annotator active on page! Click any element.', 'success');
+    window.close();
+  } catch (e) {
+    setStatus('Error: ' + e.message, 'error');
+  }
+});
+
 // Initialization
 checkUploadsShortcut();
 checkActiveTabPlaylist();
