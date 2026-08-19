@@ -245,6 +245,15 @@
     .sc-btn-primary:hover {
       background: var(--sc-primary-hover);
     }
+    .sc-btn-danger {
+      background: #dc2626;
+      color: white;
+      border: 1px solid #ef4444;
+      box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3);
+    }
+    .sc-btn-danger:hover {
+      background: #b91c1c;
+    }
     .sc-btn-secondary {
       background: rgba(255,255,255,0.05);
       color: inherit;
@@ -1237,6 +1246,16 @@
           }
         }, 30000);
       }
+
+      // If in-page queue auto-run is in progress, mute audio and resume step
+      if (sessionStorage.getItem("sc_queue_autorun")) {
+        muteActiveMedia();
+        updateQueueAutoRunUI(true);
+        setTimeout(() => {
+          muteActiveMedia();
+          processCurrentQueueAutoRunStep();
+        }, 1500);
+      }
     } else {
       currentVideoId = "";
       if (_recoObserver) {
@@ -1770,6 +1789,7 @@
           <button class="sc-btn sc-btn-secondary" id="sc-btn-quick-playlist" title="Copy playlist or queue videos as Markdown">🎵 Queue/Playlist</button>
           <button class="sc-btn sc-btn-secondary" id="sc-btn-quick-auto-collect" title="Instantly auto-collect transcripts for all videos in queue/playlist and copy full bundle">⚡ Auto-Collect All</button>
           <button class="sc-btn sc-btn-secondary" id="sc-btn-quick-step-next" title="Auto-advance through each video in queue, copying transcripts one by one">⏩ Auto-Step Queue</button>
+          <button class="sc-btn sc-btn-danger" id="sc-btn-quick-stop-autorun" style="display:none;" title="Stop active Queue Auto-Runner">⏹ Stop Auto-Step</button>
           <button class="sc-btn sc-btn-secondary" id="sc-btn-quick-uploads" title="Open channel uploads playlist">🎬 Uploads</button>
           <button class="sc-btn sc-btn-secondary" id="sc-btn-quick-ai-snapshot" title="Copy Token-Optimized Clean DOM Snapshot for AI">🤖 AI Snapshot</button>
           <button class="sc-btn sc-btn-secondary" id="sc-btn-quick-annotate" title="Click any element to annotate & capture for AI">🎯 Annotate</button>
@@ -2354,9 +2374,19 @@
   }
 
   // --- Foreground In-Page Sequential Queue Auto-Runner ---
+  function muteActiveMedia() {
+    try {
+      const videos = document.querySelectorAll("video");
+      videos.forEach(v => {
+        v.muted = true;
+      });
+    } catch {}
+  }
+
   async function startInPageQueueAutoRun() {
     try {
-      showToast("⚡ Starting In-Page Queue Auto-Runner…");
+      showToast("⚡ Starting In-Page Queue Auto-Runner (Audio Muted)…");
+      muteActiveMedia();
       const pData = await extractPlaylistVideosFromPage();
       if (!pData?.videos?.length) {
         showToast("ℹ️ No active playlist or queue found on this page.");
@@ -2377,7 +2407,7 @@
       };
       sessionStorage.setItem("sc_queue_autorun", JSON.stringify(state));
       updateQueueAutoRunUI(true);
-      showToast(`⚡ Auto-Runner active on [${curIdx + 1}/${state.total}]! Processing current video…`);
+      showToast(`⚡ Auto-Runner active on [${curIdx + 1}/${state.total}]! Audio muted.`);
       processCurrentQueueAutoRunStep();
     } catch (err) {
       showToast("❌ Auto-Runner error: " + err.message);
@@ -2387,14 +2417,35 @@
   function stopInPageQueueAutoRun() {
     sessionStorage.removeItem("sc_queue_autorun");
     updateQueueAutoRunUI(false);
-    showToast("⏹ In-Page Queue Auto-Runner stopped.");
+    showToast("⏹ In-Page Queue Auto-Runner stopped. Pausing video in 5s…");
+    setTimeout(() => {
+      try {
+        const videos = document.querySelectorAll("video");
+        videos.forEach(v => {
+          if (!v.paused) v.pause();
+        });
+      } catch {}
+    }, 5000);
   }
 
   function updateQueueAutoRunUI(isRunning) {
     const btnStep = document.getElementById("sc-btn-quick-step-next");
     const btnStop = document.getElementById("sc-btn-quick-stop-autorun");
     if (btnStep) btnStep.style.display = isRunning ? "none" : "inline-flex";
-    if (btnStop) btnStop.style.display = isRunning ? "inline-flex" : "none";
+    if (btnStop) {
+      btnStop.style.display = isRunning ? "inline-flex" : "none";
+      if (isRunning) {
+        const raw = sessionStorage.getItem("sc_queue_autorun");
+        if (raw) {
+          try {
+            const st = JSON.parse(raw);
+            btnStop.textContent = `⏹ Stop (${st.currentIndex + 1}/${st.total})`;
+          } catch {
+            btnStop.textContent = "⏹ Stop Auto-Step";
+          }
+        }
+      }
+    }
   }
 
   async function processCurrentQueueAutoRunStep() {
@@ -2410,13 +2461,16 @@
       return;
     }
     if (!state.active) return;
+    
+    // Always keep video muted during autorun steps
+    muteActiveMedia();
     updateQueueAutoRunUI(true);
 
     const quickStatus = document.getElementById("sc-transcript-quick-status");
     const v = state.videos[state.currentIndex] || { videoId: currentVideoId, title: document.title, channel: "", duration: "", url: location.href };
     const progressMsg = `[${state.currentIndex + 1}/${state.total}] ${v.title.slice(0, 20)}…`;
     if (quickStatus) quickStatus.textContent = `⚡ ${progressMsg}`;
-    showToast(`⚡ Auto-Capturing ${progressMsg}`);
+    showToast(`⚡ Auto-Capturing (Muted) ${progressMsg}`);
 
     // Wait up to 5s for captions on current page if not ready
     let transcriptText = "";
@@ -2424,6 +2478,7 @@
       transcriptText = ytCaptions.map(s => `[${formatTime(s.start)}] ${s.text}`).join("\n");
     } else {
       for (let w = 0; w < 6; w++) {
+        muteActiveMedia();
         if (ytCaptions.length > 0 && currentVideoId === v.videoId) {
           transcriptText = ytCaptions.map(s => `[${formatTime(s.start)}] ${s.text}`).join("\n");
           break;
@@ -2462,10 +2517,12 @@
     if (state.currentIndex + 1 < state.total) {
       state.currentIndex++;
       sessionStorage.setItem("sc_queue_autorun", JSON.stringify(state));
+      updateQueueAutoRunUI(true);
       const nextVid = state.videos[state.currentIndex];
       showToast(`⚡ Stepping to [${state.currentIndex + 1}/${state.total}] "${nextVid.title.slice(0, 20)}…" in 2s...`);
       setTimeout(() => {
         if (!sessionStorage.getItem("sc_queue_autorun")) return;
+        muteActiveMedia();
         const nextBtn = document.querySelector(".ytp-next-button");
         if (nextBtn && state.isQueue) {
           nextBtn.click();
@@ -2474,13 +2531,23 @@
         }
       }, 2000);
     } else {
+      // Reached the end!
       sessionStorage.removeItem("sc_queue_autorun");
       updateQueueAutoRunUI(false);
       const fullBundle = buildQueueMarkdownBundle(state, state.gathered);
       await navigator.clipboard.writeText(fullBundle);
       await downloadCaptureText(fullBundle, `${(state.playlistTitle || "queue").replace(/[^a-z0-9_-]+/gi, "_")}_full_bundle.md`, "text/markdown");
       if (quickStatus) quickStatus.textContent = `🎉 All ${state.total} captured!`;
-      showToast(`🎉 Finished! Full bundle with ${state.total} video transcripts copied & downloaded!`);
+      showToast(`🎉 Queue complete! All ${state.total} transcripts copied & saved. Pausing in 5s…`);
+      setTimeout(() => {
+        try {
+          const videos = document.querySelectorAll("video");
+          videos.forEach(v => {
+            if (!v.paused) v.pause();
+          });
+          showToast("⏸ Playback paused after queue run complete.");
+        } catch {}
+      }, 5000);
     }
   }
 

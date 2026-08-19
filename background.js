@@ -33,6 +33,16 @@ chrome.runtime.onInstalled.addListener(() => {
       documentUrlPatterns: ["https://*.youtube.com/*"],
     });
     chrome.contextMenus.create({
+      id: "sc-copy-ai-snapshot",
+      title: "🤖 Copy AI clean DOM snapshot",
+      contexts: ["all"],
+    });
+    chrome.contextMenus.create({
+      id: "sc-start-element-annotator",
+      title: "🎯 Annotate element for AI",
+      contexts: ["all"],
+    });
+    chrome.contextMenus.create({
       id: "sc-ask-selection",
       title: "Ask selected text with",
       contexts: ["selection"],
@@ -150,6 +160,118 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   }
   if (info.menuItemId === "sc-collect-visible-playlist-transcripts" && tab?.id != null) {
     chrome.tabs.sendMessage(tab.id, { type: "sc_collect_visible_playlist_transcripts" }).catch(() => {});
+  }
+  if (info.menuItemId === "sc-copy-ai-snapshot" && tab?.id != null) {
+    chrome.tabs.sendMessage(tab.id, { type: "sc_get_ai_snapshot" }, (res) => {
+      if (!chrome.runtime.lastError && res?.ok && res.snapshot) {
+        chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: (snapshot) => {
+            navigator.clipboard.writeText(JSON.stringify(snapshot, null, 2)).then(() => {
+              const toast = document.createElement("div");
+              toast.textContent = "🤖 Clean DOM snapshot copied to clipboard!";
+              toast.style.cssText = "position:fixed;bottom:24px;right:24px;background:#1e1e2e;color:#fff;padding:12px 20px;border-radius:10px;font-family:sans-serif;font-size:14px;box-shadow:0 8px 24px rgba(0,0,0,0.5);z-index:2147483647;border:1px solid rgba(255,255,255,0.15);";
+              document.body.appendChild(toast);
+              setTimeout(() => toast.remove(), 3000);
+            });
+          },
+          args: [res.snapshot]
+        }).catch(() => {});
+      } else {
+        // Fallback for non-YouTube / arbitrary web pages
+        chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: () => {
+            const root = document.querySelector("main, #content, ytd-app, body") || document.documentElement;
+            const clone = root.cloneNode(true);
+            clone.querySelectorAll("script, style, link[rel='stylesheet'], noscript, iframe, template").forEach(el => el.remove());
+            clone.querySelectorAll("svg").forEach(svg => { svg.innerHTML = "<!-- [SVG CONTENT STRIPPED] -->"; });
+            clone.querySelectorAll("[style*='data:image']").forEach(el => el.removeAttribute("style"));
+            clone.querySelectorAll("img[src^='data:image']").forEach(img => { img.setAttribute("src", "[inline-base64-image]"); });
+            let cleanHtml = clone.outerHTML.replace(/\s+/g, ' ').replace(/> </g, '><').trim();
+            if (cleanHtml.length > 60000) cleanHtml = cleanHtml.slice(0, 60000) + '... [TRUNCATED]';
+            const payload = {
+              metadata: {
+                timestamp: new Date().toISOString(),
+                url: location.href,
+                title: document.title,
+                type: "Token-Optimized"
+              },
+              stack: [document.querySelector("[class*='tw-'], [class*='bg-'], [class*='text-']") ? "Tailwind" : "HTML5/CSS"],
+              clean_dom: cleanHtml
+            };
+            navigator.clipboard.writeText(JSON.stringify(payload, null, 2)).then(() => {
+              const toast = document.createElement("div");
+              toast.textContent = "🤖 Clean DOM snapshot copied to clipboard!";
+              toast.style.cssText = "position:fixed;bottom:24px;right:24px;background:#1e1e2e;color:#fff;padding:12px 20px;border-radius:10px;font-family:sans-serif;font-size:14px;box-shadow:0 8px 24px rgba(0,0,0,0.5);z-index:2147483647;border:1px solid rgba(255,255,255,0.15);";
+              document.body.appendChild(toast);
+              setTimeout(() => toast.remove(), 3000);
+            });
+          }
+        }).catch((err) => console.warn("Could not copy AI snapshot:", err));
+      }
+    });
+    return;
+  }
+  if (info.menuItemId === "sc-start-element-annotator" && tab?.id != null) {
+    chrome.tabs.sendMessage(tab.id, { type: "sc_start_element_annotator" }, (res) => {
+      if (chrome.runtime.lastError || !res?.ok) {
+        // Self-contained annotator injection for arbitrary pages
+        chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: () => {
+            let overlay = document.getElementById("sc-annotator-overlay");
+            if (!overlay) {
+              overlay = document.createElement("div");
+              overlay.id = "sc-annotator-overlay";
+              overlay.style.cssText = "position:fixed;pointer-events:none;border:2px solid #a855f7;background:rgba(168,85,247,0.15);z-index:2147483647;border-radius:4px;transition:all 60ms ease-out;display:none;box-shadow:0 0 12px rgba(168,85,247,0.4);";
+              const tag = document.createElement("span");
+              tag.id = "sc-annotator-tag";
+              tag.style.cssText = "position:absolute;top:-26px;left:0;background:#7e22ce;color:#fff;font-size:11px;font-family:monospace;padding:2px 6px;border-radius:4px;white-space:nowrap;";
+              overlay.appendChild(tag);
+              document.body.appendChild(overlay);
+            }
+            const onMouseMove = (e) => {
+              const el = document.elementFromPoint(e.clientX, e.clientY);
+              if (!el || el.id?.startsWith("sc-")) return;
+              const rect = el.getBoundingClientRect();
+              overlay.style.display = "block";
+              overlay.style.top = `${rect.top}px`;
+              overlay.style.left = `${rect.left}px`;
+              overlay.style.width = `${rect.width}px`;
+              overlay.style.height = `${rect.height}px`;
+              const tag = document.getElementById("sc-annotator-tag");
+              if (tag) tag.textContent = el.id ? `#${el.id}` : el.tagName.toLowerCase();
+            };
+            const onClick = (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              document.removeEventListener("mousemove", onMouseMove, true);
+              document.removeEventListener("click", onClick, true);
+              overlay.remove();
+              const target = e.target;
+              let sel = target.id ? `#${target.id}` : (target.className && typeof target.className === "string" ? `${target.tagName.toLowerCase()}.${target.className.trim().split(/\s+/).slice(0,2).join('.')}` : target.tagName.toLowerCase());
+              const task = prompt(`AI Task for [${sel}]:`, "maybe here quick thingy yk");
+              if (!task) return;
+              const root = document.querySelector("main, #content, body") || document.documentElement;
+              const clone = root.cloneNode(true);
+              clone.querySelectorAll("script, style, link[rel='stylesheet'], noscript, iframe").forEach(n => n.remove());
+              clone.querySelectorAll("svg").forEach(svg => { svg.innerHTML = "<!-- [SVG CONTENT STRIPPED] -->"; });
+              let clean = clone.outerHTML.replace(/\s+/g, ' ').replace(/> </g, '><').trim();
+              if (clean.length > 50000) clean = clean.slice(0, 50000) + '... [TRUNCATED]';
+              const text = `### AI TASK ANNOTATIONS\n\n- **ELEMENT**: \`${sel}\`\n  **TASK**: ${task}\n\n### AI SNAPSHOT CONTEXT\n${JSON.stringify({
+                metadata: { timestamp: new Date().toISOString(), url: location.href, title: document.title, type: "Token-Optimized" },
+                clean_dom: clean
+              }, null, 2)}`;
+              navigator.clipboard.writeText(text).then(() => alert("🎉 AI Annotation context copied to clipboard!"));
+            };
+            document.addEventListener("mousemove", onMouseMove, true);
+            document.addEventListener("click", onClick, true);
+          }
+        }).catch((err) => console.warn("Could not inject annotator:", err));
+      }
+    });
+    return;
   }
 });
 
