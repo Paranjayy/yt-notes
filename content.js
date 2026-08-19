@@ -1088,6 +1088,13 @@
     }
   }
 
+  function cleanDurationString(raw) {
+    if (!raw) return "";
+    const cleaned = String(raw).replace(/\s+/g, " ").trim();
+    const timeMatch = cleaned.match(/\b\d{1,2}:\d{2}(?::\d{2})?\b/);
+    return timeMatch ? timeMatch[0] : cleaned;
+  }
+
   async function extractPlaylistVideosFromPage() {
     const url = new URL(location.href);
     let listId = url.searchParams.get("list") || "";
@@ -1107,7 +1114,7 @@
       const videoIdMatch = href.match(/[?&]v=([^&]+)/);
       const videoId = videoIdMatch ? videoIdMatch[1] : "";
       const channel = channelEl ? channelEl.textContent.trim() : "";
-      const duration = durationEl ? durationEl.textContent.trim() : "";
+      const duration = cleanDurationString(durationEl ? durationEl.textContent : "");
       const thumbnail = thumbEl ? thumbEl.src || thumbEl.getAttribute("data-src") || "" : "";
 
       if (videoId && !seenIds.has(videoId)) {
@@ -1129,7 +1136,7 @@
         const videoIdMatch = href.match(/[?&]v=([^&]+)/);
         const videoId = videoIdMatch ? videoIdMatch[1] : "";
         const channel = channelEl ? channelEl.textContent.trim() : "";
-        const duration = durationEl ? durationEl.textContent.trim() : "";
+        const duration = cleanDurationString(durationEl ? durationEl.textContent : "");
         const thumbnail = thumbEl ? thumbEl.src || thumbEl.getAttribute("data-src") || "" : "";
 
         if (videoId && !seenIds.has(videoId)) {
@@ -1152,7 +1159,7 @@
         const videoIdMatch = href.match(/[?&]v=([^&]+)/);
         const videoId = videoIdMatch ? videoIdMatch[1] : "";
         const channel = channelEl ? channelEl.textContent.trim() : "";
-        const duration = durationEl ? durationEl.textContent.trim() : "";
+        const duration = cleanDurationString(durationEl ? durationEl.textContent : "");
         const thumbnail = thumbEl ? thumbEl.src || thumbEl.getAttribute("data-src") || "" : "";
 
         if (videoId && !seenIds.has(videoId)) {
@@ -1787,8 +1794,8 @@
           <button class="sc-btn sc-btn-secondary" id="sc-btn-copy-transcript-quick">Transcript</button>
           <button class="sc-btn sc-btn-secondary" id="sc-btn-sync-transcript-quick">↻ Sync transcript</button>
           <button class="sc-btn sc-btn-secondary" id="sc-btn-quick-playlist" title="Copy playlist or queue videos as Markdown">🎵 Queue/Playlist</button>
-          <button class="sc-btn sc-btn-secondary" id="sc-btn-quick-auto-collect" title="Instantly auto-collect transcripts for all videos in queue/playlist and copy full bundle">⚡ Auto-Collect All</button>
-          <button class="sc-btn sc-btn-secondary" id="sc-btn-quick-step-next" title="Auto-advance through each video in queue, copying transcripts one by one">⏩ Auto-Step Queue</button>
+          <button class="sc-btn sc-btn-secondary" id="sc-btn-quick-auto-collect" title="Instantly auto-collect transcripts in background for all queue/playlist videos without switching pages">⚡ Direct Background Collect</button>
+          <button class="sc-btn sc-btn-secondary" id="sc-btn-quick-step-next" title="Auto-advance through each video in queue on-screen, capturing captions one by one">⏩ Auto-Step Queue (In-Page)</button>
           <button class="sc-btn sc-btn-danger" id="sc-btn-quick-stop-autorun" style="display:none;" title="Stop active Queue Auto-Runner">⏹ Stop Auto-Step</button>
           <button class="sc-btn sc-btn-secondary" id="sc-btn-quick-uploads" title="Open channel uploads playlist">🎬 Uploads</button>
           <button class="sc-btn sc-btn-secondary" id="sc-btn-quick-ai-snapshot" title="Copy Token-Optimized Clean DOM Snapshot for AI">🤖 AI Snapshot</button>
@@ -2264,7 +2271,85 @@
     }
   }
 
-  // --- Fast Direct Caption Extraction & Bundle Generator ---
+  // --- Universal Caption Parser & Direct Fetcher ---
+  function parseCaptionXmlOrJson(rawText) {
+    if (!rawText || typeof rawText !== "string") return [];
+    
+    // 1. Try JSON parsing (fmt=json3 format)
+    try {
+      if (rawText.trim().startsWith("{")) {
+        const data = JSON.parse(rawText);
+        if (Array.isArray(data.events)) {
+          const segments = [];
+          for (const ev of data.events) {
+            if (!ev.segs || !Array.isArray(ev.segs)) continue;
+            const text = ev.segs.map(s => s.utf8 || "").join("").trim();
+            if (!text || text === "\n") continue;
+            segments.push({
+              start: (ev.tStartMs || 0) / 1000,
+              duration: (ev.dDurationMs || 0) / 1000,
+              text: decodeHtmlEntities(text)
+            });
+          }
+          if (segments.length > 0) return segments;
+        }
+      }
+    } catch {}
+
+    // 2. Try XML parsing with DOMParser and auto-healing
+    try {
+      const parser = new DOMParser();
+      let sanitizedXml = rawText.replace(/&(?!(amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);)/g, "&amp;");
+      const xmlDoc = parser.parseFromString(sanitizedXml, "text/xml");
+      if (!xmlDoc.querySelector("parsererror")) {
+        const textNodes = xmlDoc.getElementsByTagName("text");
+        if (textNodes.length > 0) {
+          const segments = Array.from(textNodes).map(node => ({
+            start: parseFloat(node.getAttribute("start")) || 0,
+            duration: parseFloat(node.getAttribute("dur")) || 0,
+            text: decodeHtmlEntities(node.textContent || "").trim()
+          })).filter(s => s.text);
+          if (segments.length > 0) return segments;
+        }
+        const pNodes = xmlDoc.getElementsByTagName("p");
+        if (pNodes.length > 0) {
+          const segments = Array.from(pNodes).map(node => ({
+            start: (parseFloat(node.getAttribute("t")) || 0) / 1000,
+            duration: (parseFloat(node.getAttribute("d")) || 0) / 1000,
+            text: decodeHtmlEntities(node.textContent || "").trim()
+          })).filter(s => s.text);
+          if (segments.length > 0) return segments;
+        }
+      }
+    } catch {}
+
+    // 3. Fallback regex for <text start="..." dur="...">text</text>
+    const segments = [];
+    const textRegex = /<text\s+start="([\d.]+)"(?:\s+dur="([\d.]+)")?[^>]*>([\s\S]*?)<\/text>/gi;
+    let match;
+    while ((match = textRegex.exec(rawText)) !== null) {
+      const start = parseFloat(match[1]) || 0;
+      const duration = parseFloat(match[2]) || 0;
+      const text = decodeHtmlEntities(match[3].replace(/<[^>]+>/g, "")).trim();
+      if (text) {
+        segments.push({ start, duration, text });
+      }
+    }
+    if (segments.length > 0) return segments;
+
+    // 4. Fallback regex for <p t="..." d="...">text</p>
+    const pRegex = /<p\s+t="(\d+)"(?:\s+d="(\d+)")?[^>]*>([\s\S]*?)<\/p>/gi;
+    while ((match = pRegex.exec(rawText)) !== null) {
+      const start = (parseFloat(match[1]) || 0) / 1000;
+      const duration = (parseFloat(match[2]) || 0) / 1000;
+      const text = decodeHtmlEntities(match[3].replace(/<[^>]+>/g, "")).trim();
+      if (text) {
+        segments.push({ start, duration, text });
+      }
+    }
+    return segments;
+  }
+
   async function fetchDirectVideoTranscript(videoId) {
     if (!videoId) return { ok: false, transcript: "" };
 
@@ -2290,22 +2375,37 @@
       const res = await fetch(`https://www.youtube.com/watch?v=${videoId}`, { credentials: "omit" });
       if (res.ok) {
         const html = await res.text();
-        const m = html.match(/"captionTracks":\s*(\[[^\]]+\])/);
-        if (m) {
-          const rawTracks = JSON.parse(m[1].replace(/\\u0026/g, "&"));
-          const englishTrack = rawTracks.find(t => t.languageCode === "en") || rawTracks[0];
+        let captionTracks = null;
+        const m1 = html.match(/"captionTracks":\s*(\[[^\]]+\])/);
+        if (m1) {
+          try { captionTracks = JSON.parse(m1[1].replace(/\\u0026/g, "&")); } catch {}
+        }
+        if (!captionTracks) {
+          const m2 = html.match(/ytInitialPlayerResponse\s*=\s*({.+?});(?:var|<\/script)/);
+          if (m2) {
+            try {
+              const p = JSON.parse(m2[1]);
+              captionTracks = p?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+            } catch {}
+          }
+        }
+        if (!captionTracks) {
+          const m3 = html.match(/\\\"captionTracks\\\":\s*(\[.+?\])\\\"/);
+          if (m3) {
+            try {
+              const unesc = m3[1].replace(/\\"/g, '"').replace(/\\u0026/g, '&');
+              captionTracks = JSON.parse(unesc);
+            } catch {}
+          }
+        }
+
+        if (Array.isArray(captionTracks) && captionTracks.length > 0) {
+          const englishTrack = captionTracks.find(t => t.languageCode === "en") || captionTracks[0];
           if (englishTrack?.baseUrl) {
             const capRes = await fetch(englishTrack.baseUrl);
             if (capRes.ok) {
-              const xml = await capRes.text();
-              const parser = new DOMParser();
-              const xmlDoc = parser.parseFromString(xml, "text/xml");
-              const textNodes = xmlDoc.getElementsByTagName("text");
-              const segments = Array.from(textNodes).map(node => ({
-                start: parseFloat(node.getAttribute("start")) || 0,
-                dur: parseFloat(node.getAttribute("dur")) || 0,
-                text: decodeHtmlEntities(node.textContent).trim()
-              })).filter(s => s.text);
+              const rawCap = await capRes.text();
+              const segments = parseCaptionXmlOrJson(rawCap);
               if (segments.length > 0) {
                 const text = segments.map(s => `[${formatTime(s.start)}] ${s.text}`).join("\n");
                 storage.set({ [`sc_transcript_${videoId}`]: segments });
@@ -2325,7 +2425,7 @@
       if (bgResp?.segments?.length > 0) {
         const text = bgResp.segments.map(s => `[${formatTime(s.start)}] ${s.text}`).join("\n");
         return { ok: true, transcript: text, segments: bgResp.segments };
-      } else if (bgResp?.transcript) {
+      } else if (bgResp?.transcript && !bgResp.transcript.includes("unreadable caption")) {
         return { ok: true, transcript: bgResp.transcript, segments: [] };
       }
     } catch {}
@@ -3123,18 +3223,8 @@ ${JSON.stringify(snapshot, null, 2)}
       if (!response.ok) {
         return { status: "error", reason: `YouTube caption request failed (${response.status}).`, segments: [] };
       }
-      const xml = await response.text();
-      const documentXml = new DOMParser().parseFromString(xml, "text/xml");
-      if (documentXml.querySelector("parsererror")) {
-        return { status: "error", reason: "YouTube returned an unreadable caption response.", segments: [] };
-      }
-      const segments = Array.from(documentXml.getElementsByTagName("text"))
-        .map((node) => ({
-          start: Number.parseFloat(node.getAttribute("start")) || 0,
-          duration: Number.parseFloat(node.getAttribute("dur")) || 0,
-          text: decodeHtmlEntities(node.textContent || "").trim(),
-        }))
-        .filter((segment) => segment.text);
+      const rawText = await response.text();
+      const segments = parseCaptionXmlOrJson(rawText);
       if (!segments.length) {
         return { status: "no-transcript", reason: "The selected YouTube caption track contained no transcript segments.", segments: [] };
       }
@@ -3149,24 +3239,15 @@ ${JSON.stringify(snapshot, null, 2)}
       tracks.find((t) => t.languageCode === "en") || tracks[0];
     try {
       const res = await fetch(englishTrack.baseUrl);
-      const text = await res.text();
-
-      const parser = new DOMParser();
-      const xmlDoc = parser.parseFromString(text, "text/xml");
-      const textNodes = xmlDoc.getElementsByTagName("text");
+      const rawText = await res.text();
+      const segments = parseCaptionXmlOrJson(rawText);
 
       const isNoise = (t) =>
         /^\s*$/.test(t) ||
         /^\d+\s+(second|seconds|minute|minutes|hour|hours)/.test(t) ||
         /^\d+\s*,\s*\d+\s+(second|minute)/.test(t);
 
-      ytCaptions = Array.from(textNodes)
-        .map((node) => ({
-          start: parseFloat(node.getAttribute("start")),
-          duration: parseFloat(node.getAttribute("dur")) || 0.0,
-          text: decodeHtmlEntities(node.textContent),
-        }))
-        .filter((c) => c.text.trim() !== "" && !isNoise(c.text));
+      ytCaptions = segments.filter((c) => c.text.trim() !== "" && !isNoise(c.text));
 
       renderTranscript();
       // Persist transcript to storage for dashboard
