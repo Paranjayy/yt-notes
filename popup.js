@@ -515,6 +515,7 @@ function renderBatchList() {
       <span title="${v.hasTranscript ? 'Transcript available' : 'Transcript not saved yet'}">${dot}</span>
       <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(v.title)}">${escapeHtml(v.title)}</span>
       <span style="color:#aaa5bd;font-size:10px;flex-shrink:0;">${v.duration || ''}</span>
+      <a href="https://www.youtube.com/watch?v=${v.videoId}" target="_blank" style="color:#9b72ff;font-size:11px;text-decoration:none;flex-shrink:0;" title="Open video" onclick="event.stopPropagation()">▶</a>
     </label>`;
   }).join('');
 
@@ -629,13 +630,33 @@ async function copyTranscripts(onlySelected = true) {
       }
     } catch {}
 
-    // 3. Background tab fetch
+    // 3. Background tab fetch with polling
     try {
+      const statusEl2 = document.getElementById('batchTranscriptStatus');
+      if (statusEl2) statusEl2.textContent = `Opening tab for ${v.title.slice(0,35)}…`;
       const tab = await chrome.tabs.create({ url: `https://www.youtube.com/watch?v=${v.videoId}`, active: false });
-      await new Promise(r => setTimeout(r, 4000));
-      const resp = await new Promise(r => chrome.tabs.sendMessage(tab.id, { type: 'sc_collect_transcript' }, r));
+
+      // Poll until transcript is ready (max 18s)
+      let transcriptResp = null;
+      const maxPolls = 18;
+      for (let poll = 0; poll < maxPolls; poll++) {
+        await new Promise(r => setTimeout(r, 1000));
+        if (statusEl2) statusEl2.textContent = `Waiting for transcript… ${poll + 1}/${maxPolls}s (${v.title.slice(0,25)})`;
+        try {
+          const checkStatus = await new Promise(r => chrome.tabs.sendMessage(tab.id, { type: 'sc_get_capture_status' }, r));
+          if (checkStatus?.transcriptAvailable) {
+            transcriptResp = await new Promise(r => chrome.tabs.sendMessage(tab.id, { type: 'sc_collect_transcript' }, r));
+            break;
+          }
+        } catch { /* content script not yet ready */ }
+      }
+
+      if (!transcriptResp) {
+        // Final attempt
+        transcriptResp = await new Promise(r => chrome.tabs.sendMessage(tab.id, { type: 'sc_collect_transcript' }, r)).catch(() => null);
+      }
       await chrome.tabs.remove(tab.id).catch(() => {});
-      const text = resp?.segments?.length > 0 ? resp.segments.map(s => s.text).join(' ') : '[No transcript available]';
+      const text = transcriptResp?.segments?.length > 0 ? transcriptResp.segments.map(s => s.text).join(' ') : '[No transcript available]';
       results.push({ title: v.title, videoId: v.videoId, channel: v.channel, text });
     } catch (e) {
       results.push({ title: v.title, videoId: v.videoId, channel: v.channel, text: `[Error: ${e.message}]` });
