@@ -19,6 +19,42 @@
   <div class="card"><span class="prompt-label">My recipes</span><div class="provider-row"><input class="recipe-name" id="recipeName" maxlength="48" placeholder="Name this current prompt"><button class="btn" id="saveRecipe">Save</button></div><div class="quick-asks" id="recipeList" style="margin-top:8px"></div></div>
   <div class="card"><span class="prompt-label">Recent local prompts</span><div class="history" id="promptHistory"><span class="history-empty">Loading local receipts…</span></div></div>
   <div class="card"><span class="prompt-label">Provider activity</span><div class="history" id="providerActivity"><span class="history-empty">Loading local activity…</span></div></div>
+  <div class="card" id="uploadsCard" hidden>
+    <span class="prompt-label">Channel Uploads</span>
+    <div style="display:flex;align-items:center;gap:8px;margin-top:4px;">
+      <span id="uploadsChannelName" style="flex:1;font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+      <button class="btn" id="goToUploads" style="white-space:nowrap;">Go to Uploads</button>
+    </div>
+  </div>
+  <div class="card" id="playlistHubCard" hidden>
+    <span class="prompt-label">Saved Playlists &amp; Queues</span>
+    <div id="playlistHubList" style="max-height:200px;overflow-y:auto;margin-top:6px;">
+      <span class="history-empty">No saved playlists yet.</span>
+    </div>
+    <div style="display:flex;gap:6px;margin-top:8px;">
+      <button class="btn" id="refreshPlaylistHub" style="font-size:11px;">Refresh</button>
+    </div>
+  </div>
+  <div class="card" id="batchTranscriptCard" hidden>
+    <span class="prompt-label">Playlist Actions</span>
+    <div id="batchTranscriptStatus" style="font-size:11px;color:var(--muted);margin-bottom:8px;">Open a playlist to extract transcripts.</div>
+    <div id="batchTranscriptList" style="max-height:200px;overflow-y:auto;margin-bottom:8px;"></div>
+    <div id="playlistStats" style="font-size:10px;color:var(--muted);margin-bottom:8px;padding:6px;background:rgba(255,255,255,0.03);border-radius:6px;"></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
+      <button class="btn" id="selectAllVideos" style="font-size:11px;">Select All</button>
+      <button class="btn" id="deselectAllVideos" style="font-size:11px;">Deselect All</button>
+      <button class="btn primary" id="copySelectedTranscripts" style="font-size:11px;">Copy Selected</button>
+      <button class="btn" id="copyAllTranscripts" style="font-size:11px;">Copy All</button>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;">
+      <span class="prompt-label" style="width:100%;margin-bottom:2px;">Export Video List</span>
+      <button class="btn" id="exportPlaylistJson" style="font-size:11px;">JSON</button>
+      <button class="btn" id="exportPlaylistCsv" style="font-size:11px;">CSV</button>
+      <button class="btn" id="exportPlaylistMd" style="font-size:11px;">Markdown</button>
+      <button class="btn" id="copyPlaylistUrls" style="font-size:11px;">Copy URLs</button>
+      <button class="btn" id="copyPlaylistTitles" style="font-size:11px;">Copy Titles</button>
+    </div>
+  </div>
   <div class="card" id="replyCard" hidden><span class="prompt-label">Provider replies</span><pre class="reply" id="providerReply"></pre><div class="provider-row"><button class="btn" id="copyProviderReply">Copy replies</button><button class="btn" id="saveProviderReply">Save replies .md</button></div></div>
   <div class="card"><span class="prompt-label">YouTube vault auto-capture</span><div class="provider-row"><select class="context-limit" id="autoCaptureMode"><option value="off">Off — manual saves only</option><option value="yolo">YOLO — every verified watched video</option><option value="whitelist">Whitelist — selected channels only</option></select></div><div class="provider-row"><input class="recipe-name" id="autoCaptureChannels" placeholder="Channels, comma-separated"><span class="meta">Used in whitelist mode</span></div><p class="prompt-hint">Captures only after YouTube video ID, URL, and transcript match. Changed captures become local versions; nothing is uploaded.</p></div>
   <div class="actions">

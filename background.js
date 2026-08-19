@@ -716,6 +716,27 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  if (msg.type === "sc_list_playlist_backups") {
+    chrome.storage.local.get(null, (data) => {
+      const backups = [];
+      for (const [key, value] of Object.entries(data)) {
+        if (key.startsWith("sc_playlist_backup_") && value && value.items) {
+          backups.push({
+            playlistId: key.replace("sc_playlist_backup_", ""),
+            playlistTitle: value.playlistTitle || key.replace("sc_playlist_backup_", ""),
+            videoCount: value.items.length,
+            exportedAt: value.exportedAt,
+            hasTranscripts: value.items.some((i) => i.transcriptCollection && i.transcriptCollection.status === "complete"),
+            source: value.source || "scraped",
+            items: value.items,
+          });
+        }
+      }
+      sendResponse({ ok: true, backups });
+    });
+    return true;
+  }
+
   if (msg.type === "sc_playlist_transcript_queue_stop") {
     if (!playlistTranscriptQueue || playlistTranscriptQueue.originTabId !== sender.tab?.id) {
       sendResponse({ ok: false, reason: "No transcript collection is running in this playlist tab." });
