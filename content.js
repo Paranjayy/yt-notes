@@ -876,15 +876,15 @@
       }
     } catch {}
 
-    // 7. Same-origin fetch of channel page HTML (guaranteed to contain externalId)
+    // 7. Same-origin fetch of channel page HTML (guaranteed to contain browseId/externalId)
     try {
       const resp = await fetch(location.href, { credentials: "omit" });
       if (resp.ok) {
         const html = await resp.text();
-        const mExt = html.match(/"externalId"\s*:\s*"(UC[A-Za-z0-9_-]{22})"/);
-        if (mExt) {
-          _cachedChannelId = { url: currentUrl, id: mExt[1] };
-          return mExt[1];
+        const mBrowse = html.match(/"(?:browseId|externalId|channelId)"\s*:\s*"(UC[A-Za-z0-9_-]{22})"/);
+        if (mBrowse) {
+          _cachedChannelId = { url: currentUrl, id: mBrowse[1] };
+          return mBrowse[1];
         }
         const mChan = html.match(/channel_id=(UC[A-Za-z0-9_-]{22})/);
         if (mChan) {
@@ -892,7 +892,9 @@
           return mChan[1];
         }
       }
-    } catch {}
+    } catch (err) {
+      console.warn("[Social Companion] Channel fetch fallback failed:", err);
+    }
 
     return null;
   }
@@ -914,15 +916,26 @@
 
     if (document.getElementById("sc-channel-playlist-btn")) return;
 
-    const target =
+    const flexContainer =
       document.querySelector("yt-flexible-actions-view-model") ||
+      document.querySelector("#page-header yt-flexible-actions-view-model") ||
+      document.querySelector("yt-page-header-view-model yt-flexible-actions-view-model");
+
+    const subBtn =
+      document.querySelector("yt-subscribe-button-view-model") ||
+      document.querySelector("ytd-subscribe-button-renderer") ||
+      document.querySelector("button[aria-label*='Join']");
+
+    const fallbackTarget =
+      flexContainer ||
+      subBtn?.parentElement ||
       document.querySelector("#page-header yt-page-header-view-model") ||
       document.querySelector("yt-page-header-view-model") ||
       document.querySelector("#channel-header #buttons") ||
       document.querySelector("#channel-header-container") ||
       document.querySelector("#page-header");
 
-    if (!target) return;
+    if (!fallbackTarget) return;
 
     const cid = await getOrExtractChannelId();
     if (!cid) {
@@ -932,13 +945,13 @@
 
     if (document.getElementById("sc-channel-playlist-btn")) return;
 
-    console.log("[Social Companion] Injecting uploads playlist button, target:", target.tagName, "channelId:", cid);
+    console.log("[Social Companion] Injecting uploads playlist button, target:", fallbackTarget.tagName, "channelId:", cid);
     const uploadsUrl = "https://www.youtube.com/playlist?list=UU" + cid.slice(2);
 
     const wrapper = document.createElement("div");
     wrapper.className = "ytFlexibleActionsViewModelAction";
     wrapper.id = "sc-channel-playlist-wrapper";
-    wrapper.style.cssText = "display: inline-flex; align-items: center; margin-left: 8px; vertical-align: middle;";
+    wrapper.style.cssText = "display: inline-flex; align-items: center; margin-left: 8px; vertical-align: middle; flex-shrink: 0;";
 
     const btn = document.createElement("a");
     btn.id = "sc-channel-playlist-btn";
@@ -988,7 +1001,13 @@
     };
 
     wrapper.appendChild(btn);
-    target.appendChild(wrapper);
+    if (flexContainer) {
+      flexContainer.appendChild(wrapper);
+    } else if (subBtn && subBtn.parentElement) {
+      subBtn.parentElement.appendChild(wrapper);
+    } else {
+      fallbackTarget.appendChild(wrapper);
+    }
   }
 
   function watchChannelHeader() {
@@ -1010,7 +1029,7 @@
     // Also watch for DOM changes (header mounts asynchronously in SPA)
     _channelHeaderObserver = new MutationObserver(() => {
       if (
-        document.querySelector('yt-flexible-actions-view-model, yt-page-header-view-model, #channel-header') &&
+        document.querySelector('yt-flexible-actions-view-model, yt-page-header-view-model, yt-subscribe-button-view-model, ytd-subscribe-button-renderer, #channel-header, button[aria-label*="Join"]') &&
         !document.getElementById('sc-channel-playlist-btn')
       ) {
         injectChannelPlaylistButton();
