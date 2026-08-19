@@ -714,11 +714,19 @@
     }
     if (message.type === "sc_get_channel_id") {
       const channelId = extractChannelId();
-      sendResponse({ ok: Boolean(channelId), channelId: channelId || "" });
+      let channelTitle = "";
+      try {
+        const titleEl = document.querySelector("yt-dynamic-text-view-model h1, ytd-channel-name #text, #channel-header #text, #owner-name a, ytd-video-owner-renderer #channel-name a");
+        if (titleEl) channelTitle = titleEl.textContent.trim();
+        if (!channelTitle && currentVideoId) {
+          channelTitle = extractYouTubeMetadata()?.channel || "";
+        }
+      } catch {}
+      sendResponse({ ok: Boolean(channelId), channelId: channelId || "", channelTitle: channelTitle || "" });
     }
     if (message.type === "sc_get_playlist_videos") {
       extractPlaylistVideosFromPage().then(sendResponse).catch((error) => {
-        sendResponse({ error: error?.message || "Failed to extract playlist videos" });
+        sendResponse({ ok: false, error: error?.message || "Failed to extract playlist videos", videos: [] });
       });
       return true;
     }
@@ -744,8 +752,8 @@
     }, 1500);
 
     onYouTubeUrlChange();
-    // Also try channel button immediately on load (channel pages may not fire yt-navigate-finish)
-    setTimeout(injectChannelPlaylistButton, 2000);
+    setTimeout(injectChannelPlaylistButton, 1000);
+    setTimeout(injectChannelPlaylistButton, 2500);
   }
 
   // Tracks the sidebar observer so we can disconnect on video change
@@ -800,35 +808,64 @@
   }
 
   function extractChannelId() {
-    let cid = null;
-    // Method 1: ytInitialData metadata
+    // Method 1: RSS alternate link in <head> (present on every modern channel page)
     try {
-      if (window.ytInitialData && ytInitialData.metadata && ytInitialData.metadata.channelMetadataRenderer && ytInitialData.metadata.channelMetadataRenderer.externalId) {
-        cid = ytInitialData.metadata.channelMetadataRenderer.externalId;
+      const rss = document.querySelector('link[rel="alternate"][type="application/rss+xml"][href*="channel_id="]');
+      if (rss) {
+        const m = rss.href.match(/channel_id=(UC[A-Za-z0-9_-]{22})/);
+        if (m) return m[1];
       }
     } catch {}
-    // Method 2: meta itemprop
-    if (!cid) {
-      const m = document.querySelector('meta[itemprop="channelId"]');
-      if (m) cid = m.content;
-    }
-    // Method 3: canonical link
-    if (!cid) {
-      const c = document.querySelector('link[rel="canonical"]');
-      if (c) {
-        const p = c.href.match(/\/channel\/(UC[A-Za-z0-9_-]{22})/);
-        if (p) cid = p[1];
+
+    // Method 2: meta tags (itemprop or identifier)
+    try {
+      const meta = document.querySelector('meta[itemprop="channelId"], meta[itemprop="identifier"][content^="UC"]');
+      if (meta?.content && /^UC[A-Za-z0-9_-]{22}$/.test(meta.content)) {
+        return meta.content;
       }
-    }
-    // Method 4: channel page link
-    if (!cid) {
-      const a = document.querySelector('ytd-channel-name a, ytd-video-owner-renderer a, #owner-name a');
-      if (a) {
-        const p = a.href.match(/\/channel\/(UC[A-Za-z0-9_-]{22})/);
-        if (p) cid = p[1];
+    } catch {}
+
+    // Method 3: Parse player response if available (on watch pages)
+    try {
+      const pr = getPlayerResponseFromScripts();
+      if (pr?.videoDetails?.channelId && /^UC[A-Za-z0-9_-]{22}$/.test(pr.videoDetails.channelId)) {
+        return pr.videoDetails.channelId;
       }
-    }
-    return cid;
+    } catch {}
+
+    // Method 4: Scan <script> tags for ytInitialData / channel metadata
+    try {
+      const scripts = document.querySelectorAll("script");
+      for (const s of scripts) {
+        const txt = s.textContent;
+        if (!txt) continue;
+        const mExt = txt.match(/"externalId"\s*:\s*"(UC[A-Za-z0-9_-]{22})"/);
+        if (mExt) return mExt[1];
+        const mChan = txt.match(/"(?:channelId|browseId)"\s*:\s*"(UC[A-Za-z0-9_-]{22})"/);
+        if (mChan) return mChan[1];
+      }
+    } catch {}
+
+    // Method 5: Look for canonical link or channel links with UC...
+    try {
+      const links = document.querySelectorAll('link[rel="canonical"], a[href*="/channel/UC"]');
+      for (const l of links) {
+        const h = l.href || l.getAttribute("href") || "";
+        const m = h.match(/\/channel\/(UC[A-Za-z0-9_-]{22})/);
+        if (m) return m[1];
+      }
+    } catch {}
+
+    // Method 6: ytd-browse browse-id attribute
+    try {
+      const browse = document.querySelector('ytd-browse[browse-id^="UC"]');
+      if (browse) {
+        const bId = browse.getAttribute("browse-id");
+        if (bId && /^UC[A-Za-z0-9_-]{22}$/.test(bId)) return bId;
+      }
+    } catch {}
+
+    return null;
   }
 
   let _channelBtnAttempts = 0;
@@ -836,109 +873,178 @@
     const host = location.hostname;
     if (!host.includes("youtube.com")) return;
     const path = location.pathname;
-    if (!path.startsWith("/@") && !path.startsWith("/channel/") && !path.startsWith("/c/")) return;
+    const isChannel = path.startsWith("/@") || path.startsWith("/channel/") || path.startsWith("/c/") || path.startsWith("/user/");
+    if (!isChannel) {
+      document.getElementById("sc-channel-playlist-wrapper")?.remove();
+      document.getElementById("sc-channel-playlist-btn")?.remove();
+      return;
+    }
 
-    // Don't inject twice
-    if (document.getElementById('sc-channel-playlist-btn')) return;
+    if (document.getElementById("sc-channel-playlist-btn")) return;
 
-    // YouTube's new page-header structure:
-    // #page-header > yt-page-header-renderer > yt-page-header-view-model > div > div > div > yt-flexible-actions-view-model
     const target =
-      document.querySelector('yt-flexible-actions-view-model') ||
-      document.querySelector('#page-header yt-page-header-view-model') ||
-      document.querySelector('yt-page-header-view-model') ||
-      document.querySelector('#channel-header #buttons') ||
-      document.querySelector('#channel-header-container');
+      document.querySelector("yt-flexible-actions-view-model") ||
+      document.querySelector("#page-header yt-page-header-view-model") ||
+      document.querySelector("yt-page-header-view-model") ||
+      document.querySelector("#channel-header #buttons") ||
+      document.querySelector("#channel-header-container");
 
     if (!target) {
       _channelBtnAttempts++;
-      if (_channelBtnAttempts < 15) setTimeout(injectChannelPlaylistButton, 1200);
+      if (_channelBtnAttempts < 25) setTimeout(injectChannelPlaylistButton, 800);
       return;
     }
     _channelBtnAttempts = 0;
 
     const cid = extractChannelId();
     if (!cid) {
-      // Channel ID not ready yet — retry once
-      setTimeout(injectChannelPlaylistButton, 1500);
+      setTimeout(injectChannelPlaylistButton, 1000);
       return;
     }
 
-    const uploadsUrl = 'https://www.youtube.com/playlist?list=UU' + cid.slice(2);
+    const uploadsUrl = "https://www.youtube.com/playlist?list=UU" + cid.slice(2);
 
-    const btn = document.createElement('a');
-    btn.id = 'sc-channel-playlist-btn';
+    const wrapper = document.createElement("div");
+    wrapper.className = "ytFlexibleActionsViewModelAction";
+    wrapper.id = "sc-channel-playlist-wrapper";
+    wrapper.style.cssText = "display: inline-flex; align-items: center; margin-left: 8px; vertical-align: middle;";
+
+    const btn = document.createElement("a");
+    btn.id = "sc-channel-playlist-btn";
     btn.href = uploadsUrl;
-    btn.title = 'View all uploads as a playlist (Social Companion)';
-    btn.innerHTML = '<span style="font-size:15px;">📋</span> <span>Uploads Playlist</span>';
+    btn.title = "View all channel uploads as a playlist (Social Companion)";
+    btn.setAttribute("aria-label", "View uploads as playlist");
+    btn.innerHTML = `<span style="font-size:14px;line-height:1;margin-right:3px;">📋</span><span style="font-weight:600;font-size:13px;letter-spacing:0.02em;">Uploads Playlist</span>`;
     btn.style.cssText = [
-      'display:inline-flex', 'align-items:center', 'gap:6px',
-      'padding:8px 16px', 'border-radius:20px',
-      'background:linear-gradient(135deg,#9b72ff,#6e44ff)',
-      'color:#fff', 'font-size:13px', 'font-weight:600',
-      'text-decoration:none', 'cursor:pointer',
-      'box-shadow:0 2px 8px rgba(155,114,255,0.35)',
-      'transition:transform 0.15s,box-shadow 0.15s',
-      'margin-left:8px', 'white-space:nowrap', 'vertical-align:middle',
-      'border:none', 'font-family:inherit',
-    ].join(';');
-    btn.onmouseenter = () => { btn.style.transform = 'scale(1.04)'; btn.style.boxShadow = '0 4px 14px rgba(155,114,255,0.5)'; };
-    btn.onmouseleave = () => { btn.style.transform = ''; btn.style.boxShadow = '0 2px 8px rgba(155,114,255,0.35)'; };
+      "display: inline-flex",
+      "align-items: center",
+      "gap: 6px",
+      "padding: 0 16px",
+      "height: 36px",
+      "border-radius: 18px",
+      "background: linear-gradient(135deg, #8b5cf6, #6d28d9)",
+      "color: #ffffff",
+      "font-size: 13px",
+      "font-weight: 600",
+      "text-decoration: none",
+      "cursor: pointer",
+      "box-shadow: 0 2px 10px rgba(139, 92, 246, 0.4)",
+      "transition: all 0.2s ease",
+      "white-space: nowrap",
+      "border: 1px solid rgba(255, 255, 255, 0.15)",
+      "font-family: Roboto, Arial, sans-serif",
+      "user-select: none",
+      "box-sizing: border-box",
+    ].join(";");
 
-    target.appendChild(btn);
+    btn.onmouseenter = () => {
+      btn.style.transform = "translateY(-1px)";
+      btn.style.boxShadow = "0 4px 16px rgba(139, 92, 246, 0.6)";
+      btn.style.background = "linear-gradient(135deg, #9333ea, #7c3aed)";
+    };
+    btn.onmouseleave = () => {
+      btn.style.transform = "none";
+      btn.style.boxShadow = "0 2px 10px rgba(139, 92, 246, 0.4)";
+      btn.style.background = "linear-gradient(135deg, #8b5cf6, #6d28d9)";
+    };
+
+    wrapper.appendChild(btn);
+    target.appendChild(wrapper);
   }
 
   async function extractPlaylistVideosFromPage() {
     const url = new URL(location.href);
-    const listId = url.searchParams.get('list');
-    if (!listId) return { error: "No playlist ID found in URL" };
-    
+    let listId = url.searchParams.get("list") || "";
+
     const videos = [];
-    const rows = document.querySelectorAll('ytd-playlist-video-renderer, ytd-playlist-panel-video-renderer');
-    rows.forEach((row, index) => {
-      const titleEl = row.querySelector('#video-title');
-      const channelEl = row.querySelector('#channel-name a, .ytd-channel-name a, #byline a');
-      const durationEl = row.querySelector('span.ytd-thumbnail-overlay-time-status-renderer, #overlays span');
-      const thumbEl = row.querySelector('img#img');
-      
-      const title = titleEl ? titleEl.textContent.trim() : '';
-      const href = titleEl ? (titleEl.getAttribute('href') || '') : '';
+    const seenIds = new Set();
+
+    // Strategy 1: Playlist browse page rows (ytd-playlist-video-renderer)
+    document.querySelectorAll("ytd-playlist-video-renderer").forEach((row) => {
+      const titleEl = row.querySelector("#video-title");
+      const channelEl = row.querySelector("#channel-name a, .ytd-channel-name a, #byline a");
+      const durationEl = row.querySelector("span.ytd-thumbnail-overlay-time-status-renderer, #overlays span, ytd-thumbnail-overlay-time-status-renderer");
+      const thumbEl = row.querySelector("img#img, img");
+
+      const title = titleEl ? titleEl.textContent.trim() : "";
+      const href = titleEl ? titleEl.getAttribute("href") || "" : "";
       const videoIdMatch = href.match(/[?&]v=([^&]+)/);
-      const videoId = videoIdMatch ? videoIdMatch[1] : '';
-      const channel = channelEl ? channelEl.textContent.trim() : '';
-      const duration = durationEl ? durationEl.textContent.trim() : '';
-      const thumbnail = thumbEl ? (thumbEl.src || thumbEl.getAttribute('data-src') || '') : '';
-      
-      if (videoId || title) {
-        videos.push({ position: index + 1, videoId, title, channel, duration, thumbnail, url: videoId ? `https://www.youtube.com/watch?v=${videoId}` : '' });
+      const videoId = videoIdMatch ? videoIdMatch[1] : "";
+      const channel = channelEl ? channelEl.textContent.trim() : "";
+      const duration = durationEl ? durationEl.textContent.trim() : "";
+      const thumbnail = thumbEl ? thumbEl.src || thumbEl.getAttribute("data-src") || "" : "";
+
+      if (videoId && !seenIds.has(videoId)) {
+        seenIds.add(videoId);
+        videos.push({ position: videos.length + 1, videoId, title: title || `Video ${videos.length + 1}`, channel, duration, thumbnail, url: `https://www.youtube.com/watch?v=${videoId}` });
       }
     });
-    
-    // Also try the newer yt-lockup-view-model
+
+    // Strategy 2: Playlist panel on watch page or queue (ytd-playlist-panel-video-renderer)
     if (videos.length === 0) {
-      document.querySelectorAll('yt-lockup-view-model').forEach((lockup, index) => {
-        const titleEl = lockup.querySelector('a#video-title-link, a.title-link, h3 a');
-        const channelEl = lockup.querySelector('#channel-name a, .ytd-channel-name a, a[href*="/channel/"]');
-        const durationEl = lockup.querySelector('span.ytd-thumbnail-overlay-time-status-renderer');
-        
-        const title = titleEl ? titleEl.textContent.trim() : '';
-        const href = titleEl ? (titleEl.getAttribute('href') || '') : '';
+      document.querySelectorAll("ytd-playlist-panel-video-renderer").forEach((row) => {
+        const titleEl = row.querySelector("#video-title");
+        const channelEl = row.querySelector("#byline, #channel-name");
+        const durationEl = row.querySelector("span.ytd-thumbnail-overlay-time-status-renderer, #overlays span");
+        const thumbEl = row.querySelector("img#img, img");
+
+        const title = titleEl ? titleEl.textContent.trim() : "";
+        const href = row.querySelector("a#wc-endpoint")?.getAttribute("href") || (titleEl ? titleEl.getAttribute("href") : "") || "";
         const videoIdMatch = href.match(/[?&]v=([^&]+)/);
-        const videoId = videoIdMatch ? videoIdMatch[1] : '';
-        const channel = channelEl ? channelEl.textContent.trim() : '';
-        const duration = durationEl ? durationEl.textContent.trim() : '';
-        
-        if (videoId || title) {
-          videos.push({ position: index + 1, videoId, title, channel, duration, url: videoId ? `https://www.youtube.com/watch?v=${videoId}` : '' });
+        const videoId = videoIdMatch ? videoIdMatch[1] : "";
+        const channel = channelEl ? channelEl.textContent.trim() : "";
+        const duration = durationEl ? durationEl.textContent.trim() : "";
+        const thumbnail = thumbEl ? thumbEl.src || thumbEl.getAttribute("data-src") || "" : "";
+
+        if (videoId && !seenIds.has(videoId)) {
+          seenIds.add(videoId);
+          videos.push({ position: videos.length + 1, videoId, title: title || `Video ${videos.length + 1}`, channel, duration, thumbnail, url: `https://www.youtube.com/watch?v=${videoId}` });
         }
       });
     }
-    
-    // Read playlist title from DOM
-    const titleEl = document.querySelector('yt-dynamic-text-view-model .yt-core-attributed-string, h1.ytd-playlist-header-renderer, #title-text');
-    const playlistTitle = titleEl ? titleEl.textContent.trim() : document.title;
-    
-    return { playlistId: listId, playlistTitle, videoCount: videos.length, videos };
+
+    // Strategy 3: Modern yt-lockup-view-model
+    if (videos.length === 0) {
+      document.querySelectorAll("yt-lockup-view-model").forEach((lockup) => {
+        const titleEl = lockup.querySelector("a#video-title-link, a.title-link, h3 a");
+        const channelEl = lockup.querySelector('#channel-name a, .ytd-channel-name a, a[href*="/channel/"], a[href*="/@"]');
+        const durationEl = lockup.querySelector("span.ytd-thumbnail-overlay-time-status-renderer, badge-shape .ytBadgeShapeText");
+        const thumbEl = lockup.querySelector("img");
+
+        const title = titleEl ? titleEl.textContent.trim() : "";
+        const href = titleEl ? titleEl.getAttribute("href") || "" : "";
+        const videoIdMatch = href.match(/[?&]v=([^&]+)/);
+        const videoId = videoIdMatch ? videoIdMatch[1] : "";
+        const channel = channelEl ? channelEl.textContent.trim() : "";
+        const duration = durationEl ? durationEl.textContent.trim() : "";
+        const thumbnail = thumbEl ? thumbEl.src || thumbEl.getAttribute("data-src") || "" : "";
+
+        if (videoId && !seenIds.has(videoId)) {
+          seenIds.add(videoId);
+          videos.push({ position: videos.length + 1, videoId, title: title || `Video ${videos.length + 1}`, channel, duration, thumbnail, url: `https://www.youtube.com/watch?v=${videoId}` });
+        }
+      });
+    }
+
+    // Determine playlist / queue title
+    let playlistTitle = "";
+    const isQueue = !listId || listId === "queue" || Boolean(document.querySelector("ytd-miniplayer-info-bar"));
+    if (isQueue && !listId) listId = "queue";
+
+    const titleEl = document.querySelector("yt-dynamic-text-view-model .yt-core-attributed-string, h1.ytd-playlist-header-renderer, ytd-playlist-panel-renderer #header-description h3, #title-text");
+    if (titleEl) playlistTitle = titleEl.textContent.trim();
+    if (!playlistTitle) {
+      playlistTitle = isQueue ? "YouTube Queue" : document.title.replace(/\s*-\s*YouTube$/, "");
+    }
+
+    return {
+      ok: true,
+      playlistId: listId || "active",
+      playlistTitle: playlistTitle || (isQueue ? "YouTube Queue" : "Active Playlist"),
+      isQueue,
+      videoCount: videos.length,
+      videos,
+    };
   }
 
   function onYouTubeUrlChange() {
@@ -976,17 +1082,15 @@
 
       setTimeout(_saveMetaNow, 2500);
 
-      // Watch the sidebar for ytd-compact-video-renderer to appear,
-      // then save metadata again with fresh recommendations
+      // Watch the sidebar for recommendation items to appear
       const sidebarTarget = document.querySelector(
         "#secondary-inner, #secondary, #related",
       );
       if (sidebarTarget) {
         let _recoSaveTimer = null;
         _recoObserver = new MutationObserver(() => {
-          // yt-lockup-view-model is the new recommendation card element (replaces ytd-compact-video-renderer)
           const hasRecs =
-            sidebarTarget.querySelectorAll("yt-lockup-view-model").length > 0;
+            sidebarTarget.querySelectorAll("yt-lockup-view-model, ytd-compact-video-renderer").length > 0;
           if (hasRecs) {
             clearTimeout(_recoSaveTimer);
             _recoSaveTimer = setTimeout(() => {
@@ -999,7 +1103,6 @@
           childList: true,
           subtree: true,
         });
-        // Auto-disconnect after 30s to avoid memory leak if page never loads recs
         setTimeout(() => {
           if (_recoObserver) {
             _recoObserver.disconnect();
@@ -1015,12 +1118,20 @@
       }
       const existingVideoWidget = document.getElementById("sc-youtube-widget");
       if (existingVideoWidget) existingVideoWidget.remove();
-      // Keep browse, channel and playlist surfaces untouched. Playlist work is
-      // available in the web collector and archive; no floating page panel
-      // appears unless this is an explicit watch/live/short route.
-      document.getElementById("sc-playlist-backup-widget")?.remove();
-      // Inject "View Uploads as Playlist" button on channel pages
-      injectChannelPlaylistButton();
+
+      const path = location.pathname;
+      if (path.startsWith("/playlist")) {
+        injectPlaylistBackupWidget();
+      } else {
+        document.getElementById("sc-playlist-backup-widget")?.remove();
+      }
+
+      if (path.startsWith("/@") || path.startsWith("/channel/") || path.startsWith("/c/") || path.startsWith("/user/")) {
+        injectChannelPlaylistButton();
+      } else {
+        document.getElementById("sc-channel-playlist-wrapper")?.remove();
+        document.getElementById("sc-channel-playlist-btn")?.remove();
+      }
     }
   }
 

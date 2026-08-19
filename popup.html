@@ -20,31 +20,41 @@
   <div class="card"><span class="prompt-label">Recent local prompts</span><div class="history" id="promptHistory"><span class="history-empty">Loading local receipts…</span></div></div>
   <div class="card"><span class="prompt-label">Provider activity</span><div class="history" id="providerActivity"><span class="history-empty">Loading local activity…</span></div></div>
   <div class="card" id="uploadsCard" hidden>
-    <span class="prompt-label">Channel Uploads</span>
-    <div style="display:flex;align-items:center;gap:8px;margin-top:4px;">
-      <span id="uploadsChannelName" style="flex:1;font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
-      <button class="btn" id="goToUploads" style="white-space:nowrap;">Go to Uploads</button>
+    <span class="prompt-label">Channel Uploads Playlist</span>
+    <div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
+      <span id="uploadsChannelName" style="flex:1;font-size:12px;color:var(--text);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+      <button class="btn primary" id="goToUploads" style="white-space:nowrap;font-size:11px;padding:6px 10px;">📋 View as Playlist</button>
+      <button class="btn" id="copyUploadsUrl" style="white-space:nowrap;font-size:11px;padding:6px 8px;" title="Copy playlist URL">Copy</button>
+    </div>
+  </div>
+  <div class="card" id="activePlaylistCard" hidden>
+    <span class="prompt-label">Active Playlist / Queue</span>
+    <div id="activePlaylistTitle" style="font-size:12px;font-weight:600;margin:4px 0 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;">
+      <button class="btn primary" id="loadActivePlaylistBtn" style="font-size:11px;flex:1;">⚡ Load into Batch Actions</button>
+      <button class="btn" id="saveActivePlaylistBtn" style="font-size:11px;">💾 Save Backup</button>
     </div>
   </div>
   <div class="card" id="playlistHubCard" hidden>
-    <span class="prompt-label">Saved Playlists &amp; Queues</span>
+    <div style="display:flex;align-items:center;justify-content:space-between;">
+      <span class="prompt-label" style="margin:0;">Saved Playlists &amp; Queues</span>
+      <button class="btn" id="refreshPlaylistHub" style="font-size:10px;padding:2px 6px;">↻ Refresh</button>
+    </div>
     <div id="playlistHubList" style="max-height:200px;overflow-y:auto;margin-top:6px;">
       <span class="history-empty">No saved playlists yet.</span>
     </div>
-    <div style="display:flex;gap:6px;margin-top:8px;">
-      <button class="btn" id="refreshPlaylistHub" style="font-size:11px;">Refresh</button>
-    </div>
   </div>
   <div class="card" id="batchTranscriptCard" hidden>
-    <span class="prompt-label">Playlist Actions</span>
-    <div id="batchTranscriptStatus" style="font-size:11px;color:var(--muted);margin-bottom:8px;">Open a playlist to extract transcripts.</div>
+    <span class="prompt-label">Playlist Actions &amp; Batch Transcripts</span>
+    <div id="batchTranscriptStatus" style="font-size:11px;color:var(--muted);margin-bottom:8px;">Select videos to extract transcripts or export.</div>
+    <div id="playlistStats" style="font-size:11px;color:var(--muted);margin-bottom:8px;padding:6px;background:rgba(255,255,255,0.03);border-radius:6px;"></div>
     <div id="batchTranscriptList" style="max-height:200px;overflow-y:auto;margin-bottom:8px;"></div>
-    <div id="playlistStats" style="font-size:10px;color:var(--muted);margin-bottom:8px;padding:6px;background:rgba(255,255,255,0.03);border-radius:6px;"></div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
       <button class="btn" id="selectAllVideos" style="font-size:11px;">Select All</button>
       <button class="btn" id="deselectAllVideos" style="font-size:11px;">Deselect All</button>
-      <button class="btn primary" id="copySelectedTranscripts" style="font-size:11px;">Copy Selected</button>
-      <button class="btn" id="copyAllTranscripts" style="font-size:11px;">Copy All</button>
+      <button class="btn primary" id="copySelectedTranscripts" style="font-size:11px;">⚡ Copy Selected Transcripts</button>
+      <button class="btn" id="copyAllTranscripts" style="font-size:11px;">Copy All Transcripts</button>
+      <button class="btn" id="copyNotesList" style="font-size:11px;">📝 Copy Notes List</button>
     </div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;">
       <span class="prompt-label" style="width:100%;margin-bottom:2px;">Export Video List</span>

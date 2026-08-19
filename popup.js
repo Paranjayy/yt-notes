@@ -326,39 +326,98 @@ let activePlaylistId = null;
 
 function escapeHtml(str) {
   const d = document.createElement('div');
-  d.textContent = str;
+  d.textContent = String(str || '');
   return d.innerHTML;
 }
 
 function fmtSeconds(s) {
+  if (!s || isNaN(s)) return '0m';
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
 function parseDuration(dur) {
   if (!dur) return 0;
-  const p = dur.trim().split(':').map(Number);
+  const p = String(dur).trim().split(':').map(Number);
   if (p.length === 3) return p[0] * 3600 + p[1] * 60 + p[2];
   if (p.length === 2) return p[0] * 60 + p[1];
   return 0;
 }
 
-// Check if current tab is a channel page and show uploads shortcut
+// Check if current tab is a channel or video page and show uploads shortcut
 async function checkUploadsShortcut() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab || !tab.url || !tab.url.includes('youtube.com')) return;
-  const path = new URL(tab.url).pathname;
-  if (!path.startsWith('/@') && !path.startsWith('/channel/') && !path.startsWith('/c/')) return;
+  if (!tab?.url || !tab.url.includes('youtube.com')) return;
   chrome.tabs.sendMessage(tab.id, { type: 'sc_get_channel_id' }, (res) => {
     if (chrome.runtime.lastError || !res?.ok || !res.channelId) return;
     const card = document.getElementById('uploadsCard');
     const nameEl = document.getElementById('uploadsChannelName');
     if (!card || !nameEl) return;
     card.hidden = false;
-    nameEl.textContent = res.channelId;
-    document.getElementById('goToUploads').onclick = () => {
-      chrome.tabs.create({ url: 'https://www.youtube.com/playlist?list=UU' + res.channelId.slice(2) });
-    };
+    const label = res.channelTitle ? `${res.channelTitle}` : res.channelId;
+    nameEl.textContent = label;
+    nameEl.title = `${res.channelTitle || 'Channel'}: ${res.channelId}`;
+    const uploadsUrl = 'https://www.youtube.com/playlist?list=UU' + res.channelId.slice(2);
+    const goBtn = document.getElementById('goToUploads');
+    if (goBtn) {
+      goBtn.onclick = () => chrome.tabs.create({ url: uploadsUrl });
+    }
+    const copyBtn = document.getElementById('copyUploadsUrl');
+    if (copyBtn) {
+      copyBtn.onclick = () => {
+        navigator.clipboard.writeText(uploadsUrl).then(() => setStatus('Uploads playlist URL copied!', 'success'));
+      };
+    }
+  });
+}
+
+// Check if current tab has an active playlist or queue
+async function checkActiveTabPlaylist() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.url || !tab.url.includes('youtube.com')) return;
+  chrome.tabs.sendMessage(tab.id, { type: 'sc_get_playlist_videos' }, (res) => {
+    if (chrome.runtime.lastError || !res?.ok || !res.videos?.length) return;
+    const card = document.getElementById('activePlaylistCard');
+    const titleEl = document.getElementById('activePlaylistTitle');
+    if (!card || !titleEl) return;
+    card.hidden = false;
+    const isQ = res.isQueue;
+    titleEl.textContent = `${isQ ? '📋 Queue' : '🎵 Playlist'}: ${res.playlistTitle} (${res.videoCount} videos)`;
+    titleEl.title = res.playlistTitle;
+
+    const loadBtn = document.getElementById('loadActivePlaylistBtn');
+    if (loadBtn) {
+      loadBtn.onclick = () => {
+        loadVideosIntoBatchCard(res.playlistId, res.playlistTitle, res.videos);
+        setStatus(`Loaded ${res.videoCount} videos from active tab.`, 'success');
+      };
+    }
+
+    const saveBtn = document.getElementById('saveActivePlaylistBtn');
+    if (saveBtn) {
+      saveBtn.onclick = () => {
+        const key = 'sc_playlist_backup_' + res.playlistId;
+        const backup = {
+          format: 'social-companion-playlist-backup',
+          schemaVersion: 1,
+          playlistId: res.playlistId,
+          playlistTitle: res.playlistTitle,
+          exportedAt: new Date().toISOString(),
+          source: 'scraped',
+          items: res.videos.map((v, i) => ({
+            position: v.position || i + 1,
+            videoId: v.videoId,
+            title: v.title,
+            channel: v.channel || '',
+            duration: v.duration || '',
+          })),
+        };
+        chrome.storage.local.set({ [key]: backup }, () => {
+          setStatus(`Saved "${res.playlistTitle}" backup.`, 'success');
+          renderPlaylistHub();
+        });
+      };
+    }
   });
 }
 
@@ -372,7 +431,7 @@ function renderPlaylistHub() {
 
     const backups = res?.backups || [];
     if (backups.length === 0) {
-      listEl.innerHTML = '<span class="history-empty">No saved playlists yet — use "Load all videos" on a playlist page.</span>';
+      listEl.innerHTML = '<span class="history-empty">No saved playlists yet — click "Load into Batch Actions" on any playlist/queue page.</span>';
       return;
     }
 
@@ -383,9 +442,10 @@ function renderPlaylistHub() {
       const dur = totalSec > 0 ? fmtSeconds(totalSec) : '—';
       const tBadge = e.hasTranscripts ? `<span style="color:#5ee0b1;font-size:10px;">✓ transcripts</span>` : '';
       const src = e.source === 'youtube-data-api' ? `<span style="color:#9b72ff;font-size:10px;">API</span>` : '';
-      const isQ = (e.playlistId || '').startsWith('WL') || (e.playlistId || '').startsWith('LL');
-      const typeIcon = isQ ? '📋' : '🎵';
-      return `<div class="history-item" style="flex-direction:column;align-items:stretch;">
+      const isQ = (e.playlistId || '').startsWith('WL') || (e.playlistId || '').startsWith('LL') || (e.playlistId || '') === 'queue';
+      const isUploads = (e.playlistId || '').startsWith('UU');
+      const typeIcon = isUploads ? '🎬' : isQ ? '📋' : '🎵';
+      return `<div class="history-item" style="flex-direction:column;align-items:stretch;margin-bottom:4px;">
         <div style="display:flex;align-items:center;gap:6px;">
           <span>${typeIcon}</span>
           <div style="flex:1;min-width:0;">
@@ -394,39 +454,50 @@ function renderPlaylistHub() {
           </div>
           <div style="display:flex;gap:4px;flex-shrink:0;">
             <button class="btn load-pl" data-pid="${e.playlistId}" style="font-size:10px;padding:3px 7px;">Load</button>
-            <button class="btn exp-pl" data-pid="${e.playlistId}" style="font-size:10px;padding:3px 7px;">⋯</button>
+            <button class="btn exp-pl" data-pid="${e.playlistId}" style="font-size:10px;padding:3px 7px;" title="Export options">⋯</button>
           </div>
         </div>
       </div>`;
     }).join('');
 
     listEl.querySelectorAll('.load-pl').forEach(btn => {
-      btn.onclick = (ev) => { ev.stopPropagation(); loadPlaylistFromBackup(btn.dataset.pid, res.backups); };
+      btn.onclick = (ev) => {
+        ev.stopPropagation();
+        const backup = backups.find(b => b.playlistId === btn.dataset.pid);
+        if (backup && backup.items) {
+          loadVideosIntoBatchCard(backup.playlistId, backup.playlistTitle, backup.items);
+          setStatus(`Loaded "${backup.playlistTitle}" (${backup.items.length} videos).`, 'success');
+        }
+      };
     });
+
     listEl.querySelectorAll('.exp-pl').forEach(btn => {
-      btn.onclick = (ev) => { ev.stopPropagation(); showExportMenu(btn.dataset.pid, res.backups, btn); };
+      btn.onclick = (ev) => {
+        ev.stopPropagation();
+        showExportMenu(btn.dataset.pid, backups, btn);
+      };
     });
   });
 }
 
-function loadPlaylistFromBackup(playlistId, backups) {
-  const backup = backups.find(b => b.playlistId === playlistId);
-  if (!backup || !backup.items) return;
+function loadVideosIntoBatchCard(playlistId, playlistTitle, videos) {
   activePlaylistId = playlistId;
-  currentPlaylistVideos = backup.items.map((item, i) => ({
+  currentPlaylistVideos = videos.map((item, i) => ({
     position: item.position || i + 1,
     videoId: item.videoId || '',
     title: item.title || `Video ${i + 1}`,
     channel: item.channel || '',
     duration: item.duration || '',
-    hasTranscript: item.transcriptCollection?.status === 'complete',
-    segments: item.transcriptCollection?.segments || [],
+    hasTranscript: Boolean(item.hasTranscript || (item.transcriptCollection && item.transcriptCollection.status === 'complete')),
+    segments: item.segments || item.transcriptCollection?.segments || [],
   }));
   selectedVideoIndices = new Set(currentPlaylistVideos.map((_, i) => i));
+
   const batchCard = document.getElementById('batchTranscriptCard');
   if (batchCard) batchCard.hidden = false;
+
   renderBatchList();
-  renderPlaylistStats(backup);
+  renderPlaylistStats({ playlistTitle, items: currentPlaylistVideos });
 }
 
 function renderBatchList() {
@@ -441,11 +512,12 @@ function renderBatchList() {
     const chk = selectedVideoIndices.has(i) ? 'checked' : '';
     return `<label style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:11px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.05);">
       <input type="checkbox" class="vsel" data-i="${i}" ${chk} style="margin:0;flex-shrink:0;">
-      <span>${dot}</span>
+      <span title="${v.hasTranscript ? 'Transcript available' : 'Transcript not saved yet'}">${dot}</span>
       <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(v.title)}">${escapeHtml(v.title)}</span>
-      <span style="color:#aaa5bd;font-size:10px;flex-shrink:0;">${v.duration}</span>
+      <span style="color:#aaa5bd;font-size:10px;flex-shrink:0;">${v.duration || ''}</span>
     </label>`;
   }).join('');
+
   el.querySelectorAll('.vsel').forEach(cb => {
     cb.onchange = () => {
       const i = parseInt(cb.dataset.i);
@@ -459,7 +531,7 @@ function renderPlaylistStats(backup) {
   if (!el || !backup?.items) return;
   const items = backup.items;
   const total = items.length;
-  const withT = items.filter(i => i.transcriptCollection?.status === 'complete').length;
+  const withT = items.filter(i => i.hasTranscript || (i.transcriptCollection && i.transcriptCollection.status === 'complete')).length;
   const totalSec = items.reduce((s, i) => s + parseDuration(i.duration), 0);
   el.innerHTML = `<strong>${total}</strong> videos · <span style="color:#5ee0b1;">${withT}</span> with transcripts · total <strong>${fmtSeconds(totalSec)}</strong>`;
 }
@@ -470,15 +542,15 @@ function showExportMenu(playlistId, backups, anchor) {
   document.getElementById('sc-exp-menu')?.remove();
   const menu = document.createElement('div');
   menu.id = 'sc-exp-menu';
-  menu.style.cssText = 'position:fixed;z-index:9999;background:#1c1a29;border:1px solid #3a3652;border-radius:8px;padding:4px;box-shadow:0 4px 16px rgba(0,0,0,0.5);';
+  menu.style.cssText = 'position:fixed;z-index:9999;background:#1c1a29;border:1px solid #3a3652;border-radius:8px;padding:4px;box-shadow:0 4px 16px rgba(0,0,0,0.6);';
   const r = anchor.getBoundingClientRect();
-  menu.style.left = Math.max(4, r.right - 130) + 'px';
+  menu.style.left = Math.max(4, r.right - 140) + 'px';
   menu.style.top = (r.bottom + 4) + 'px';
   [['JSON', 'json'], ['CSV', 'csv'], ['Markdown', 'md'], ['Copy URLs', 'urls'], ['Copy Titles', 'titles']].forEach(([label, fmt]) => {
     const b = document.createElement('button');
     b.textContent = label;
     b.style.cssText = 'display:block;width:100%;text-align:left;padding:6px 10px;font-size:12px;background:none;border:none;color:#f5f3ff;cursor:pointer;border-radius:4px;white-space:nowrap;';
-    b.onmouseenter = () => b.style.background = 'rgba(155,114,255,0.15)';
+    b.onmouseenter = () => b.style.background = 'rgba(155,114,255,0.2)';
     b.onmouseleave = () => b.style.background = 'none';
     b.onclick = () => { menu.remove(); exportPlaylist(playlistId, backups, fmt); };
     menu.appendChild(b);
@@ -497,11 +569,11 @@ function exportPlaylist(playlistId, backups, fmt) {
 
   if (fmt === 'urls') {
     navigator.clipboard.writeText(items.map(i => `https://www.youtube.com/watch?v=${i.videoId}`).join('\n'));
-    setStatus('URLs copied!', 'success'); return;
+    setStatus('URLs copied to clipboard!', 'success'); return;
   }
   if (fmt === 'titles') {
     navigator.clipboard.writeText(items.map((i, n) => `${i.position || n + 1}. ${i.title}`).join('\n'));
-    setStatus('Titles copied!', 'success'); return;
+    setStatus('Titles copied to clipboard!', 'success'); return;
   }
 
   let content = '', filename = `playlist_${playlistId}`, mime = 'text/plain';
@@ -523,18 +595,16 @@ function exportPlaylist(playlistId, backups, fmt) {
   setStatus(`Exported ${fmt.toUpperCase()}`, 'success');
 }
 
-// Current-playlist export buttons (for loaded batch list)
 function exportCurrentPlaylist(fmt) {
-  if (!activePlaylistId) { setStatus('Load a playlist first.', 'error'); return; }
-  chrome.runtime.sendMessage({ type: 'sc_list_playlist_backups' }, (res) => {
-    exportPlaylist(activePlaylistId, res?.backups || [], fmt);
-  });
+  if (!currentPlaylistVideos.length) { setStatus('Load a playlist first.', 'error'); return; }
+  const backup = { playlistId: activePlaylistId || 'current', playlistTitle: 'Current Playlist', exportedAt: new Date().toISOString(), items: currentPlaylistVideos };
+  exportPlaylist(backup.playlistId, [backup], fmt);
 }
 
 // ─── Batch Transcript Extraction ─────────────────────────────────────────────
 
-async function copyTranscripts() {
-  const indices = Array.from(selectedVideoIndices).sort((a, b) => a - b);
+async function copyTranscripts(onlySelected = true) {
+  const indices = onlySelected ? Array.from(selectedVideoIndices).sort((a, b) => a - b) : currentPlaylistVideos.map((_, i) => i);
   if (!indices.length) { setStatus('No videos selected.', 'error'); return; }
   const statusEl = document.getElementById('batchTranscriptStatus');
   const results = [];
@@ -542,39 +612,58 @@ async function copyTranscripts() {
   for (let n = 0; n < indices.length; n++) {
     const v = currentPlaylistVideos[indices[n]];
     if (!v?.videoId) continue;
-    if (statusEl) statusEl.textContent = `Processing ${n + 1}/${indices.length}: ${v.title.slice(0, 45)}…`;
+    if (statusEl) statusEl.textContent = `Processing ${n + 1}/${indices.length}: ${v.title.slice(0, 40)}…`;
 
-    // Use cached segments from storage first
+    // 1. Cached segments
     if (v.segments?.length > 0) {
-      results.push({ title: v.title, videoId: v.videoId, text: v.segments.map(s => s.text).join(' ') });
+      results.push({ title: v.title, videoId: v.videoId, channel: v.channel, text: v.segments.map(s => s.text).join(' ') });
       continue;
     }
 
-    // Fall back: open background tab
+    // 2. Pre-saved metadata transcript
+    try {
+      const meta = await chrome.storage.local.get([`sc_meta_${v.videoId}`]);
+      if (meta?.[`sc_meta_${v.videoId}`]?.transcript) {
+        results.push({ title: v.title, videoId: v.videoId, channel: v.channel, text: meta[`sc_meta_${v.videoId}`].transcript });
+        continue;
+      }
+    } catch {}
+
+    // 3. Background tab fetch
     try {
       const tab = await chrome.tabs.create({ url: `https://www.youtube.com/watch?v=${v.videoId}`, active: false });
-      await new Promise(r => setTimeout(r, 5000));
+      await new Promise(r => setTimeout(r, 4000));
       const resp = await new Promise(r => chrome.tabs.sendMessage(tab.id, { type: 'sc_collect_transcript' }, r));
       await chrome.tabs.remove(tab.id).catch(() => {});
       const text = resp?.segments?.length > 0 ? resp.segments.map(s => s.text).join(' ') : '[No transcript available]';
-      results.push({ title: v.title, videoId: v.videoId, text });
+      results.push({ title: v.title, videoId: v.videoId, channel: v.channel, text });
     } catch (e) {
-      results.push({ title: v.title, videoId: v.videoId, text: `[Error: ${e.message}]` });
+      results.push({ title: v.title, videoId: v.videoId, channel: v.channel, text: `[Error: ${e.message}]` });
     }
   }
 
   const out = results.map(r =>
-    `## ${r.title}\nURL: https://www.youtube.com/watch?v=${r.videoId}\n\n${r.text}\n\n---`
+    `## ${r.title}\nURL: https://www.youtube.com/watch?v=${r.videoId}${r.channel ? `\nChannel: ${r.channel}` : ''}\n\n${r.text}\n\n---`
   ).join('\n\n');
   await navigator.clipboard.writeText(out);
-  if (statusEl) statusEl.textContent = `Done — ${results.length} transcripts copied to clipboard.`;
+  if (statusEl) statusEl.textContent = `✓ Copied ${results.length} transcripts to clipboard!`;
   setStatus(`Copied ${results.length} transcripts`, 'success');
+}
+
+async function copyNotesList() {
+  const indices = Array.from(selectedVideoIndices).sort((a, b) => a - b);
+  if (!indices.length) { setStatus('No videos selected.', 'error'); return; }
+  const out = indices.map((idx, n) => {
+    const v = currentPlaylistVideos[idx];
+    return `### ${n + 1}. [${v.title}](https://www.youtube.com/watch?v=${v.videoId})\n- **Channel**: ${v.channel || 'Unknown'}\n- **Duration**: ${v.duration || 'N/A'}\n- **URL**: https://www.youtube.com/watch?v=${v.videoId}\n`;
+  }).join('\n');
+  await navigator.clipboard.writeText(out);
+  setStatus(`Copied ${indices.length} video notes list!`, 'success');
 }
 
 // ─── Event listeners ──────────────────────────────────────────────────────────
 
 document.getElementById('refreshPlaylistHub')?.addEventListener('click', renderPlaylistHub);
-document.getElementById('goToUploads'); // wired up inside checkUploadsShortcut
 document.getElementById('selectAllVideos')?.addEventListener('click', () => {
   selectedVideoIndices = new Set(currentPlaylistVideos.map((_, i) => i));
   renderBatchList();
@@ -583,11 +672,9 @@ document.getElementById('deselectAllVideos')?.addEventListener('click', () => {
   selectedVideoIndices.clear();
   renderBatchList();
 });
-document.getElementById('copySelectedTranscripts')?.addEventListener('click', copyTranscripts);
-document.getElementById('copyAllTranscripts')?.addEventListener('click', () => {
-  selectedVideoIndices = new Set(currentPlaylistVideos.map((_, i) => i));
-  copyTranscripts();
-});
+document.getElementById('copySelectedTranscripts')?.addEventListener('click', () => copyTranscripts(true));
+document.getElementById('copyAllTranscripts')?.addEventListener('click', () => copyTranscripts(false));
+document.getElementById('copyNotesList')?.addEventListener('click', copyNotesList);
 document.getElementById('exportPlaylistJson')?.addEventListener('click', () => exportCurrentPlaylist('json'));
 document.getElementById('exportPlaylistCsv')?.addEventListener('click', () => exportCurrentPlaylist('csv'));
 document.getElementById('exportPlaylistMd')?.addEventListener('click', () => exportCurrentPlaylist('md'));
@@ -600,6 +687,7 @@ document.getElementById('copyPlaylistTitles')?.addEventListener('click', () => {
   navigator.clipboard.writeText(titles).then(() => setStatus('Titles copied!', 'success'));
 });
 
-// Init
+// Initialization
 checkUploadsShortcut();
+checkActiveTabPlaylist();
 renderPlaylistHub();
