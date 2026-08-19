@@ -937,17 +937,6 @@
 
     if (!fallbackTarget) return;
 
-    const cid = await getOrExtractChannelId();
-    if (!cid) {
-      console.log("[Social Companion] Could not resolve channel ID yet for button injection.");
-      return;
-    }
-
-    if (document.getElementById("sc-channel-playlist-btn")) return;
-
-    console.log("[Social Companion] Injecting uploads playlist button, target:", fallbackTarget.tagName, "channelId:", cid);
-    const uploadsUrl = "https://www.youtube.com/playlist?list=UU" + cid.slice(2);
-
     const wrapper = document.createElement("div");
     wrapper.className = "ytFlexibleActionsViewModelAction";
     wrapper.id = "sc-channel-playlist-wrapper";
@@ -955,7 +944,7 @@
 
     const btn = document.createElement("a");
     btn.id = "sc-channel-playlist-btn";
-    btn.href = uploadsUrl;
+    btn.href = "#";
     btn.title = "View all channel uploads as a playlist (Social Companion)";
     btn.setAttribute("aria-label", "View uploads as playlist");
     btn.innerHTML = `<span style="font-size:14px;line-height:1;margin-right:4px;">📋</span><span style="font-weight:600;font-size:13px;letter-spacing:0.02em;">Uploads Playlist</span>`;
@@ -982,10 +971,28 @@
       "z-index: 999",
     ].join(";");
 
-    btn.onclick = (e) => {
+    let resolvedUploadsUrl = "";
+    getOrExtractChannelId().then((cid) => {
+      if (cid) {
+        resolvedUploadsUrl = "https://www.youtube.com/playlist?list=UU" + cid.slice(2);
+        btn.href = resolvedUploadsUrl;
+      }
+    });
+
+    btn.onclick = async (e) => {
       if (!e.ctrlKey && !e.metaKey && !e.shiftKey) {
         e.preventDefault();
-        window.location.href = uploadsUrl;
+        if (resolvedUploadsUrl) {
+          window.location.href = resolvedUploadsUrl;
+        } else {
+          btn.innerHTML = `<span style="font-size:14px;line-height:1;margin-right:4px;">⏳</span><span style="font-weight:600;font-size:13px;">Loading…</span>`;
+          const cid = await getOrExtractChannelId();
+          if (cid) {
+            window.location.href = "https://www.youtube.com/playlist?list=UU" + cid.slice(2);
+          } else {
+            window.location.href = location.pathname.replace(/\/+$/, "") + "/videos";
+          }
+        }
       }
     };
 
@@ -1738,6 +1745,7 @@
           <button class="sc-btn sc-btn-secondary" id="sc-btn-copy-transcript-quick">Transcript</button>
           <button class="sc-btn sc-btn-secondary" id="sc-btn-sync-transcript-quick">↻ Sync transcript</button>
           <button class="sc-btn sc-btn-secondary" id="sc-btn-quick-playlist" title="Copy playlist or queue videos as Markdown">🎵 Queue/Playlist</button>
+          <button class="sc-btn sc-btn-secondary" id="sc-btn-quick-auto-collect" title="Auto-collect transcripts for all videos in queue/playlist and copy comprehensive Markdown bundle">⚡ Auto-Collect & Copy All</button>
           <button class="sc-btn sc-btn-secondary" id="sc-btn-quick-uploads" title="Open channel uploads playlist">🎬 Uploads</button>
         </div>
         <div class="sc-notes-input-group">
@@ -1916,6 +1924,110 @@
       }
     });
 
+    container.querySelector("#sc-btn-quick-auto-collect")?.addEventListener("click", async () => {
+      const quickStatus = document.getElementById("sc-transcript-quick-status");
+      try {
+        if (quickStatus) quickStatus.textContent = "Scanning videos…";
+        showToast("⚡ Scanning playlist/queue videos…");
+        const pData = await extractPlaylistVideosFromPage();
+        if (!pData?.videos?.length) {
+          if (quickStatus) quickStatus.textContent = "No playlist/queue";
+          showToast("ℹ️ No active playlist or queue found on this page.");
+          return;
+        }
+
+        const total = pData.videos.length;
+        const gathered = [];
+
+        for (let i = 0; i < total; i++) {
+          const v = pData.videos[i];
+          const progressMsg = `[${i + 1}/${total}] ${v.title.slice(0, 20)}…`;
+          if (quickStatus) quickStatus.textContent = `⚡ ${progressMsg}`;
+          showToast(`⚡ Collecting transcript ${progressMsg}`);
+
+          // Check cache
+          let text = "";
+          let notes = [];
+          try {
+            const cachedNotes = await new Promise(r => storage.get([`sc_notes_${v.videoId}`], r));
+            notes = cachedNotes?.[`sc_notes_${v.videoId}`] || [];
+            const cached = await new Promise(r => storage.get([`sc_transcript_${v.videoId}`, `sc_meta_${v.videoId}`], r));
+            const cMeta = cached?.[`sc_meta_${v.videoId}`];
+            const cTrans = cached?.[`sc_transcript_${v.videoId}`];
+            if (cTrans && Array.isArray(cTrans) && cTrans.length > 0) {
+              text = cTrans.map(s => `[${formatTime(s.start)}] ${s.text}`).join("\n");
+            } else if (cMeta?.transcript) {
+              text = cMeta.transcript;
+            }
+          } catch {}
+
+          if (!text) {
+            // Fetch via background
+            try {
+              const bgResp = await new Promise(r => chrome.runtime.sendMessage({ type: "sc_fetch_video_transcript", videoId: v.videoId }, r));
+              if (bgResp?.segments?.length > 0) {
+                text = bgResp.segments.map(s => `[${formatTime(s.start)}] ${s.text}`).join("\n");
+              } else if (bgResp?.transcript) {
+                text = bgResp.transcript;
+              }
+            } catch (err) {
+              console.warn("Background fetch error for", v.videoId, err);
+            }
+          }
+
+          gathered.push({
+            ...v,
+            transcript: text || "[No transcript available for this video]",
+            notes: notes
+          });
+        }
+
+        const title = pData.playlistTitle || (pData.isQueue ? "YouTube Queue" : "YouTube Playlist");
+        let md = `# ${title}\n\n`;
+        md += `> Generated by Social Companion on ${new Date().toISOString().slice(0, 10)} | Total Videos: ${gathered.length}\n\n`;
+        md += `## Table of Contents\n\n`;
+        gathered.forEach((v, idx) => {
+          md += `${idx + 1}. [${v.title}](${v.url}) — ${v.channel} ${v.duration ? `(${v.duration})` : ""}\n`;
+        });
+        md += `\n---\n\n`;
+
+        gathered.forEach((v, idx) => {
+          md += `---\n`;
+          md += `Title: ${v.title}\n`;
+          md += `Channel: ${v.channel}\n`;
+          md += `URL: ${v.url}\n`;
+          md += `Thumbnail: ${v.thumbnail || `https://img.youtube.com/vi/${v.videoId}/hqdefault.jpg`}\n`;
+          md += `Playlist: ${title}\n`;
+          md += `Playlist Index: ${idx + 1}\n`;
+          if (v.duration) md += `Duration: ${v.duration}\n`;
+          md += `Transcript Status: ${v.transcript && !v.transcript.startsWith("[No") ? "ready" : "unavailable"}\n`;
+          md += `Copied: ${new Date().toISOString().slice(0, 10)}\n`;
+          md += `---\n\n`;
+
+          md += `# Personal Notes & Markers\n\n`;
+          if (v.notes && v.notes.length > 0) {
+            v.notes.forEach(n => {
+              md += `- **[${formatTime(n.time)}]** (${canonicalYouTubeUrl(v.videoId, n.time)}): ${n.text}\n`;
+            });
+            md += `\n`;
+          } else {
+            md += `*No notes added yet.*\n\n`;
+          }
+
+          md += `# Transcript\n\n`;
+          md += `${v.transcript}\n\n`;
+          md += `---\n\n`;
+        });
+
+        await navigator.clipboard.writeText(md);
+        if (quickStatus) quickStatus.textContent = `✓ ${gathered.length} copied!`;
+        showToast(`🎉 Copied all ${gathered.length} video transcripts & notes to clipboard!`);
+      } catch (err) {
+        if (quickStatus) quickStatus.textContent = "Error";
+        showToast("❌ Auto-collect error: " + err.message);
+      }
+    });
+
     // Sync button
     container
       .querySelector("#sc-btn-sync-transcript")
@@ -1953,22 +2065,77 @@
         showToast("ℹ️ No active playlist or queue found on this page.");
         return;
       }
-      showToast(`⚡ Extracting transcripts for ${pData.videos.length} videos...`);
+      const total = pData.videos.length;
+      showToast(`⚡ Extracting transcripts for ${total} videos...`);
       const gathered = [];
-      for (let n = 0; n < pData.videos.length; n++) {
+      for (let n = 0; n < total; n++) {
         const v = pData.videos[n];
+        showToast(`⚡ Extracting [${n + 1}/${total}] ${v.title.slice(0, 20)}...`);
+        let text = "";
+        let notes = [];
         try {
-          const meta = await new Promise(r => storage.get([`sc_meta_${v.videoId}`], r));
-          if (meta?.[`sc_meta_${v.videoId}`]?.transcript) {
-            gathered.push({ ...v, transcript: meta[`sc_meta_${v.videoId}`].transcript });
-            continue;
+          const cachedNotes = await new Promise(r => storage.get([`sc_notes_${v.videoId}`], r));
+          notes = cachedNotes?.[`sc_notes_${v.videoId}`] || [];
+          const cached = await new Promise(r => storage.get([`sc_transcript_${v.videoId}`, `sc_meta_${v.videoId}`], r));
+          const cMeta = cached?.[`sc_meta_${v.videoId}`];
+          const cTrans = cached?.[`sc_transcript_${v.videoId}`];
+          if (cTrans && Array.isArray(cTrans) && cTrans.length > 0) {
+            text = cTrans.map(s => `[${formatTime(s.start)}] ${s.text}`).join("\n");
+          } else if (cMeta?.transcript) {
+            text = cMeta.transcript;
           }
         } catch {}
-        gathered.push(v);
+
+        if (!text) {
+          try {
+            const bgResp = await new Promise(r => chrome.runtime.sendMessage({ type: "sc_fetch_video_transcript", videoId: v.videoId }, r));
+            if (bgResp?.segments?.length > 0) {
+              text = bgResp.segments.map(s => `[${formatTime(s.start)}] ${s.text}`).join("\n");
+            } else if (bgResp?.transcript) {
+              text = bgResp.transcript;
+            }
+          } catch {}
+        }
+        gathered.push({ ...v, transcript: text || "[No transcript available for this video]", notes });
       }
-      const title = pData.playlistTitle || "Queue_Transcripts";
-      const md = `# ${title}\n\nExported: ${new Date().toISOString()}\nTotal Videos: ${gathered.length}\n\n` +
-        gathered.map((v, i) => `### ${i + 1}. [${v.title}](${v.url})\n- **Channel**: ${v.channel}\n- **Duration**: ${v.duration}\n\n#### Transcript\n\n${v.transcript || "[Transcript in cache or sync in popup]"}\n\n---`).join("\n\n");
+
+      const title = pData.playlistTitle || (pData.isQueue ? "YouTube Queue" : "YouTube Playlist");
+      let md = `# ${title}\n\n`;
+      md += `> Generated by Social Companion on ${new Date().toISOString().slice(0, 10)} | Total Videos: ${gathered.length}\n\n`;
+      md += `## Table of Contents\n\n`;
+      gathered.forEach((v, idx) => {
+        md += `${idx + 1}. [${v.title}](${v.url}) — ${v.channel} ${v.duration ? `(${v.duration})` : ""}\n`;
+      });
+      md += `\n---\n\n`;
+
+      gathered.forEach((v, idx) => {
+        md += `---\n`;
+        md += `Title: ${v.title}\n`;
+        md += `Channel: ${v.channel}\n`;
+        md += `URL: ${v.url}\n`;
+        md += `Thumbnail: ${v.thumbnail || `https://img.youtube.com/vi/${v.videoId}/hqdefault.jpg`}\n`;
+        md += `Playlist: ${title}\n`;
+        md += `Playlist Index: ${idx + 1}\n`;
+        if (v.duration) md += `Duration: ${v.duration}\n`;
+        md += `Transcript Status: ${v.transcript && !v.transcript.startsWith("[No") ? "ready" : "unavailable"}\n`;
+        md += `Copied: ${new Date().toISOString().slice(0, 10)}\n`;
+        md += `---\n\n`;
+
+        md += `# Personal Notes & Markers\n\n`;
+        if (v.notes && v.notes.length > 0) {
+          v.notes.forEach(n => {
+            md += `- **[${formatTime(n.time)}]** (${canonicalYouTubeUrl(v.videoId, n.time)}): ${n.text}\n`;
+          });
+          md += `\n`;
+        } else {
+          md += `*No notes added yet.*\n\n`;
+        }
+
+        md += `# Transcript\n\n`;
+        md += `${v.transcript}\n\n`;
+        md += `---\n\n`;
+      });
+
       await downloadCaptureText(md, `${title.replace(/[^a-z0-9_-]+/gi, '_')}_bundle.md`, "text/markdown");
       showToast(`📥 Downloaded Markdown bundle with ${gathered.length} videos!`);
     });

@@ -154,6 +154,69 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 });
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg.type === "sc_fetch_video_transcript") {
+    const videoId = String(msg.videoId || "").trim();
+    if (!videoId) {
+      sendResponse({ ok: false, reason: "No videoId provided" });
+      return true;
+    }
+
+    (async () => {
+      // 1. Check storage first
+      const stored = await chrome.storage.local.get([`sc_transcript_${videoId}`, `sc_meta_${videoId}`]);
+      const cached = stored[`sc_transcript_${videoId}`] || stored[`sc_meta_${videoId}`]?.transcript;
+      if (cached && (Array.isArray(cached) ? cached.length > 0 : Boolean(cached))) {
+        const text = Array.isArray(cached) ? cached.map(s => s.text || s).join(" ") : String(cached);
+        const segments = Array.isArray(cached) ? cached : [];
+        return { ok: true, transcript: text, segments, cached: true };
+      }
+
+      // 2. Open hidden background tab
+      let tab = null;
+      try {
+        tab = await chrome.tabs.create({ url: `https://www.youtube.com/watch?v=${videoId}`, active: false });
+        // Poll for transcript readiness up to 15 seconds
+        let transcriptResp = null;
+        for (let poll = 0; poll < 15; poll++) {
+          await new Promise(r => setTimeout(r, 1000));
+          try {
+            const check = await chrome.tabs.sendMessage(tab.id, { type: "sc_get_capture_status" });
+            if (check?.transcriptAvailable) {
+              transcriptResp = await chrome.tabs.sendMessage(tab.id, { type: "sc_collect_transcript" });
+              break;
+            }
+          } catch {}
+        }
+        if (!transcriptResp) {
+          transcriptResp = await chrome.tabs.sendMessage(tab.id, { type: "sc_collect_transcript" }).catch(() => null);
+        }
+        if (tab?.id) await chrome.tabs.remove(tab.id).catch(() => {});
+
+        const text = transcriptResp?.segments?.length > 0
+          ? transcriptResp.segments.map(s => s.text).join(" ")
+          : (transcriptResp?.reason || "[No transcript available]");
+
+        if (transcriptResp?.segments?.length > 0) {
+          await chrome.storage.local.set({
+            [`sc_transcript_${videoId}`]: transcriptResp.segments,
+            [`sc_meta_${videoId}`]: {
+              videoId,
+              transcript: text,
+              transcriptAvailable: true,
+              updatedAt: new Date().toISOString()
+            }
+          });
+        }
+        return { ok: true, transcript: text, segments: transcriptResp?.segments || [] };
+      } catch (err) {
+        if (tab?.id) await chrome.tabs.remove(tab.id).catch(() => {});
+        return { ok: false, reason: err.message, transcript: `[Transcript error: ${err.message}]` };
+      }
+    })().then(sendResponse).catch(err => sendResponse({ ok: false, reason: err.message }));
+
+    return true;
+  }
+
   if (msg.type === "sc_auto_capture_verified") {
     const videoId = String(msg.videoId || "").trim();
     const channel = String(msg.channel || "").trim();

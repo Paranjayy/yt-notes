@@ -1,6 +1,6 @@
 # Social Companion & YT Note-Taker — Agent Guide
 
-> Last updated: 2026-08-20 | Version: 1.10.1
+> Last updated: 2026-08-20 | Version: 1.11.0
 
 This file documents everything an AI agent needs to know to work on this codebase without regressions.
 
