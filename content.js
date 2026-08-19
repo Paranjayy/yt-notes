@@ -713,16 +713,20 @@
       return true;
     }
     if (message.type === "sc_get_channel_id") {
-      const channelId = extractChannelId();
-      let channelTitle = "";
-      try {
-        const titleEl = document.querySelector("yt-dynamic-text-view-model h1, ytd-channel-name #text, #channel-header #text, #owner-name a, ytd-video-owner-renderer #channel-name a");
-        if (titleEl) channelTitle = titleEl.textContent.trim();
-        if (!channelTitle && currentVideoId) {
-          channelTitle = extractYouTubeMetadata()?.channel || "";
-        }
-      } catch {}
-      sendResponse({ ok: Boolean(channelId), channelId: channelId || "", channelTitle: channelTitle || "" });
+      getOrExtractChannelId().then((channelId) => {
+        let channelTitle = "";
+        try {
+          const titleEl = document.querySelector("yt-dynamic-text-view-model h1, ytd-channel-name #text, #channel-header #text, #owner-name a, ytd-video-owner-renderer #channel-name a");
+          if (titleEl) channelTitle = titleEl.textContent.trim();
+          if (!channelTitle && currentVideoId) {
+            channelTitle = extractYouTubeMetadata()?.channel || "";
+          }
+        } catch {}
+        sendResponse({ ok: Boolean(channelId), channelId: channelId || "", channelTitle: channelTitle || "" });
+      }).catch(() => {
+        sendResponse({ ok: false, channelId: "", channelTitle: "" });
+      });
+      return true;
     }
     if (message.type === "sc_get_playlist_videos") {
       extractPlaylistVideosFromPage().then(sendResponse).catch((error) => {
@@ -752,12 +756,12 @@
     }, 1500);
 
     onYouTubeUrlChange();
-    setTimeout(injectChannelPlaylistButton, 1000);
-    setTimeout(injectChannelPlaylistButton, 2500);
   }
 
   // Tracks the sidebar observer so we can disconnect on video change
   let _recoObserver = null;
+  let _channelHeaderObserver = null;
+  let _cachedChannelId = { url: "", id: "" };
 
   function canonicalYouTubeUrl(videoId, timestamp = null) {
     const url = new URL("https://www.youtube.com/watch");
@@ -807,69 +811,107 @@
     return "";
   }
 
-  function extractChannelId() {
-    // Method 1: RSS alternate link in <head> (present on every modern channel page)
+  async function getOrExtractChannelId() {
+    const currentUrl = location.href;
+    if (_cachedChannelId.url === currentUrl && _cachedChannelId.id) {
+      return _cachedChannelId.id;
+    }
+
+    // 1. Direct path check if URL is /channel/UC...
+    const directMatch = location.pathname.match(/^\/channel\/(UC[A-Za-z0-9_-]{22})/);
+    if (directMatch) {
+      _cachedChannelId = { url: currentUrl, id: directMatch[1] };
+      return directMatch[1];
+    }
+
+    // 2. RSS alternate link in <head> (present on every modern channel page)
     try {
       const rss = document.querySelector('link[rel="alternate"][type="application/rss+xml"][href*="channel_id="]');
       if (rss) {
         const m = rss.href.match(/channel_id=(UC[A-Za-z0-9_-]{22})/);
-        if (m) return m[1];
+        if (m) {
+          _cachedChannelId = { url: currentUrl, id: m[1] };
+          return m[1];
+        }
       }
     } catch {}
 
-    // Method 2: meta tags (itemprop or identifier)
-    try {
-      const meta = document.querySelector('meta[itemprop="channelId"], meta[itemprop="identifier"][content^="UC"]');
-      if (meta?.content && /^UC[A-Za-z0-9_-]{22}$/.test(meta.content)) {
-        return meta.content;
-      }
-    } catch {}
-
-    // Method 3: Parse player response if available (on watch pages)
+    // 3. Parse player response if available (on watch pages)
     try {
       const pr = getPlayerResponseFromScripts();
       if (pr?.videoDetails?.channelId && /^UC[A-Za-z0-9_-]{22}$/.test(pr.videoDetails.channelId)) {
+        _cachedChannelId = { url: currentUrl, id: pr.videoDetails.channelId };
         return pr.videoDetails.channelId;
       }
     } catch {}
 
-    // Method 4: Scan <script> tags for ytInitialData / channel metadata
+    // 4. Meta tags (itemprop, identifier, og:url)
+    try {
+      const meta = document.querySelector('meta[itemprop="channelId"], meta[itemprop="identifier"][content^="UC"]');
+      if (meta?.content && /^UC[A-Za-z0-9_-]{22}$/.test(meta.content)) {
+        _cachedChannelId = { url: currentUrl, id: meta.content };
+        return meta.content;
+      }
+    } catch {}
+
+    // 5. Scan <script> tags for ytInitialData / channel metadata
     try {
       const scripts = document.querySelectorAll("script");
       for (const s of scripts) {
         const txt = s.textContent;
         if (!txt) continue;
         const mExt = txt.match(/"externalId"\s*:\s*"(UC[A-Za-z0-9_-]{22})"/);
-        if (mExt) return mExt[1];
+        if (mExt) {
+          _cachedChannelId = { url: currentUrl, id: mExt[1] };
+          return mExt[1];
+        }
         const mChan = txt.match(/"(?:channelId|browseId)"\s*:\s*"(UC[A-Za-z0-9_-]{22})"/);
-        if (mChan) return mChan[1];
+        if (mChan) {
+          _cachedChannelId = { url: currentUrl, id: mChan[1] };
+          return mChan[1];
+        }
       }
     } catch {}
 
-    // Method 5: Look for canonical link or channel links with UC...
+    // 6. Look for canonical link or channel links with UC...
     try {
       const links = document.querySelectorAll('link[rel="canonical"], a[href*="/channel/UC"]');
       for (const l of links) {
         const h = l.href || l.getAttribute("href") || "";
         const m = h.match(/\/channel\/(UC[A-Za-z0-9_-]{22})/);
-        if (m) return m[1];
+        if (m) {
+          _cachedChannelId = { url: currentUrl, id: m[1] };
+          return m[1];
+        }
       }
     } catch {}
 
-    // Method 6: ytd-browse browse-id attribute
+    // 7. Same-origin fetch of channel page HTML (guaranteed to contain externalId)
     try {
-      const browse = document.querySelector('ytd-browse[browse-id^="UC"]');
-      if (browse) {
-        const bId = browse.getAttribute("browse-id");
-        if (bId && /^UC[A-Za-z0-9_-]{22}$/.test(bId)) return bId;
+      const resp = await fetch(location.href, { credentials: "omit" });
+      if (resp.ok) {
+        const html = await resp.text();
+        const mExt = html.match(/"externalId"\s*:\s*"(UC[A-Za-z0-9_-]{22})"/);
+        if (mExt) {
+          _cachedChannelId = { url: currentUrl, id: mExt[1] };
+          return mExt[1];
+        }
+        const mChan = html.match(/channel_id=(UC[A-Za-z0-9_-]{22})/);
+        if (mChan) {
+          _cachedChannelId = { url: currentUrl, id: mChan[1] };
+          return mChan[1];
+        }
       }
     } catch {}
 
     return null;
   }
 
-  let _channelBtnAttempts = 0;
-  function injectChannelPlaylistButton() {
+  function extractChannelId() {
+    return _cachedChannelId.id || null;
+  }
+
+  async function injectChannelPlaylistButton() {
     const host = location.hostname;
     if (!host.includes("youtube.com")) return;
     const path = location.pathname;
@@ -887,20 +929,15 @@
       document.querySelector("#page-header yt-page-header-view-model") ||
       document.querySelector("yt-page-header-view-model") ||
       document.querySelector("#channel-header #buttons") ||
-      document.querySelector("#channel-header-container");
+      document.querySelector("#channel-header-container") ||
+      document.querySelector("#page-header");
 
-    if (!target) {
-      _channelBtnAttempts++;
-      if (_channelBtnAttempts < 25) setTimeout(injectChannelPlaylistButton, 800);
-      return;
-    }
-    _channelBtnAttempts = 0;
+    if (!target) return;
 
-    const cid = extractChannelId();
-    if (!cid) {
-      setTimeout(injectChannelPlaylistButton, 1000);
-      return;
-    }
+    const cid = await getOrExtractChannelId();
+    if (!cid) return;
+
+    if (document.getElementById("sc-channel-playlist-btn")) return;
 
     const uploadsUrl = "https://www.youtube.com/playlist?list=UU" + cid.slice(2);
 
@@ -914,7 +951,7 @@
     btn.href = uploadsUrl;
     btn.title = "View all channel uploads as a playlist (Social Companion)";
     btn.setAttribute("aria-label", "View uploads as playlist");
-    btn.innerHTML = `<span style="font-size:14px;line-height:1;margin-right:3px;">📋</span><span style="font-weight:600;font-size:13px;letter-spacing:0.02em;">Uploads Playlist</span>`;
+    btn.innerHTML = `<span style="font-size:14px;line-height:1;margin-right:4px;">📋</span><span style="font-weight:600;font-size:13px;letter-spacing:0.02em;">Uploads Playlist</span>`;
     btn.style.cssText = [
       "display: inline-flex",
       "align-items: center",
@@ -923,33 +960,71 @@
       "height: 36px",
       "border-radius: 18px",
       "background: linear-gradient(135deg, #8b5cf6, #6d28d9)",
-      "color: #ffffff",
+      "color: #ffffff !important",
       "font-size: 13px",
       "font-weight: 600",
-      "text-decoration: none",
+      "text-decoration: none !important",
       "cursor: pointer",
-      "box-shadow: 0 2px 10px rgba(139, 92, 246, 0.4)",
+      "box-shadow: 0 2px 10px rgba(139, 92, 246, 0.45)",
       "transition: all 0.2s ease",
       "white-space: nowrap",
-      "border: 1px solid rgba(255, 255, 255, 0.15)",
+      "border: 1px solid rgba(255, 255, 255, 0.2)",
       "font-family: Roboto, Arial, sans-serif",
       "user-select: none",
       "box-sizing: border-box",
+      "z-index: 999",
     ].join(";");
+
+    btn.onclick = (e) => {
+      if (!e.ctrlKey && !e.metaKey && !e.shiftKey) {
+        e.preventDefault();
+        window.location.href = uploadsUrl;
+      }
+    };
 
     btn.onmouseenter = () => {
       btn.style.transform = "translateY(-1px)";
-      btn.style.boxShadow = "0 4px 16px rgba(139, 92, 246, 0.6)";
+      btn.style.boxShadow = "0 4px 16px rgba(139, 92, 246, 0.65)";
       btn.style.background = "linear-gradient(135deg, #9333ea, #7c3aed)";
     };
     btn.onmouseleave = () => {
       btn.style.transform = "none";
-      btn.style.boxShadow = "0 2px 10px rgba(139, 92, 246, 0.4)";
+      btn.style.boxShadow = "0 2px 10px rgba(139, 92, 246, 0.45)";
       btn.style.background = "linear-gradient(135deg, #8b5cf6, #6d28d9)";
     };
 
     wrapper.appendChild(btn);
     target.appendChild(wrapper);
+  }
+
+  function watchChannelHeader() {
+    if (_channelHeaderObserver) {
+      _channelHeaderObserver.disconnect();
+      _channelHeaderObserver = null;
+    }
+    const path = location.pathname;
+    const isChannel = path.startsWith("/@") || path.startsWith("/channel/") || path.startsWith("/c/") || path.startsWith("/user/");
+    if (!isChannel) {
+      document.getElementById("sc-channel-playlist-wrapper")?.remove();
+      document.getElementById("sc-channel-playlist-btn")?.remove();
+      return;
+    }
+
+    injectChannelPlaylistButton();
+
+    _channelHeaderObserver = new MutationObserver(() => {
+      if (document.querySelector("yt-flexible-actions-view-model, yt-page-header-view-model, #channel-header") && !document.getElementById("sc-channel-playlist-btn")) {
+        injectChannelPlaylistButton();
+      }
+    });
+
+    _channelHeaderObserver.observe(document.body, { childList: true, subtree: true });
+    setTimeout(() => {
+      if (_channelHeaderObserver) {
+        _channelHeaderObserver.disconnect();
+        _channelHeaderObserver = null;
+      }
+    }, 25000);
   }
 
   async function extractPlaylistVideosFromPage() {
@@ -1127,7 +1202,7 @@
       }
 
       if (path.startsWith("/@") || path.startsWith("/channel/") || path.startsWith("/c/") || path.startsWith("/user/")) {
-        injectChannelPlaylistButton();
+        watchChannelHeader();
       } else {
         document.getElementById("sc-channel-playlist-wrapper")?.remove();
         document.getElementById("sc-channel-playlist-btn")?.remove();

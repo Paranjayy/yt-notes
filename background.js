@@ -3,6 +3,12 @@ chrome.runtime.onInstalled.addListener(() => {
   console.log("Social Companion Extension installed successfully.");
   chrome.contextMenus.removeAll().then(() => {
     chrome.contextMenus.create({
+      id: "sc-open-channel-uploads",
+      title: "📋 View channel uploads as playlist",
+      contexts: ["page"],
+      documentUrlPatterns: ["https://*.youtube.com/*", "https://youtu.be/*"],
+    });
+    chrome.contextMenus.create({
       id: "sc-save-current-capture",
       title: "Save current capture as Markdown",
       contexts: ["page"],
@@ -69,6 +75,14 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
       autoSubmit: true,
       startNewChat: false,
     }).catch((error) => console.warn("Couldn't send selected text to AI provider", error));
+    return;
+  }
+  if (info.menuItemId === "sc-open-channel-uploads" && tab?.id != null) {
+    chrome.tabs.sendMessage(tab.id, { type: "sc_get_channel_id" }, (res) => {
+      if (res?.channelId) {
+        chrome.tabs.create({ url: "https://www.youtube.com/playlist?list=UU" + res.channelId.slice(2) });
+      }
+    });
     return;
   }
   if (info.menuItemId === "sc-open-capture-archive") {
