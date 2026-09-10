@@ -12,13 +12,13 @@ chrome.runtime.onInstalled.addListener(() => {
       id: "sc-save-current-capture",
       title: "Save current capture as Markdown",
       contexts: ["page"],
-      documentUrlPatterns: ["https://*.youtube.com/*", "https://youtu.be/*"],
+      documentUrlPatterns: ["https://*.youtube.com/*", "https://youtu.be/*", "https://open.spotify.com/*", "https://*.spotify.com/*"],
     });
     chrome.contextMenus.create({
       id: "sc-open-capture-archive",
       title: "Open Social Companion capture archive",
       contexts: ["page"],
-      documentUrlPatterns: ["https://*.youtube.com/*", "https://youtu.be/*"],
+      documentUrlPatterns: ["https://*.youtube.com/*", "https://youtu.be/*", "https://open.spotify.com/*", "https://*.spotify.com/*"],
     });
     chrome.contextMenus.create({
       id: "sc-save-visible-playlist",
