@@ -595,6 +595,8 @@
   let notesSearchQuery = "";
   let transcriptSearchQuery = "";
   let cachedMarkdown = ""; // pre-cached export markdown for sync clipboard copy
+  let cachedMarkdownVideoId = ""; // video the cache was built for
+  let cachedMarkdownTranscriptCount = -1; // caption count baked into the cache
   const autoCaptureAttempts = new Set();
   let hasAttemptedAutoClick = false; // flag to prevent duplicate auto-clicks per video
   let playlistBackupItems = [];
@@ -671,12 +673,37 @@
       updatePlaylistTranscriptProgress(message);
     }
     if (message.type === "sc_get_capture_status") {
-      sendResponse({
-        ok: true,
-        videoId: currentVideoId,
-        title: currentVideoId ? extractYouTubeMetadata().title : "",
-        transcriptAvailable: ytCaptions.length > 0,
+      const liveVideoId = currentVideoId;
+      if (!liveVideoId) {
+        sendResponse({ ok: true, videoId: "", title: "", transcriptAvailable: false });
+        return;
+      }
+      if (ytCaptions.length > 0) {
+        sendResponse({
+          ok: true,
+          videoId: liveVideoId,
+          title: extractYouTubeMetadata().title,
+          transcriptAvailable: true,
+        });
+        return;
+      }
+      // Live captions may be empty right after navigation while a verified
+      // transcript for this exact video sits in storage — check before
+      // reporting unavailable so the badge never disagrees with copy/export.
+      storage.get([`sc_transcript_${liveVideoId}`], (data) => {
+        if (currentVideoId !== liveVideoId) {
+          sendResponse({ ok: true, videoId: currentVideoId, title: "", transcriptAvailable: false });
+          return;
+        }
+        const cached = data[`sc_transcript_${liveVideoId}`];
+        sendResponse({
+          ok: true,
+          videoId: liveVideoId,
+          title: extractYouTubeMetadata().title,
+          transcriptAvailable: Array.isArray(cached) && cached.length > 0,
+        });
       });
+      return true;
     }
     if (message.type === "sc_get_current_markdown") {
       if (!currentVideoId) {
@@ -1198,6 +1225,8 @@
       ytCaptions = [];
       setTranscriptState("waiting", "Waiting for captions for this video…");
       cachedMarkdown = ""; // reset cache for new video
+      cachedMarkdownVideoId = "";
+      cachedMarkdownTranscriptCount = -1;
       hasAttemptedAutoClick = false; // reset auto-trigger state
       injectYouTubeWidget(videoId, 0);
       injectTimelineMarkers();
@@ -2144,6 +2173,8 @@
       try {
         const md = await generateMarkdown();
         cachedMarkdown = md;
+        cachedMarkdownVideoId = currentVideoId;
+        cachedMarkdownTranscriptCount = ytCaptions.length;
         preview.textContent = md;
       } catch (err) {
         console.error("Failed to generate markdown preview:", err);
@@ -3235,12 +3266,19 @@ ${JSON.stringify(snapshot, null, 2)}
   }
 
   async function loadTranscriptFromTracks(tracks) {
+    const expectedVideoId = currentVideoId;
     const englishTrack =
       tracks.find((t) => t.languageCode === "en") || tracks[0];
     try {
       const res = await fetch(englishTrack.baseUrl);
       const rawText = await res.text();
       const segments = parseCaptionXmlOrJson(rawText);
+
+      // Navigation may have happened mid-fetch — never attribute another
+      // video's captions to this one.
+      if (currentVideoId !== expectedVideoId || getYouTubeVideoId() !== expectedVideoId) {
+        return;
+      }
 
       const isNoise = (t) =>
         /^\s*$/.test(t) ||
@@ -3720,10 +3758,28 @@ ${JSON.stringify(snapshot, null, 2)}
     if (meta.likes) md += `Likes: ${meta.likes}\n`;
     if (meta.uploadDate) md += `Published: ${meta.uploadDate}\n`;
     if (meta.duration) md += `Duration: ${meta.duration}\n`;
-    if (transcriptState.videoId === currentVideoId) {
-      md += `Transcript Status: ${transcriptState.status}\n`;
-      if (transcriptState.source) md += `Transcript Source: ${transcriptState.source}\n`;
-      if (transcriptState.updatedAt) md += `Transcript Checked: ${transcriptState.updatedAt}\n`;
+    // Derive the receipt from the captions actually embedded below — never
+    // claim "ready/verified" when this export contains no transcript. If the
+    // badge says ready but neither live nor stored captions exist for this
+    // video, self-heal the badge instead of exporting a lie.
+    if (captions.length > 0) {
+      md += `Transcript Status: ready\n`;
+      if (transcriptState.videoId === currentVideoId && transcriptState.source) {
+        md += `Transcript Source: ${transcriptState.source}\n`;
+      }
+      if (transcriptState.videoId === currentVideoId && transcriptState.updatedAt) {
+        md += `Transcript Checked: ${transcriptState.updatedAt}\n`;
+      } else {
+        md += `Transcript Checked: ${new Date().toISOString()}\n`;
+      }
+    } else {
+      if (transcriptState.videoId === currentVideoId && transcriptState.status === "ready") {
+        setTranscriptState("waiting", "No captions found for this video on re-check — press Sync.");
+      }
+      md += `Transcript Status: ${transcriptState.videoId === currentVideoId ? transcriptState.status : "waiting"}\n`;
+      if (transcriptState.videoId === currentVideoId && transcriptState.updatedAt) {
+        md += `Transcript Checked: ${transcriptState.updatedAt}\n`;
+      }
     }
     md += `Copied: ${new Date().toISOString().slice(0, 10)}\n`;
     if (meta.description) {
@@ -3965,10 +4021,18 @@ ${JSON.stringify(snapshot, null, 2)}
 
   async function copyCompleteMarkdown() {
     // Use pre-cached markdown so clipboard fires synchronously inside the user gesture.
-    // If cache empty (tab opened but preview not yet loaded), refresh then copy.
+    // The cache is only reused when it was built for THIS video with the SAME
+    // transcript state — otherwise regenerate, so copy never serves a stale
+    // (empty or previous-video) transcript while the badge says verified.
     try {
-      const markdown = cachedMarkdown || await generateMarkdown();
+      const cacheValid =
+        cachedMarkdown &&
+        cachedMarkdownVideoId === currentVideoId &&
+        cachedMarkdownTranscriptCount === ytCaptions.length;
+      const markdown = cacheValid ? cachedMarkdown : await generateMarkdown();
       cachedMarkdown = markdown;
+      cachedMarkdownVideoId = currentVideoId;
+      cachedMarkdownTranscriptCount = ytCaptions.length;
       const copied = await scCopyText(markdown);
       showToast(
         copied
