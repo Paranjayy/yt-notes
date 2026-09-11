@@ -36,6 +36,25 @@
     renderStatus();
   }
 
+  /** Page-level toast (mirrors YouTube's showToast) for copy/download receipts. */
+  function scToast(msg, ms = 2600) {
+    try {
+      let t = document.getElementById("sc-spotify-toast");
+      if (!t) {
+        t = document.createElement("div");
+        t.id = "sc-spotify-toast";
+        t.style.cssText = "position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(0);background:rgba(15,15,20,.96);color:#fff;padding:10px 18px;border-radius:10px;font-family:system-ui,sans-serif;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.5);z-index:2147483647;border:1px solid rgba(29,185,84,.4);opacity:0;transition:opacity .2s;pointer-events:none;max-width:80vw;";
+        document.body.appendChild(t);
+      }
+      t.textContent = msg;
+      t.style.opacity = "1";
+      clearTimeout(t._timer);
+      t._timer = setTimeout(() => {
+        t.style.opacity = "0";
+      }, ms);
+    } catch {}
+  }
+
   function $(sel, root = document) {
     try { return root.querySelector(sel); } catch { return null; }
   }
@@ -466,6 +485,8 @@
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 4000);
+    // Single choke point: every widget + popup download toasts from here.
+    scToast(`📥 Downloaded ${filename}.`);
   }
 
   function safeFilename(meta, ext = ".md") {
@@ -702,13 +723,22 @@
       panel.scrollIntoView({ block: "center" });
     };
     el.querySelector("#sc-sp-copy").onclick = async () => {
-      const { markdown } = await buildMarkdown();
-      await navigator.clipboard.writeText(markdown);
-      renderLines();
+      try {
+        const { markdown } = await buildMarkdown();
+        await navigator.clipboard.writeText(markdown);
+        scToast(`📋 Episode capture copied (${segments.length} transcript lines).`);
+        renderLines();
+      } catch (err) {
+        scToast(`❌ Copy failed — ${err?.message || "try Download instead"}.`);
+      }
     };
     el.querySelector("#sc-sp-dl").onclick = async () => {
-      const { markdown, meta } = await buildMarkdown();
-      downloadFile(safeFilename(meta), markdown);
+      try {
+        const { markdown, meta } = await buildMarkdown();
+        downloadFile(safeFilename(meta), markdown);
+      } catch (err) {
+        scToast(`❌ Download failed — ${err?.message || "retry"}.`);
+      }
     };
     el.querySelector("#sc-sp-search").oninput = (e) => renderLines(e.target.value);
     wireFloatingChrome(el);
@@ -1077,19 +1107,32 @@
       }
     };
     el.querySelector("#sc-sp-pl-copy").onclick = async () => {
-      if (!plTracks.length) await backupPlaylist({ scroll: false }).catch(() => {});
-      const md = (H.buildPlaylistMarkdown || ((m) => `# ${m.title}`))(plMetaCache || extractPlaylistMetadata(), plTracks, { capturedAt: new Date().toISOString() });
-      await navigator.clipboard.writeText(md);
-      setPlStatus(plTracks.length ? "ready" : plStatus.status, plTracks.length ? `Copied ${plTracks.length} tracks.` : plStatus.message);
+      try {
+        if (!plTracks.length) await backupPlaylist({ scroll: false }).catch(() => {});
+        const md = (H.buildPlaylistMarkdown || ((m) => `# ${m.title}`))(plMetaCache || extractPlaylistMetadata(), plTracks, { capturedAt: new Date().toISOString() });
+        await navigator.clipboard.writeText(md);
+        setPlStatus(plTracks.length ? "ready" : plStatus.status, plTracks.length ? `Copied ${plTracks.length} tracks.` : plStatus.message);
+        scToast(plTracks.length ? `📋 Playlist copied (${plTracks.length} tracks).` : "⚠️ Nothing to copy yet — press Backup tracks.");
+      } catch (err) {
+        scToast(`❌ Copy failed — ${err?.message || "try Download instead"}.`);
+      }
     };
     const downloadPl = async (kind) => {
-      if (!plTracks.length) await backupPlaylist({ scroll: true }).catch(() => {});
-      const meta = plMetaCache || extractPlaylistMetadata();
-      const base = (meta.title || "spotify-playlist").replace(/[\\/:*?"<>|]/g, "").replace(/\s+/g, " ").trim().slice(0, 100);
-      if (kind === "csv") {
-        downloadFile(`${base}.csv`, playlistToCsv(plTracks), "text/csv");
-      } else {
-        downloadFile(`${base}.md`, (H.buildPlaylistMarkdown || ((m) => `# ${m.title}`))(meta, plTracks, { capturedAt: new Date().toISOString() }));
+      try {
+        if (!plTracks.length) await backupPlaylist({ scroll: true }).catch(() => {});
+        if (!plTracks.length) {
+          scToast("⚠️ Nothing to download yet — press Backup tracks.");
+          return;
+        }
+        const meta = plMetaCache || extractPlaylistMetadata();
+        const base = (meta.title || "spotify-playlist").replace(/[\\/:*?"<>|]/g, "").replace(/\s+/g, " ").trim().slice(0, 100);
+        if (kind === "csv") {
+          downloadFile(`${base}.csv`, playlistToCsv(plTracks), "text/csv");
+        } else {
+          downloadFile(`${base}.md`, (H.buildPlaylistMarkdown || ((m) => `# ${m.title}`))(meta, plTracks, { capturedAt: new Date().toISOString() }));
+        }
+      } catch (err) {
+        scToast(`❌ Download failed — ${err?.message || "retry"}.`);
       }
     };
     el.querySelector("#sc-sp-pl-csv").onclick = () => downloadPl("csv");
@@ -1318,37 +1361,48 @@
       }
     };
     el.querySelector("#sc-sp-ly-copy").onclick = async () => {
-      if (!lyricLines.length) {
-        try {
-          const out = await collectLyrics();
-          lyricLines = out.lines;
-          setLyricStatus("ready", out.status, { source: out.source, synced: out.synced });
-        } catch (err) {
-          setLyricStatus("error", err?.message || "Sync failed.");
-          return;
+      try {
+        if (!lyricLines.length) {
+          try {
+            const out = await collectLyrics();
+            lyricLines = out.lines;
+            setLyricStatus("ready", out.status, { source: out.source, synced: out.synced });
+          } catch (err) {
+            setLyricStatus("error", err?.message || "Sync failed.");
+            scToast(`❌ Lyrics sync failed — ${err?.message || "retry"}.`);
+            return;
+          }
         }
+        const md = (H.buildLyricsMarkdown || ((m) => `# ${m.title}`))(
+          lyricMetaCache || extractTrackMetadata(), lyricLines,
+          { synced: lyricStatus.synced, source: lyricStatus.source, capturedAt: new Date().toISOString() },
+        );
+        await navigator.clipboard.writeText(md);
+        scToast(`📋 Lyrics copied (${lyricLines.length} lines).`);
+        renderLyricLines();
+      } catch (err) {
+        scToast(`❌ Copy failed — ${err?.message || "try Download instead"}.`);
       }
-      const md = (H.buildLyricsMarkdown || ((m) => `# ${m.title}`))(
-        lyricMetaCache || extractTrackMetadata(), lyricLines,
-        { synced: lyricStatus.synced, source: lyricStatus.source, capturedAt: new Date().toISOString() },
-      );
-      await navigator.clipboard.writeText(md);
-      renderLyricLines();
     };
     el.querySelector("#sc-sp-ly-dl").onclick = async () => {
-      if (!lyricLines.length) {
-        try {
-          const out = await collectLyrics();
-          lyricLines = out.lines;
-          setLyricStatus("ready", out.status, { source: out.source, synced: out.synced });
-        } catch (err) {
-          setLyricStatus("error", err?.message || "Sync failed.");
-          return;
+      try {
+        if (!lyricLines.length) {
+          try {
+            const out = await collectLyrics();
+            lyricLines = out.lines;
+            setLyricStatus("ready", out.status, { source: out.source, synced: out.synced });
+          } catch (err) {
+            setLyricStatus("error", err?.message || "Sync failed.");
+            scToast(`❌ Lyrics sync failed — ${err?.message || "retry"}.`);
+            return;
+          }
         }
+        const meta = lyricMetaCache || extractTrackMetadata();
+        const base = `${(meta.artists[0] ? meta.artists[0] + " - " : "")}${meta.title}`.replace(/[\\/:*?"<>|]/g, "").replace(/\s+/g, " ").trim().slice(0, 100) || "spotify-lyrics";
+        downloadFile(`${base}.md`, (H.buildLyricsMarkdown || ((m) => `# ${m.title}`))(meta, lyricLines, { synced: lyricStatus.synced, source: lyricStatus.source, capturedAt: new Date().toISOString() }));
+      } catch (err) {
+        scToast(`❌ Download failed — ${err?.message || "retry"}.`);
       }
-      const meta = lyricMetaCache || extractTrackMetadata();
-      const base = `${(meta.artists[0] ? meta.artists[0] + " - " : "")}${meta.title}`.replace(/[\\/:*?"<>|]/g, "").replace(/\s+/g, " ").trim().slice(0, 100) || "spotify-lyrics";
-      downloadFile(`${base}.md`, (H.buildLyricsMarkdown || ((m) => `# ${m.title}`))(meta, lyricLines, { synced: lyricStatus.synced, source: lyricStatus.source, capturedAt: new Date().toISOString() }));
     };
     wireFloatingChrome(el, "sc_spotify_ly_pos", "sc_spotify_ly_collapsed");
     setLyricStatus("idle", "Track detected.");

@@ -32,6 +32,25 @@
     return new Promise((r) => setTimeout(r, ms));
   }
 
+  /** Page-level toast for copy/download receipts. */
+  function scToast(msg, ms = 2600) {
+    try {
+      let t = document.getElementById("sc-x-toast");
+      if (!t) {
+        t = document.createElement("div");
+        t.id = "sc-x-toast";
+        t.style.cssText = "position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:rgba(10,10,14,.96);color:#fff;padding:10px 18px;border-radius:10px;font-family:system-ui,sans-serif;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.5);z-index:2147483647;border:1px solid rgba(255,255,255,.25);opacity:0;transition:opacity .2s;pointer-events:none;max-width:80vw;";
+        document.body.appendChild(t);
+      }
+      t.textContent = msg;
+      t.style.opacity = "1";
+      clearTimeout(t._timer);
+      t._timer = setTimeout(() => {
+        t.style.opacity = "0";
+      }, ms);
+    } catch {}
+  }
+
   function timelineRoot() {
     return document.querySelector('main [data-testid="primaryColumn"]') || document.querySelector("main") || document.body;
   }
@@ -183,6 +202,8 @@
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 4000);
+    // Single choke point: every widget + popup download toasts from here.
+    scToast(`📥 Downloaded ${filename}.`);
   }
 
   function injectPanel() {
@@ -228,8 +249,10 @@
       try {
         const { markdown } = await capture({ scroll: false });
         await navigator.clipboard.writeText(markdown);
+        scToast(`📋 X capture copied (${tweets.length} posts).`);
       } catch (err) {
         setStatus("error", err?.message || "Copy failed.");
+        scToast(`❌ Copy failed — ${err?.message || "try Download instead"}.`);
       }
     };
     el.querySelector("#sc-x-dl").onclick = async () => {
@@ -239,6 +262,7 @@
         downloadFile(`${base}.md`, markdown);
       } catch (err) {
         setStatus("error", err?.message || "Download failed.");
+        scToast(`❌ Download failed — ${err?.message || "retry"}.`);
       }
     };
     wireChrome(el);
