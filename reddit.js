@@ -170,7 +170,12 @@
     const p = scrape(main);
     if (!p) return null;
     const body = (H.extractPostBody || (() => ""))(main);
-    return { ...p, body };
+    const media = (H.collectRedditMedia || (() => []))(main);
+    // The card attribute is the canonical media link when present.
+    if (p.contentHref && !media.includes(p.contentHref.split("?")[0])) {
+      media.unshift(p.contentHref.split("?")[0]);
+    }
+    return { ...p, body, media };
   }
 
   async function capture({ scroll = false } = {}) {

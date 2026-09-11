@@ -57,6 +57,8 @@ function scrapeFeedPost(el) {
   const title = attr(el, "post-title") || textOf(q('a[slot="full-post-link"], a[slot="title"]')) || "(untitled)";
   const url = permalink ? `https://www.reddit.com${permalink.split("?")[0]}` : "";
   const flair = textOf(q("shreddit-post-flair")).slice(0, 60);
+  // Direct media link when the card exposes one (video/gallery/link posts).
+  const contentHref = attr(el, "content-href");
   return {
     postId,
     title,
@@ -71,6 +73,7 @@ function scrapeFeedPost(el) {
     subreddit: attr(el, "subreddit-prefixed-name"),
     flair,
     stickied: el.hasAttribute("stickied"),
+    contentHref,
   };
 }
 
@@ -108,6 +111,39 @@ function extractPostBody(postEl) {
     if (body.length >= 20) return body.slice(0, 6000);
   } catch {}
   return "";
+}
+
+/**
+ * Collect image/video URLs under a root (post element or document).
+ * Mirrors the proven console recipe: redd.it image hosts, gallery/video
+ * links, shreddit-player src, and raw video sources. Preview hosts are
+ * normalized to canonical i.redd.it, query strings stripped.
+ * DOM-only, jsdom-testable.
+ */
+function collectRedditMedia(root) {
+  if (!root) return [];
+  const urls = new Set();
+  const add = (u) => {
+    if (!u || typeof u !== "string") return;
+    const clean = u.replace(/preview\.redd\.it/g, "i.redd.it").split("?")[0].trim();
+    if (/^https?:\/\//.test(clean)) urls.add(clean);
+  };
+  try {
+    root.querySelectorAll('img[src*="preview.redd.it"], img[src*="i.redd.it"]').forEach((img) => {
+      add(img.currentSrc || img.getAttribute("src"));
+    });
+    root.querySelectorAll('a[href*="i.redd.it"], a[href*="v.redd.it"], a[href^="/gallery/"]').forEach((a) => {
+      const href = a.getAttribute("href") || "";
+      add(href.startsWith("/") ? `https://www.reddit.com${href}` : href);
+    });
+    root.querySelectorAll("shreddit-player").forEach((p) => {
+      add(p.getAttribute("src"));
+    });
+    root.querySelectorAll("video > source[src], video[src]").forEach((v) => {
+      add(v.getAttribute("src"));
+    });
+  } catch {}
+  return [...urls];
 }
 
 /** All feed posts currently rendered under root, deduped by post id. */
@@ -244,6 +280,16 @@ function buildRedditMarkdown({ route = {}, header = null, posts = [], comments =
       lines.push("> Post text not captured (media/link post, or body not rendered — scroll up to the post, then re-run).");
       lines.push("");
     }
+    const media = Array.isArray(post?.media) ? post.media : [];
+    if (media.length) {
+      lines.push("## Media");
+      lines.push("");
+      media.forEach((src) => {
+        if (/\.(jpg|jpeg|png|gif|webp)$/i.test(src)) lines.push(`![](${src})`);
+        else lines.push(src);
+      });
+      lines.push("");
+    }
     lines.push(`## Comments (${comments.length} captured)`);
     lines.push("");
     if (!comments.length) {
@@ -270,6 +316,7 @@ function buildRedditMarkdown({ route = {}, header = null, posts = [], comments =
       posts.forEach((p) => {
         const meta = [`⬆️ ${p.score || 0}`, `💬 ${p.comments || 0}`, p.type || ""].filter(Boolean).join(" · ");
         lines.push(`${p.position}. [${p.title}](${p.url}) — u/${p.author || "?"} (${meta})`);
+        if (p.contentHref) lines.push(`   ${p.contentHref}`);
       });
       lines.push("");
     }
@@ -290,6 +337,7 @@ if (typeof module !== "undefined" && module.exports) {
     scrapeComment,
     scrapeComments,
     extractPostBody,
+    collectRedditMedia,
     buildRedditMarkdown,
   };
 } else if (typeof window !== "undefined") {
@@ -301,6 +349,7 @@ if (typeof module !== "undefined" && module.exports) {
     scrapeComment,
     scrapeComments,
     extractPostBody,
+    collectRedditMedia,
     buildRedditMarkdown,
   };
 }

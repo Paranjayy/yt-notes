@@ -58,6 +58,25 @@ describe('reddit-helpers.js', () => {
     });
   });
 
+  describe('collectRedditMedia', () => {
+    it('collects image/player/video urls, normalizes preview hosts', () => {
+      document.body.innerHTML = `<shreddit-post>
+        <img src="https://preview.redd.it/abc123?width=640&auto=webp&s=zzz">
+        <img src="https://www.redditstatic.com/avatar.png">
+        <shreddit-player src="https://v.redd.it/def456/DASH_720.mp4?source=fallback"></shreddit-player>
+        <video><source src="https://v.redd.it/ghi789/video.mp4"></video>
+        <a href="/gallery/jkl012">gallery</a>
+      </shreddit-post>`;
+      const urls = H.collectRedditMedia(document.querySelector('shreddit-post'));
+      expect(urls).toContain('https://i.redd.it/abc123');
+      expect(urls).toContain('https://v.redd.it/def456/DASH_720.mp4');
+      expect(urls).toContain('https://v.redd.it/ghi789/video.mp4');
+      expect(urls).toContain('https://www.reddit.com/gallery/jkl012');
+      expect(urls.join('|')).not.toContain('redditstatic');
+      expect(H.collectRedditMedia(null)).toEqual([]);
+    });
+  });
+
   describe('buildRedditMarkdown', () => {    it('renders feed backup with receipts', () => {
       const md = H.buildRedditMarkdown({
         route: { kind: 'subreddit', subreddit: 'macapps', url: 'https://www.reddit.com/r/macapps/' },
@@ -75,6 +94,17 @@ describe('reddit-helpers.js', () => {
       expect(links).toBe('https://www.reddit.com/r/x/comments/1/');
       const empty = H.buildRedditMarkdown({ route: { kind: 'post', subreddit: 'macapps', postId: 'x', url: 'https://www.reddit.com/r/macapps/comments/x/' }, post: { title: 'T' }, comments: [] });
       expect(empty).toContain('No comments captured');
+    });
+
+    it('renders a media section for posts with media', () => {
+      const md = H.buildRedditMarkdown({
+        route: { kind: 'post', subreddit: 'teenindia', postId: '1', url: 'https://www.reddit.com/r/teenindia/comments/1/' },
+        post: { title: 'T', media: ['https://i.redd.it/frog.jpg', 'https://v.redd.it/abc/DASH.mp4'] },
+        comments: [],
+      });
+      expect(md).toContain('## Media');
+      expect(md).toContain('![](https://i.redd.it/frog.jpg)');
+      expect(md).toContain('https://v.redd.it/abc/DASH.mp4');
     });
   });
 });
