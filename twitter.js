@@ -191,6 +191,39 @@
       box.appendChild(more);
     }
   }
+  /** Local AI-DOM snapshot (low/high) — widget entry point to the cleaner. */
+  async function copyAiSnapshot(mode = "low") {
+    const cleanMode = mode === "high" ? "high" : "low";
+    try {
+      const root = document.querySelector("main") || document.body;
+      const clone = root.cloneNode(true);
+      clone.querySelectorAll("#sc-x-widget, #sc-x-toast").forEach((el) => el.remove());
+      const bytesBefore = clone.outerHTML.length;
+      if (typeof window.stripDomNoise === "function") {
+        window.stripDomNoise(clone, cleanMode);
+      } else {
+        clone.querySelectorAll("script, style, noscript, iframe").forEach((el) => el.remove());
+      }
+      const html = clone.outerHTML;
+      const snapshot = {
+        metadata: {
+          timestamp: new Date().toISOString(),
+          url: location.href,
+          title: document.title,
+          type: cleanMode === "high" ? "High-Density" : "Token-Optimized",
+          mode: cleanMode,
+          bytesBefore,
+          bytesAfter: html.length,
+        },
+        stack: [],
+        clean_dom: html,
+      };
+      await navigator.clipboard.writeText(JSON.stringify(snapshot, null, 2));
+      scToast(`🤖 ${cleanMode} snapshot copied (${html.length.toLocaleString()} chars).`);
+    } catch (err) {
+      scToast(`❌ Snapshot failed — ${err?.message || "retry"}.`);
+    }
+  }
 
   function downloadFile(filename, text, mime = "text/markdown") {
     const blob = new Blob([text], { type: `${mime};charset=utf-8` });
@@ -225,6 +258,8 @@
           <button id="sc-x-capture" style="padding:7px 11px;border-radius:8px;border:none;background:#e7e9ea;color:#000;font-weight:800;font-size:12px;cursor:pointer;">Capture posts</button>
           <button id="sc-x-copy" style="padding:7px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-weight:700;font-size:12px;cursor:pointer;">Copy</button>
           <button id="sc-x-dl" style="padding:7px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-weight:700;font-size:12px;cursor:pointer;">Download .md</button>
+          <button id="sc-x-snap" title="Copy low-clean DOM snapshot" style="padding:7px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-weight:700;font-size:12px;cursor:pointer;">📸 DOM</button>
+          <button id="sc-x-snap-high" title="Copy high-density DOM snapshot" style="padding:7px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-weight:700;font-size:12px;cursor:pointer;">📸 High</button>
         </div>
         <div>
           <div style="font-size:10px;font-weight:700;letter-spacing:.06em;opacity:.6;margin-bottom:4px;">QUICK COPY</div>
@@ -263,6 +298,8 @@
         scToast(`❌ Copy failed — ${err?.message || "try Download instead"}.`);
       }
     };
+    el.querySelector("#sc-x-snap").onclick = () => copyAiSnapshot("low");
+    el.querySelector("#sc-x-snap-high").onclick = () => copyAiSnapshot("high");
     el.querySelector("#sc-x-dl").onclick = async () => {
       try {
         const { route, markdown } = await capture({ scroll: false });

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Social Companion & YT Note-Taker",
-  "version": "1.19.0",
+  "version": "1.21.0",
   "description": "Premium companion for YouTube, X (Twitter), Reddit, and Cambridge Dictionary. Take notes, extract transcripts, scrape word lists, and export to markdown/JSON/CSV.",
   "permissions": [
     "storage",
@@ -19,6 +19,7 @@
     "https://*.spotify.com/*",
     "https://x.com/*",
     "https://twitter.com/*",
+    "https://*.reddit.com/*",
     "https://*.scdn.co/*",
     "https://www.googleapis.com/*",
     "https://*.twitter.com/*",
@@ -57,10 +58,18 @@
     },
     {
       "matches": [
+        "https://www.reddit.com/*",
+        "https://*.reddit.com/*"
+      ],
+      "js": ["reddit-helpers.js", "reddit.js"],
+      "run_at": "document_end"
+    },
+    {
+      "matches": [
         "https://open.spotify.com/*",
         "https://*.spotify.com/*"
       ],
-      "js": ["spotify-helpers.js", "spotify.js"],
+      "js": ["helpers.js", "spotify-helpers.js", "spotify.js"],
       "run_at": "document_end"
     },
     {

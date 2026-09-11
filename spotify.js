@@ -475,6 +475,41 @@
     return { markdown, meta, related };
   }
 
+  /** Local AI-DOM snapshot (low/high) — the widget entry point to the
+   *  same cleaner behind the right-click menu. */
+  async function copyAiSnapshot(mode = "low") {
+    const cleanMode = mode === "high" ? "high" : "low";
+    try {
+      const root = document.querySelector("main") || document.body;
+      const clone = root.cloneNode(true);
+      clone.querySelectorAll("#sc-spotify-widget, #sc-spotify-pl-widget, #sc-spotify-ly-widget, #sc-spotify-toast, #sc-spotify-select-fix").forEach((el) => el.remove());
+      const bytesBefore = clone.outerHTML.length;
+      if (typeof window.stripDomNoise === "function") {
+        window.stripDomNoise(clone, cleanMode);
+      } else {
+        clone.querySelectorAll("script, style, noscript, iframe").forEach((el) => el.remove());
+      }
+      const html = clone.outerHTML;
+      const snapshot = {
+        metadata: {
+          timestamp: new Date().toISOString(),
+          url: location.href,
+          title: document.title,
+          type: cleanMode === "high" ? "High-Density" : "Token-Optimized",
+          mode: cleanMode,
+          bytesBefore,
+          bytesAfter: html.length,
+        },
+        stack: [],
+        clean_dom: html,
+      };
+      await navigator.clipboard.writeText(JSON.stringify(snapshot, null, 2));
+      scToast(`🤖 ${cleanMode} snapshot copied (${html.length.toLocaleString()} chars).`);
+    } catch (err) {
+      scToast(`❌ Snapshot failed — ${err?.message || "retry"}.`);
+    }
+  }
+
   function downloadFile(filename, text, mime = "text/markdown") {
     const blob = new Blob([text], { type: `${mime};charset=utf-8` });
     const url = URL.createObjectURL(blob);
@@ -662,6 +697,8 @@
           <button id="sc-sp-select" style="padding:7px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-weight:700;font-size:12px;cursor:pointer;" title="Select the transcript text on the page so you can copy part of it">Select text</button>
           <button id="sc-sp-copy" style="padding:7px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-weight:700;font-size:12px;cursor:pointer;">Copy</button>
           <button id="sc-sp-dl" style="padding:7px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-weight:700;font-size:12px;cursor:pointer;">Download .md</button>
+          <button id="sc-sp-snap" title="Copy low-clean DOM snapshot" style="padding:7px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-weight:700;font-size:12px;cursor:pointer;">📸 DOM</button>
+          <button id="sc-sp-snap-high" title="Copy high-density DOM snapshot (strips hashed classes)" style="padding:7px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-weight:700;font-size:12px;cursor:pointer;">📸 High</button>
         </div>
         <input id="sc-sp-search" placeholder="Search transcript…" style="width:100%;box-sizing:border-box;padding:7px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.04);color:inherit;font-size:12px;outline:none;margin-bottom:8px;">
         <div id="sc-sp-meta" style="font-size:11px;opacity:.75;margin-bottom:8px;">Loading episode metadata…</div>
@@ -741,6 +778,8 @@
       }
     };
     el.querySelector("#sc-sp-search").oninput = (e) => renderLines(e.target.value);
+    el.querySelector("#sc-sp-snap").onclick = () => copyAiSnapshot("low");
+    el.querySelector("#sc-sp-snap-high").onclick = () => copyAiSnapshot("high");
     wireFloatingChrome(el);
     renderStatus();
   }
@@ -1087,6 +1126,8 @@
           <button id="sc-sp-pl-copy" style="padding:7px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-weight:700;font-size:12px;cursor:pointer;">Copy MD</button>
           <button id="sc-sp-pl-csv" style="padding:7px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-weight:700;font-size:12px;cursor:pointer;">CSV</button>
           <button id="sc-sp-pl-dl" style="padding:7px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-weight:700;font-size:12px;cursor:pointer;">Download .md</button>
+          <button id="sc-sp-pl-snap" title="Copy low-clean DOM snapshot" style="padding:7px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-weight:700;font-size:12px;cursor:pointer;">📸 DOM</button>
+          <button id="sc-sp-pl-snap-high" title="Copy high-density DOM snapshot" style="padding:7px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-weight:700;font-size:12px;cursor:pointer;">📸 High</button>
         </div>
         <div id="sc-sp-pl-meta" style="font-size:11px;opacity:.75;">Loading playlist…</div>
         <div id="sc-sp-pl-lines" style="max-height:280px;overflow-y:auto;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:10px;font-size:12px;display:flex;flex-direction:column;gap:5px;">Not backed up yet.</div>
@@ -1137,6 +1178,8 @@
     };
     el.querySelector("#sc-sp-pl-csv").onclick = () => downloadPl("csv");
     el.querySelector("#sc-sp-pl-dl").onclick = () => downloadPl("md");
+    el.querySelector("#sc-sp-pl-snap").onclick = () => copyAiSnapshot("low");
+    el.querySelector("#sc-sp-pl-snap-high").onclick = () => copyAiSnapshot("high");
     wireFloatingChrome(el, "sc_spotify_pl_pos", "sc_spotify_pl_collapsed");
     setPlStatus("idle", "Playlist detected.");
   }
@@ -1338,6 +1381,8 @@
           <button id="sc-sp-ly-sync" style="padding:7px 11px;border-radius:8px;border:none;background:#1db954;color:#04120a;font-weight:800;font-size:12px;cursor:pointer;">Sync lyrics</button>
           <button id="sc-sp-ly-copy" style="padding:7px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-weight:700;font-size:12px;cursor:pointer;">Copy</button>
           <button id="sc-sp-ly-dl" style="padding:7px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-weight:700;font-size:12px;cursor:pointer;">Download .md</button>
+          <button id="sc-sp-ly-snap" title="Copy low-clean DOM snapshot" style="padding:7px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-weight:700;font-size:12px;cursor:pointer;">📸 DOM</button>
+          <button id="sc-sp-ly-snap-high" title="Copy high-density DOM snapshot" style="padding:7px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-weight:700;font-size:12px;cursor:pointer;">📸 High</button>
         </div>
         <div id="sc-sp-ly-meta" style="font-size:11px;opacity:.75;">Loading track…</div>
         <div id="sc-sp-ly-lines" style="max-height:280px;overflow-y:auto;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:10px;font-size:12px;display:flex;flex-direction:column;gap:4px;">Not synced yet.</div>
@@ -1397,13 +1442,15 @@
             return;
           }
         }
-        const meta = lyricMetaCache || extractTrackMetadata();
-        const base = `${(meta.artists[0] ? meta.artists[0] + " - " : "")}${meta.title}`.replace(/[\\/:*?"<>|]/g, "").replace(/\s+/g, " ").trim().slice(0, 100) || "spotify-lyrics";
-        downloadFile(`${base}.md`, (H.buildLyricsMarkdown || ((m) => `# ${m.title}`))(meta, lyricLines, { synced: lyricStatus.synced, source: lyricStatus.source, capturedAt: new Date().toISOString() }));
+      const meta = lyricMetaCache || extractTrackMetadata();
+      const base = `${(meta.artists[0] ? meta.artists[0] + " - " : "")}${meta.title}`.replace(/[\\/:*?"<>|]/g, "").replace(/\s+/g, " ").trim().slice(0, 100) || "spotify-lyrics";
+      downloadFile(`${base}.md`, (H.buildLyricsMarkdown || ((m) => `# ${m.title}`))(meta, lyricLines, { synced: lyricStatus.synced, source: lyricStatus.source, capturedAt: new Date().toISOString() }));
       } catch (err) {
         scToast(`❌ Download failed — ${err?.message || "retry"}.`);
       }
     };
+    el.querySelector("#sc-sp-ly-snap").onclick = () => copyAiSnapshot("low");
+    el.querySelector("#sc-sp-ly-snap-high").onclick = () => copyAiSnapshot("high");
     wireFloatingChrome(el, "sc_spotify_ly_pos", "sc_spotify_ly_collapsed");
     setLyricStatus("idle", "Track detected.");
   }

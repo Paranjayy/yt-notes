@@ -2727,7 +2727,7 @@
 
     // Never snapshot our own UI.
     clone.querySelectorAll(
-      "[data-sc-ignore], #sc-youtube-widget, #sc-annotator-overlay, #sc-floating-action-button, #sc-social-panel, #sc-annotation-modal, #sc-x-widget, #sc-spotify-widget, #sc-spotify-pl-widget, #sc-spotify-ly-widget"
+      "[data-sc-ignore], #sc-youtube-widget, #sc-annotator-overlay, #sc-floating-action-button, #sc-social-panel, #sc-annotation-modal, #sc-x-widget, #sc-rd-widget, #sc-spotify-widget, #sc-spotify-pl-widget, #sc-spotify-ly-widget"
     ).forEach((el) => el.remove());
 
     const bytesBefore = clone.outerHTML.length;
