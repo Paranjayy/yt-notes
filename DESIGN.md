@@ -69,3 +69,21 @@ status plus source and check timestamp.
 - Later GUI: any-website snapshot panel with mode toggle, before/after
   byte receipts, and versioned DOM history (hash + timestamp per
   snapshot, diff view) for extension-building iteration.
+
+## Feature pitches (accepted, unordered backlog)
+
+1. **Vault unification (dashboard archive).** YT/Spotify/X/Reddit captures
+   land in one local library with cross-links (`sc_spotify_match_*`
+   generalized). Kills the scattered-episode problem: one search across
+   everything, split episodes linked. Highest value — builds on all four
+   surfaces.
+2. **YOLO auto-capture for Spotify/X/Reddit.** YT has whitelist/YOLO vault
+   modes; the other three are manual-only. Same verified-capture pipeline,
+   automatic.
+3. **ZIP/CSV bundles for X + Reddit.** YT has master bundles; X threads
+   and subreddit feeds get the same one-click archive.
+4. **Quote/reply-tree expansion on X.** "View quotes" capture plus reply
+   sort (Relevant/Latest) control from the widget.
+5. **Media-flag precision.** A video post nests its player inside the photo
+   container, so 📷+🎬 can co-fire legitimately — but watch for promo
+   over-reporting; tighten only on a real misfire, not preemptively.
