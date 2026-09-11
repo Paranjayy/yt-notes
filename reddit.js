@@ -169,11 +169,7 @@
     const scrape = H.scrapeFeedPost || (() => null);
     const p = scrape(main);
     if (!p) return null;
-    let body = "";
-    try {
-      const bodyEl = main.querySelector('[slot="text-body"], div[id$="-post-rtjson-content"], [slot="content"]');
-      body = (bodyEl?.innerText || "").replace(/\s+/g, " ").trim().slice(0, 6000);
-    } catch {}
+    const body = (H.extractPostBody || (() => ""))(main);
     return { ...p, body };
   }
 

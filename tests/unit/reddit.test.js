@@ -44,6 +44,20 @@ describe('reddit-helpers.js', () => {
     });
   });
 
+  describe('extractPostBody (layered fallbacks)', () => {
+    it('prefers body slots, then legacy containers, then paragraphs', () => {
+      document.body.innerHTML = `<shreddit-post post-title="T"><div slot="text-body"><p>Slot body here, long enough.</p></div><p>Ignored dup</p></shreddit-post>`;
+      expect(H.extractPostBody(document.querySelector('shreddit-post'))).toContain('Slot body here');
+      document.body.innerHTML = `<shreddit-post post-title="T"><div id="x-post-rtjson-content"><p>Legacy body text long enough.</p></div></shreddit-post>`;
+      expect(H.extractPostBody(document.querySelector('shreddit-post'))).toContain('Legacy body');
+      document.body.innerHTML = `<shreddit-post post-title="T"><div><p>First para of a real post body.</p><p>Second para continues here.</p></div><shreddit-post-flair><p>Flairish</p></shreddit-post-flair></shreddit-post>`;
+      const joined = H.extractPostBody(document.querySelector('shreddit-post'));
+      expect(joined).toContain('First para');
+      expect(joined).not.toContain('Flairish');
+      expect(H.extractPostBody(null)).toBe('');
+    });
+  });
+
   describe('buildRedditMarkdown', () => {    it('renders feed backup with receipts', () => {
       const md = H.buildRedditMarkdown({
         route: { kind: 'subreddit', subreddit: 'macapps', url: 'https://www.reddit.com/r/macapps/' },

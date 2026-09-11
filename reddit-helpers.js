@@ -74,6 +74,42 @@ function scrapeFeedPost(el) {
   };
 }
 
+/**
+ * Extract a post's text body from its <shreddit-post> element, layered:
+ * 1) known body slots, 2) legacy rtjson containers, 3) paragraph-join
+ * fallback (excludes flair/buttons/meta). Never returns UI chrome.
+ */
+function extractPostBody(postEl) {
+  if (!postEl) return "";
+  const textOf = (el) => (el?.textContent || "").replace(/\s+/g, " ").trim();
+  try {
+    const slot = postEl.querySelector('[slot="text-body"], [slot="post-body"]');
+    const slotText = textOf(slot);
+    if (slotText.length > 0) return slotText.slice(0, 6000);
+  } catch {}
+  try {
+    const legacy = postEl.querySelector('div[id*="-post-rtjson-content"], div[id*="post-rtjson"]');
+    const legacyText = textOf(legacy);
+    if (legacyText.length > 0) return legacyText.slice(0, 6000);
+  } catch {}
+  try {
+    const paras = Array.from(postEl.querySelectorAll("p")).filter((p) => {
+      try {
+        if (p.closest("shreddit-post-flair, button, a")) return false;
+      } catch {}
+      return textOf(p).length > 0;
+    });
+    // Drop the title paragraph if it duplicates post-title.
+    const titleAttr = (postEl.getAttribute && postEl.getAttribute("post-title")) || "";
+    const body = paras
+      .map(textOf)
+      .filter((t) => t && t !== titleAttr.trim())
+      .join("\n\n");
+    if (body.length >= 20) return body.slice(0, 6000);
+  } catch {}
+  return "";
+}
+
 /** All feed posts currently rendered under root, deduped by post id. */
 function scrapeFeedPosts(root) {
   if (!root) return [];
@@ -204,6 +240,9 @@ function buildRedditMarkdown({ route = {}, header = null, posts = [], comments =
       lines.push("");
       lines.push(post.body);
       lines.push("");
+    } else {
+      lines.push("> Post text not captured (media/link post, or body not rendered — scroll up to the post, then re-run).");
+      lines.push("");
     }
     lines.push(`## Comments (${comments.length} captured)`);
     lines.push("");
@@ -250,6 +289,7 @@ if (typeof module !== "undefined" && module.exports) {
     scrapeSubredditHeader,
     scrapeComment,
     scrapeComments,
+    extractPostBody,
     buildRedditMarkdown,
   };
 } else if (typeof window !== "undefined") {
@@ -260,6 +300,7 @@ if (typeof module !== "undefined" && module.exports) {
     scrapeSubredditHeader,
     scrapeComment,
     scrapeComments,
+    extractPostBody,
     buildRedditMarkdown,
   };
 }
