@@ -56,7 +56,10 @@
       #transcript-panel, #transcript-panel *,
       #description-panel, #description-panel *,
       [data-testid="episode-list"], [data-testid="episode-list"] *,
-      #sc-spotify-widget, #sc-spotify-widget * {
+      [data-testid="playlist-tracklist"], [data-testid="playlist-tracklist"] *,
+      #sc-spotify-widget, #sc-spotify-widget *,
+      #sc-spotify-pl-widget, #sc-spotify-pl-widget *,
+      #sc-spotify-ly-widget, #sc-spotify-ly-widget * {
         user-select: text !important;
         -webkit-user-select: text !important;
       }
@@ -472,6 +475,84 @@
 
   // --- Message contract (mirrors YouTube so popup/background keep working) ---
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    const route = currentRoute();
+    if (route.kind === "playlist") {
+      if (message.type === "sc_get_capture_status") {
+        sendResponse({
+          ok: true,
+          videoId: route.id,
+          title: (plMetaCache || extractPlaylistMetadata()).title,
+          transcriptAvailable: plTracks.length > 0,
+          platform: "spotify",
+        });
+        return;
+      }
+      if (message.type === "sc_get_current_markdown" || message.type === "sc_download_current_markdown") {
+        (async () => {
+          if (!plTracks.length) await backupPlaylist({ scroll: true });
+          const meta = plMetaCache || extractPlaylistMetadata();
+          return {
+            markdown: (H.buildPlaylistMarkdown || ((m) => `# ${m.title}`))(meta, plTracks, { capturedAt: new Date().toISOString() }),
+            meta,
+          };
+        })().then(({ markdown, meta }) => {
+          if (message.type === "sc_download_current_markdown") {
+            const base = (meta.title || "spotify-playlist").replace(/[\\/:*?"<>|]/g, "").replace(/\s+/g, " ").trim().slice(0, 100);
+            downloadFile(`${base}.md`, markdown);
+            sendResponse({ ok: true });
+          } else {
+            sendResponse({ ok: true, markdown, title: meta.title || "Spotify playlist", platform: "spotify" });
+          }
+        }).catch((e) => sendResponse({ ok: false, reason: e?.message || "Couldn't back up this playlist." }));
+        return true;
+      }
+      if (message.type === "sc_download_current_transcript") {
+        (async () => {
+          if (!plTracks.length) await backupPlaylist({ scroll: true });
+          const meta = plMetaCache || extractPlaylistMetadata();
+          const base = (meta.title || "spotify-playlist").replace(/[\\/:*?"<>|]/g, "").replace(/\s+/g, " ").trim().slice(0, 100);
+          downloadFile(`${base}.csv`, playlistToCsv(plTracks), "text/csv");
+          return { ok: true };
+        })().then(sendResponse).catch((e) => sendResponse({ ok: false, reason: e?.message || "Couldn't download this track list." }));
+        return true;
+      }
+      return;
+    }
+    if (route.kind === "track") {
+      if (message.type === "sc_get_capture_status") {
+        sendResponse({
+          ok: true,
+          videoId: route.id,
+          title: (lyricMetaCache || extractTrackMetadata()).title,
+          transcriptAvailable: lyricLines.length > 0,
+          platform: "spotify",
+        });
+        return;
+      }
+      if (message.type === "sc_get_current_markdown" || message.type === "sc_download_current_markdown" || message.type === "sc_download_current_transcript") {
+        (async () => {
+          if (!lyricLines.length) {
+            const out = await collectLyrics();
+            lyricLines = out.lines;
+            setLyricStatus("ready", out.status, { source: out.source, synced: out.synced });
+            renderLyricLines();
+          }
+          const meta = lyricMetaCache || extractTrackMetadata();
+          const md = (H.buildLyricsMarkdown || ((m) => `# ${m.title}`))(meta, lyricLines, { synced: lyricStatus.synced, source: lyricStatus.source, capturedAt: new Date().toISOString() });
+          return { md, meta };
+        })().then(({ md, meta }) => {
+          if (message.type === "sc_get_current_markdown") {
+            sendResponse({ ok: true, markdown: md, title: meta.title || "Spotify lyrics", platform: "spotify" });
+          } else {
+            const base = `${(meta.artists[0] ? meta.artists[0] + " - " : "")}${meta.title}`.replace(/[\\/:*?"<>|]/g, "").replace(/\s+/g, " ").trim().slice(0, 100) || "spotify-lyrics";
+            downloadFile(message.type === "sc_download_current_transcript" ? `${base}.lyrics.txt` : `${base}.md`, message.type === "sc_download_current_transcript" ? `${meta.title}\n${meta.url}\n\n${lyricLines.map((l) => (l && typeof l === "object" ? l.text : String(l))).join("\n")}\n` : md, message.type === "sc_download_current_transcript" ? "text/plain" : "text/markdown");
+            sendResponse({ ok: true });
+          }
+        }).catch((e) => sendResponse({ ok: false, reason: e?.message || "Couldn't capture these lyrics." }));
+        return true;
+      }
+      return;
+    }
     if (message.type === "sc_get_capture_status") {
       const episodeId = getEpisodeId(location.href);
       const ready = Boolean(episodeId) && segments.length > 0 && transcriptMeta.videoId === episodeId && transcriptMeta.status === "ready";
@@ -536,15 +617,15 @@
     // header, collapsible, position persisted — never blocks page content.
     el.style.cssText = "position:fixed;bottom:96px;right:24px;width:380px;max-height:540px;display:flex;flex-direction:column;border-radius:14px;border:1px solid rgba(255,255,255,.12);background:rgba(18,18,22,.97);color:#f8fafc;font-family:system-ui,sans-serif;box-shadow:0 8px 32px rgba(0,0,0,.45);overflow:hidden;z-index:9999;";
     el.innerHTML = `
-      <div id="sc-sp-head" style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 12px;background:#24212d;border-bottom:1px solid rgba(167,139,250,.28);cursor:move;user-select:none;-webkit-user-select:none;">
+      <div id="sc-sp-head" data-sc-head style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 12px;background:#24212d;border-bottom:1px solid rgba(167,139,250,.28);cursor:move;user-select:none;-webkit-user-select:none;">
         <strong style="font-size:13px;">🎙️ Spotify capture</strong>
         <span style="display:flex;align-items:center;gap:6px;">
           <span id="sc-sp-status" style="font-size:11px;padding:3px 8px;border:1px solid #555;border-radius:999px;white-space:nowrap;">…</span>
-          <button id="sc-sp-min" title="Collapse / expand" style="width:22px;height:22px;border-radius:6px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-size:13px;line-height:1;cursor:pointer;">–</button>
-          <button id="sc-sp-hide" title="Hide until next episode" style="width:22px;height:22px;border-radius:6px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-size:12px;line-height:1;cursor:pointer;">×</button>
+          <button id="sc-sp-min" data-sc-min title="Collapse / expand" style="width:22px;height:22px;border-radius:6px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-size:13px;line-height:1;cursor:pointer;">–</button>
+          <button id="sc-sp-hide" data-sc-hide title="Hide until next episode" style="width:22px;height:22px;border-radius:6px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-size:12px;line-height:1;cursor:pointer;">×</button>
         </span>
       </div>
-      <div id="sc-sp-body" style="display:flex;flex-direction:column;min-height:0;overflow:hidden;"></div>`;
+      <div id="sc-sp-body" data-sc-body style="display:flex;flex-direction:column;min-height:0;overflow:hidden;"></div>`;
     document.body.appendChild(el);
 
     const body = el.querySelector("#sc-sp-body");
@@ -635,21 +716,21 @@
   }
 
   // Draggable / collapsible / hideable floating chrome with persisted geometry.
-  function wireFloatingChrome(el) {
-    const head = el.querySelector("#sc-sp-head");
-    const body = el.querySelector("#sc-sp-body");
-    const minBtn = el.querySelector("#sc-sp-min");
-    const hideBtn = el.querySelector("#sc-sp-hide");
+  function wireFloatingChrome(el, posKey = "sc_spotify_widget_pos", collapsedKey = "sc_spotify_widget_collapsed") {
+    const head = el.querySelector("[data-sc-head]");
+    const body = el.querySelector("[data-sc-body]");
+    const minBtn = el.querySelector("[data-sc-min]");
+    const hideBtn = el.querySelector("[data-sc-hide]");
     try {
-      chrome.storage.local.get(["sc_spotify_widget_pos", "sc_spotify_widget_collapsed"], (data) => {
-        const pos = data?.sc_spotify_widget_pos;
+      chrome.storage.local.get([posKey, collapsedKey], (data) => {
+        const pos = data?.[posKey];
         if (pos && Number.isFinite(pos.left) && Number.isFinite(pos.top)) {
           el.style.left = `${Math.max(0, Math.min(window.innerWidth - 80, pos.left))}px`;
           el.style.top = `${Math.max(0, Math.min(window.innerHeight - 60, pos.top))}px`;
           el.style.right = "auto";
           el.style.bottom = "auto";
         }
-        if (data?.sc_spotify_widget_collapsed && body && minBtn) {
+        if (data?.[collapsedKey] && body && minBtn) {
           body.style.display = "none";
           minBtn.textContent = "+";
         }
@@ -661,7 +742,7 @@
         body.style.display = collapsed ? "none" : "flex";
         minBtn.textContent = collapsed ? "+" : "–";
         try {
-          chrome.storage.local.set({ sc_spotify_widget_collapsed: collapsed });
+          chrome.storage.local.set({ [collapsedKey]: collapsed });
         } catch {}
       };
     }
@@ -671,7 +752,7 @@
     if (!head) return;
     let drag = null;
     head.addEventListener("mousedown", (e) => {
-      if (e.target.closest("#sc-sp-min, #sc-sp-hide")) return;
+      if (e.target.closest("[data-sc-min], [data-sc-hide]")) return;
       const rect = el.getBoundingClientRect();
       drag = { x: e.clientX - rect.left, y: e.clientY - rect.top };
       e.preventDefault();
@@ -691,7 +772,7 @@
       drag = null;
       try {
         const rect = el.getBoundingClientRect();
-        chrome.storage.local.set({ sc_spotify_widget_pos: { left: Math.round(rect.left), top: Math.round(rect.top) } });
+        chrome.storage.local.set({ [posKey]: { left: Math.round(rect.left), top: Math.round(rect.top) } });
       } catch {}
     });
   }
@@ -807,17 +888,562 @@
     }
   }
 
-  function onRouteChange() {
-    const id = getEpisodeId(location.href);
-    if (!id) {
+  /* ---------------- Playlist route (/playlist/<id>) ---------------- */
+
+  const getPlaylistId = H.getSpotifyPlaylistId || ((u) => {
+    const m = String(u || location.href).match(/playlist\/([A-Za-z0-9]+)/);
+    return m ? m[1] : "";
+  });
+  const getTrackId = H.getSpotifyTrackId || ((u) => {
+    const m = String(u || location.href).match(/track\/([A-Za-z0-9]+)/);
+    return m ? m[1] : "";
+  });
+
+  let currentPlId = "";
+  let plTracks = [];
+  let plMetaCache = null;
+  let plStatus = { status: "idle", message: "Playlist detected." };
+
+  function extractPlaylistMetadata() {
+    const playlistId = getPlaylistId(location.href);
+    const url = `https://open.spotify.com/playlist/${playlistId}`;
+    const title =
+      text($('[data-testid="entityTitle"] h1')) ||
+      document.title.replace(/\s*[•·|-]\s*Spotify\s*$/i, "").trim() ||
+      "Spotify playlist";
+    const owner = text($('a[data-testid="creator-link"]')) || "";
+    const headerScope =
+      $('[data-testid="entityTitle"]')?.closest("div")?.parentElement || document;
+    const headerText = text(headerScope).slice(0, 2000);
+    const countMatch = headerText.match(/([\d,]+)\s+songs?/);
+    const lenMatch = headerText.match(/about\s+(.+?hr.+?min|.+?min.+?sec)/);
+    const descEl = headerScope.querySelector("p, span");
+    return {
+      playlistId, url, title, owner,
+      songCount: countMatch ? countMatch[0] : "",
+      totalDuration: lenMatch ? lenMatch[0].replace(/^about\s+/, "") : "",
+      description: "",
+    };
+  }
+
+  function playlistGrid() {
+    return $('[data-testid="playlist-tracklist"]');
+  }
+
+  function scrapePlaylistGrid() {
+    const grid = playlistGrid();
+    if (!grid || !H.scrapePlaylistRows) return [];
+    try {
+      return H.scrapePlaylistRows(grid);
+    } catch (e) {
+      console.warn("[Social Companion] playlist scrape failed:", e);
+      return [];
+    }
+  }
+
+  /** Step-scroll the grid until the row count stabilizes (3 stale passes). */
+  async function autoScrollGridToLoad(playlistId) {
+    const grid = playlistGrid();
+    const scroller = grid ? scrollContainerOf(grid) : null;
+    if (!grid || !scroller) return scrapePlaylistGrid();
+    let lastCount = -1;
+    let stale = 0;
+    for (let pass = 0; pass < 40; pass++) {
+      if (getPlaylistId(location.href) !== playlistId) break;
+      scroller.scrollTop = scroller.scrollHeight;
+      await sleep(450);
+      const rows = scrapePlaylistGrid();
+      if (rows.length === lastCount) {
+        stale++;
+        if (stale >= 3) break;
+      } else {
+        stale = 0;
+        lastCount = rows.length;
+      }
+    }
+    scroller.scrollTop = 0;
+    await sleep(250);
+    return scrapePlaylistGrid();
+  }
+
+  function setPlStatus(status, message) {
+    plStatus = { status, message };
+    const badge = document.getElementById("sc-sp-pl-status");
+    const metaLine = document.getElementById("sc-sp-pl-meta");
+    const palette = { ready: "#34d399", waiting: "#fbbf24", unavailable: "#94a3b8", error: "#fb7185", idle: "#94a3b8" };
+    if (badge) {
+      const color = palette[status] || "#94a3b8";
+      badge.textContent = status === "ready" ? `${plTracks.length} tracks` : message.slice(0, 28);
+      badge.style.color = color;
+      badge.style.borderColor = `${color}66`;
+    }
+    if (metaLine && plMetaCache) {
+      metaLine.textContent = `${plMetaCache.title}${plMetaCache.owner ? ` • ${plMetaCache.owner}` : ""} — ${message}`;
+    }
+  }
+
+  function playlistToCsv(tracks) {
+    const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const rows = ["Position,Title,Artists,Album,Duration,URL"];
+    for (const t of tracks) {
+      rows.push([t.position, q(t.title), q((t.artists || []).join("; ")), q(t.album || ""), t.duration || "", t.url || ""].join(","));
+    }
+    return rows.join("\n");
+  }
+
+  async function backupPlaylist({ scroll = true } = {}) {
+    const playlistId = getPlaylistId(location.href);
+    if (!playlistId) throw new Error("Open a Spotify playlist first.");
+    plMetaCache = extractPlaylistMetadata();
+    setPlStatus("waiting", "Reading visible tracks…");
+    const tracks = scroll
+      ? await autoScrollGridToLoad(playlistId)
+      : scrapePlaylistGrid();
+    if (getPlaylistId(location.href) !== playlistId) throw new Error("Navigated away mid-backup.");
+    plTracks = tracks;
+    if (!tracks.length) {
+      setPlStatus("unavailable", "No rows rendered — scroll the list, then Backup again.");
+    } else {
+      setPlStatus("ready", `Backed up ${tracks.length} tracks.`);
+    }
+    renderPlTracks();
+    return { meta: plMetaCache, tracks };
+  }
+
+  function renderPlTracks() {
+    const box = document.getElementById("sc-sp-pl-lines");
+    if (!box) return;
+    if (!plTracks.length) {
+      box.textContent = plStatus.message || "Not backed up yet.";
+      return;
+    }
+    box.innerHTML = "";
+    for (const t of plTracks.slice(0, 300)) {
+      const row = document.createElement("div");
+      row.style.cssText = "display:flex;gap:8px;line-height:1.4;";
+      const n = document.createElement("span");
+      n.style.cssText = "opacity:.55;min-width:30px;text-align:right;";
+      n.textContent = `${t.position}.`;
+      const p = document.createElement("span");
+      p.textContent = `${t.title}${t.artists?.length ? ` — ${t.artists.join(", ")}` : ""}${t.duration ? ` (${t.duration})` : ""}${t.explicit ? " 🅴" : ""}`;
+      row.append(n, p);
+      box.appendChild(row);
+    }
+    if (plTracks.length > 300) {
+      const more = document.createElement("div");
+      more.style.opacity = "0.6";
+      more.textContent = `… ${plTracks.length - 300} more (use Download for all)`;
+      box.appendChild(more);
+    }
+  }
+
+  function injectPlaylistWidget() {
+    if (document.getElementById("sc-spotify-pl-widget")) return;
+    const el = document.createElement("div");
+    el.id = "sc-spotify-pl-widget";
+    el.style.cssText = "position:fixed;bottom:96px;right:24px;width:380px;max-height:540px;display:flex;flex-direction:column;border-radius:14px;border:1px solid rgba(255,255,255,.12);background:rgba(18,18,22,.97);color:#f8fafc;font-family:system-ui,sans-serif;box-shadow:0 8px 32px rgba(0,0,0,.45);overflow:hidden;z-index:9999;";
+    el.innerHTML = `
+      <div data-sc-head style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 12px;background:#24212d;border-bottom:1px solid rgba(167,139,250,.28);cursor:move;user-select:none;-webkit-user-select:none;">
+        <strong style="font-size:13px;">🎵 Playlist backup</strong>
+        <span style="display:flex;align-items:center;gap:6px;">
+          <span id="sc-sp-pl-status" style="font-size:11px;padding:3px 8px;border:1px solid #555;border-radius:999px;white-space:nowrap;">…</span>
+          <button data-sc-min title="Collapse / expand" style="width:22px;height:22px;border-radius:6px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-size:13px;line-height:1;cursor:pointer;">–</button>
+          <button data-sc-hide title="Hide until next playlist" style="width:22px;height:22px;border-radius:6px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-size:12px;line-height:1;cursor:pointer;">×</button>
+        </span>
+      </div>
+      <div data-sc-body style="display:flex;flex-direction:column;min-height:0;overflow:hidden;padding:12px 14px;gap:8px;">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <button id="sc-sp-pl-backup" style="padding:7px 11px;border-radius:8px;border:none;background:#1db954;color:#04120a;font-weight:800;font-size:12px;cursor:pointer;">Backup tracks</button>
+          <button id="sc-sp-pl-copy" style="padding:7px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-weight:700;font-size:12px;cursor:pointer;">Copy MD</button>
+          <button id="sc-sp-pl-csv" style="padding:7px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-weight:700;font-size:12px;cursor:pointer;">CSV</button>
+          <button id="sc-sp-pl-dl" style="padding:7px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-weight:700;font-size:12px;cursor:pointer;">Download .md</button>
+        </div>
+        <div id="sc-sp-pl-meta" style="font-size:11px;opacity:.75;">Loading playlist…</div>
+        <div id="sc-sp-pl-lines" style="max-height:280px;overflow-y:auto;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:10px;font-size:12px;display:flex;flex-direction:column;gap:5px;">Not backed up yet.</div>
+      </div>`;
+    document.body.appendChild(el);
+    el.querySelector("#sc-sp-pl-backup").onclick = async (e) => {
+      const btn = e.currentTarget;
+      btn.textContent = "Backing up…";
+      btn.disabled = true;
+      try {
+        await backupPlaylist({ scroll: true });
+      } catch (err) {
+        setPlStatus("error", err?.message || "Backup failed.");
+        renderPlTracks();
+      } finally {
+        btn.textContent = "Backup tracks";
+        btn.disabled = false;
+      }
+    };
+    el.querySelector("#sc-sp-pl-copy").onclick = async () => {
+      if (!plTracks.length) await backupPlaylist({ scroll: false }).catch(() => {});
+      const md = (H.buildPlaylistMarkdown || ((m) => `# ${m.title}`))(plMetaCache || extractPlaylistMetadata(), plTracks, { capturedAt: new Date().toISOString() });
+      await navigator.clipboard.writeText(md);
+      setPlStatus(plTracks.length ? "ready" : plStatus.status, plTracks.length ? `Copied ${plTracks.length} tracks.` : plStatus.message);
+    };
+    const downloadPl = async (kind) => {
+      if (!plTracks.length) await backupPlaylist({ scroll: true }).catch(() => {});
+      const meta = plMetaCache || extractPlaylistMetadata();
+      const base = (meta.title || "spotify-playlist").replace(/[\\/:*?"<>|]/g, "").replace(/\s+/g, " ").trim().slice(0, 100);
+      if (kind === "csv") {
+        downloadFile(`${base}.csv`, playlistToCsv(plTracks), "text/csv");
+      } else {
+        downloadFile(`${base}.md`, (H.buildPlaylistMarkdown || ((m) => `# ${m.title}`))(meta, plTracks, { capturedAt: new Date().toISOString() }));
+      }
+    };
+    el.querySelector("#sc-sp-pl-csv").onclick = () => downloadPl("csv");
+    el.querySelector("#sc-sp-pl-dl").onclick = () => downloadPl("md");
+    wireFloatingChrome(el, "sc_spotify_pl_pos", "sc_spotify_pl_collapsed");
+    setPlStatus("idle", "Playlist detected.");
+  }
+
+  /* ---------------- Track route (/track/<id>) — lyrics ---------------- */
+
+  let currentTrId = "";
+  let lyricLines = []; // strings, or {startMs,text} when synced
+  let lyricMetaCache = null;
+  let lyricStatus = { status: "idle", message: "Track detected.", source: "", synced: false };
+
+  function extractTrackMetadata() {
+    const trackId = getTrackId(location.href);
+    const url = `https://open.spotify.com/track/${trackId}`;
+    const header = $('[data-testid="entityTitle"]')?.closest("div") || document;
+    const title =
+      text($('[data-testid="entityTitle"] h1')) ||
+      document.title.replace(/\s*[•·|-]\s*Spotify\s*$/i, "").trim() ||
+      "Spotify track";
+    const artists = Array.from(header.querySelectorAll('a[href^="/artist/"]'))
+      .map((a) => text(a)).filter(Boolean)
+      .filter((v, i, arr) => arr.indexOf(v) === i).slice(0, 6);
+    const headerText = text(header).slice(0, 1200);
+    const statMatch = headerText.match(/(\d{1,3}:\d{2})\s*•\s*([\d,]+)/);
+    const albumLink = header.querySelector('a[href^="/album/"]');
+    return {
+      trackId, url, title, artists,
+      album: albumLink ? text(albumLink) : "",
+      duration: statMatch ? statMatch[1] : "",
+      playCount: statMatch ? statMatch[2] : "",
+      provider: "",
+    };
+  }
+
+  function findLyricsSection() {
+    const heads = $all("h1, h2, h3").filter((h) => text(h).toLowerCase() === "lyrics");
+    for (const h of heads) {
+      let node = h.parentElement;
+      for (let depth = 0; depth < 4 && node && node !== document.body; depth++) {
+        const kids = Array.from(node.children || {}).length ? Array.from(node.children) : [];
+        const lineCount = kids.filter((k) => text(k).length > 1).length;
+        if (lineCount >= 3) return node;
+        node = node.parentElement;
+      }
+    }
+    return null;
+  }
+
+  function expandLyricsSection(section) {
+    if (!section) return;
+    const btn = Array.from(section.querySelectorAll("button")).find((b) => /show more|see more|expand/i.test(b.textContent || ""));
+    if (btn) {
+      try {
+        btn.click();
+      } catch {}
+    }
+  }
+
+  function unlockSelection(el) {
+    if (!el) return;
+    try {
+      el.style.userSelect = "text";
+      el.style.webkitUserSelect = "text";
+      Array.from(el.querySelectorAll("*")).forEach((n) => {
+        n.style.userSelect = "text";
+        n.style.webkitUserSelect = "text";
+      });
+    } catch {}
+  }
+
+  async function fetchSyncedLyrics(trackId) {
+    let token;
+    try {
+      token = await fetchWebPlayerToken();
+    } catch (e) {
+      if (e?.code === "token-blocked") {
+        const err = new Error("Lyrics API unreachable here (content blocker?) — reading the page Lyrics section instead.");
+        err.code = "token-blocked";
+        throw err;
+      }
+      throw e;
+    }
+    const res = await fetch(
+      `https://spclient.wg.spotify.com/color-lyrics/v2/track/${encodeURIComponent(trackId)}?format=json&vocalRemoval=false`,
+      { headers: { authorization: `Bearer ${token}`, "app-platform": "WebPlayer" } },
+    );
+    if (res.status === 404) {
+      const err = new Error("Spotify has no lyrics for this track.");
+      err.code = "no-lyrics";
+      throw err;
+    }
+    if (res.status === 401 || res.status === 403) {
+      const err = new Error("Lyrics need a logged-in Spotify session. Log in and retry.");
+      err.code = "auth";
+      throw err;
+    }
+    if (!res.ok) throw new Error(`Lyrics request failed (${res.status})`);
+    const json = await res.json();
+    const parsed = (H.parseColorLyrics || (() => []))(json);
+    return { lines: parsed, provider: "Musixmatch via Spotify" };
+  }
+
+  function setLyricStatus(status, message, extra = {}) {
+    lyricStatus = { status, message, ...extra };
+    const badge = document.getElementById("sc-sp-ly-status");
+    const palette = { ready: "#34d399", waiting: "#fbbf24", unavailable: "#94a3b8", error: "#fb7185", idle: "#94a3b8" };
+    if (badge) {
+      const color = palette[status] || "#94a3b8";
+      badge.textContent = status === "ready" ? "Lyrics ready" : message.slice(0, 30);
+      badge.style.color = color;
+      badge.style.borderColor = `${color}66`;
+    }
+    const metaLine = document.getElementById("sc-sp-ly-meta");
+    if (metaLine && lyricMetaCache) {
+      metaLine.textContent = `${lyricMetaCache.title}${lyricMetaCache.artists?.length ? ` • ${lyricMetaCache.artists.join(", ")}` : ""} — ${message}`;
+    }
+  }
+
+  async function collectLyrics() {
+    const trackId = getTrackId(location.href);
+    if (!trackId) throw new Error("Open a Spotify track first.");
+    lyricMetaCache = extractTrackMetadata();
+    // 1) Synced API first (timestamps) — skipped when the token endpoint is
+    // known-blocked in this profile.
+    if (apiBlockedForEpisode !== `track:${trackId}`) {
+      try {
+        const { lines, provider } = await fetchSyncedLyrics(trackId);
+        if (lines.length) {
+          lyricMetaCache.provider = provider;
+          return { lines, synced: true, source: "Spotify synced lyrics", status: `Lyrics ready · ${lines.length} synced lines` };
+        }
+      } catch (e) {
+        if (e?.code === "no-lyrics" || e?.code === "auth") throw e;
+        if (e?.code === "token-blocked") {
+          apiBlockedForEpisode = `track:${trackId}`;
+          console.warn("[Social Companion] lyrics API unreachable, using page section:", e.message);
+        } else {
+          console.warn("[Social Companion] synced lyrics failed, trying page section:", e);
+        }
+      }
+    }
+    // 2) Visible Lyrics section on the track page.
+    const section = findLyricsSection();
+    if (section) {
+      expandLyricsSection(section);
+      await sleep(600);
+      unlockSelection(section);
+      const lines = (H.extractLyricsLines || (() => []))(section);
+      if (lines.length) {
+        return { lines, synced: false, source: "page lyrics section", status: `Lyrics ready · ${lines.length} lines (page section)` };
+      }
+    }
+    throw new Error("No lyrics found. Spotify shows lyrics only for tracks that have them (login may be required).");
+  }
+
+  function renderLyricLines() {
+    const box = document.getElementById("sc-sp-ly-lines");
+    if (!box) return;
+    if (!lyricLines.length) {
+      box.textContent = lyricStatus.message || "Not synced yet.";
+      return;
+    }
+    const fmt = H.formatSpotifyTimestamp || ((ms) => String(ms));
+    box.innerHTML = "";
+    for (const l of lyricLines.slice(0, 300)) {
+      const row = document.createElement("div");
+      row.style.lineHeight = "1.45";
+      if (l && typeof l === "object") {
+        row.textContent = lyricStatus.synced && l.startMs != null ? `[${fmt(l.startMs)}] ${l.text}` : l.text;
+      } else {
+        row.textContent = String(l);
+      }
+      box.appendChild(row);
+    }
+    if (lyricLines.length > 300) {
+      const more = document.createElement("div");
+      more.style.opacity = "0.6";
+      more.textContent = `… ${lyricLines.length - 300} more (use Download for all)`;
+      box.appendChild(more);
+    }
+  }
+
+  function injectLyricsWidget() {
+    if (document.getElementById("sc-spotify-ly-widget")) return;
+    const el = document.createElement("div");
+    el.id = "sc-spotify-ly-widget";
+    el.style.cssText = "position:fixed;bottom:96px;right:24px;width:380px;max-height:540px;display:flex;flex-direction:column;border-radius:14px;border:1px solid rgba(255,255,255,.12);background:rgba(18,18,22,.97);color:#f8fafc;font-family:system-ui,sans-serif;box-shadow:0 8px 32px rgba(0,0,0,.45);overflow:hidden;z-index:9999;";
+    el.innerHTML = `
+      <div data-sc-head style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 12px;background:#24212d;border-bottom:1px solid rgba(167,139,250,.28);cursor:move;user-select:none;-webkit-user-select:none;">
+        <strong style="font-size:13px;">🎤 Lyrics capture</strong>
+        <span style="display:flex;align-items:center;gap:6px;">
+          <span id="sc-sp-ly-status" style="font-size:11px;padding:3px 8px;border:1px solid #555;border-radius:999px;white-space:nowrap;">…</span>
+          <button data-sc-min title="Collapse / expand" style="width:22px;height:22px;border-radius:6px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-size:13px;line-height:1;cursor:pointer;">–</button>
+          <button data-sc-hide title="Hide until next track" style="width:22px;height:22px;border-radius:6px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-size:12px;line-height:1;cursor:pointer;">×</button>
+        </span>
+      </div>
+      <div data-sc-body style="display:flex;flex-direction:column;min-height:0;overflow:hidden;padding:12px 14px;gap:8px;">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <button id="sc-sp-ly-sync" style="padding:7px 11px;border-radius:8px;border:none;background:#1db954;color:#04120a;font-weight:800;font-size:12px;cursor:pointer;">Sync lyrics</button>
+          <button id="sc-sp-ly-copy" style="padding:7px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-weight:700;font-size:12px;cursor:pointer;">Copy</button>
+          <button id="sc-sp-ly-dl" style="padding:7px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-weight:700;font-size:12px;cursor:pointer;">Download .md</button>
+        </div>
+        <div id="sc-sp-ly-meta" style="font-size:11px;opacity:.75;">Loading track…</div>
+        <div id="sc-sp-ly-lines" style="max-height:280px;overflow-y:auto;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:10px;font-size:12px;display:flex;flex-direction:column;gap:4px;">Not synced yet.</div>
+      </div>`;
+    document.body.appendChild(el);
+    el.querySelector("#sc-sp-ly-sync").onclick = async (e) => {
+      const btn = e.currentTarget;
+      btn.textContent = "Syncing…";
+      btn.disabled = true;
+      try {
+        const out = await collectLyrics();
+        lyricLines = out.lines;
+        setLyricStatus("ready", out.status, { source: out.source, synced: out.synced });
+        renderLyricLines();
+      } catch (err) {
+        setLyricStatus(err?.code === "auth" || err?.code === "no-lyrics" ? "unavailable" : "error", err?.message || "Sync failed.");
+        renderLyricLines();
+      } finally {
+        btn.textContent = "Sync lyrics";
+        btn.disabled = false;
+      }
+    };
+    el.querySelector("#sc-sp-ly-copy").onclick = async () => {
+      if (!lyricLines.length) {
+        try {
+          const out = await collectLyrics();
+          lyricLines = out.lines;
+          setLyricStatus("ready", out.status, { source: out.source, synced: out.synced });
+        } catch (err) {
+          setLyricStatus("error", err?.message || "Sync failed.");
+          return;
+        }
+      }
+      const md = (H.buildLyricsMarkdown || ((m) => `# ${m.title}`))(
+        lyricMetaCache || extractTrackMetadata(), lyricLines,
+        { synced: lyricStatus.synced, source: lyricStatus.source, capturedAt: new Date().toISOString() },
+      );
+      await navigator.clipboard.writeText(md);
+      renderLyricLines();
+    };
+    el.querySelector("#sc-sp-ly-dl").onclick = async () => {
+      if (!lyricLines.length) {
+        try {
+          const out = await collectLyrics();
+          lyricLines = out.lines;
+          setLyricStatus("ready", out.status, { source: out.source, synced: out.synced });
+        } catch (err) {
+          setLyricStatus("error", err?.message || "Sync failed.");
+          return;
+        }
+      }
+      const meta = lyricMetaCache || extractTrackMetadata();
+      const base = `${(meta.artists[0] ? meta.artists[0] + " - " : "")}${meta.title}`.replace(/[\\/:*?"<>|]/g, "").replace(/\s+/g, " ").trim().slice(0, 100) || "spotify-lyrics";
+      downloadFile(`${base}.md`, (H.buildLyricsMarkdown || ((m) => `# ${m.title}`))(meta, lyricLines, { synced: lyricStatus.synced, source: lyricStatus.source, capturedAt: new Date().toISOString() }));
+    };
+    wireFloatingChrome(el, "sc_spotify_ly_pos", "sc_spotify_ly_collapsed");
+    setLyricStatus("idle", "Track detected.");
+  }
+
+  function currentRoute() {
+    const href = location.href;
+    if (H.currentSpotifyRoute) {
+      const kind = H.currentSpotifyRoute(href);
+      if (kind === "episode") return { kind, id: getEpisodeId(href) };
+      if (kind === "playlist") return { kind, id: getPlaylistId(href) };
+      if (kind === "track") return { kind, id: getTrackId(href) };
+    } else if (getEpisodeId(href)) {
+      return { kind: "episode", id: getEpisodeId(href) };
+    }
+    return { kind: "", id: "" };
+  }
+
+  function removeOtherWidgets(keep) {
+    if (keep !== "episode") {
       currentEpisodeId = "";
       if (_panelObserver) {
         _panelObserver.disconnect();
         _panelObserver = null;
       }
       document.getElementById("sc-spotify-widget")?.remove();
+    }
+    if (keep !== "playlist") {
+      currentPlId = "";
+      document.getElementById("sc-spotify-pl-widget")?.remove();
+    }
+    if (keep !== "track") {
+      currentTrId = "";
+      document.getElementById("sc-spotify-ly-widget")?.remove();
+    }
+  }
+
+  function onRouteChange() {
+    const { kind, id } = currentRoute();
+    if (!kind || !id) {
+      removeOtherWidgets("");
       return;
     }
+    if (kind === "playlist") {
+      removeOtherWidgets("playlist");
+      if (id !== currentPlId) {
+        currentPlId = id;
+        plTracks = [];
+        plMetaCache = null;
+        injectSelectionFix();
+        injectPlaylistWidget();
+        setPlStatus("waiting", "Playlist detected. Auto-backing up…");
+        setTimeout(async () => {
+          if (getPlaylistId(location.href) !== id || plTracks.length) return;
+          try {
+            await backupPlaylist({ scroll: true });
+          } catch {
+            if (getPlaylistId(location.href) === id && !plTracks.length) {
+              setPlStatus("waiting", "List not readable yet — scroll it, or press Backup tracks.");
+              renderPlTracks();
+            }
+          }
+        }, 2500);
+      }
+      return;
+    }
+    if (kind === "track") {
+      removeOtherWidgets("track");
+      if (id !== currentTrId) {
+        currentTrId = id;
+        lyricLines = [];
+        lyricMetaCache = null;
+        injectSelectionFix();
+        injectLyricsWidget();
+        setLyricStatus("waiting", "Track detected. Auto-syncing lyrics…");
+        setTimeout(async () => {
+          if (getTrackId(location.href) !== id || lyricLines.length) return;
+          try {
+            const out = await collectLyrics();
+            if (getTrackId(location.href) !== id || lyricLines.length) return;
+            lyricLines = out.lines;
+            setLyricStatus("ready", out.status, { source: out.source, synced: out.synced });
+            renderLyricLines();
+          } catch {
+            if (getTrackId(location.href) === id && !lyricLines.length) {
+              setLyricStatus("waiting", "Lyrics not readable yet — open the Lyrics section, or press Sync.");
+              renderLyricLines();
+            }
+          }
+        }, 2500);
+      }
+      return;
+    }
+    // Episode route (existing flow).
+    removeOtherWidgets("episode");
     if (id !== currentEpisodeId) {
       currentEpisodeId = id;
       segments = [];

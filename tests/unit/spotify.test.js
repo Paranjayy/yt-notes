@@ -83,6 +83,102 @@ describe('spotify-helpers.js', () => {
     });
   });
 
+  describe('playlist + track routes', () => {
+    it('resolves route kinds', () => {
+      expect(H.currentSpotifyRoute('https://open.spotify.com/playlist/2ldKdMWDZw7D9P9RHawcYF')).toBe('playlist');
+      expect(H.currentSpotifyRoute('https://open.spotify.com/track/0yo9qd2ga7euzqnnyssspo')).toBe('track');
+      expect(H.currentSpotifyRoute('https://open.spotify.com/episode/7EalRVaDJXlXYHkYxZWKvX')).toBe('episode');
+      expect(H.getSpotifyPlaylistId('https://open.spotify.com/playlist/2ldKdMWDZw7D9P9RHawcYF?si=x')).toBe('2ldKdMWDZw7D9P9RHawcYF');
+      expect(H.isSpotifyTrackRoute('https://open.spotify.com/album/abc')).toBe(false);
+    });
+
+    // Structure mirrors the real playlist-tracklist grid (hashed classes
+    // changed on purpose to prove the parser ignores them).
+    const GRID_HTML = `<div role="grid" data-testid="playlist-tracklist">
+      <div role="row" aria-rowindex="1"><div role="columnheader">#</div></div>
+      <div role="row" aria-rowindex="2">
+        <div role="gridcell" aria-colindex="1">1</div>
+        <div role="gridcell" aria-colindex="2">
+          <a data-testid="internal-track-link" href="/track/5MCbGWnNLLjoHpbDO3BOgi"><div>Gehra Hua</div></a>
+          <span><a href="/artist/465OXuCU8YZNmVG1leLwQ9">Shashwat Sachdev</a>, <a href="/artist/4YRxDV8wJFPHPTeXepOstw">Arijit Singh</a></span>
+          <span aria-label="Explicit">E</span>
+        </div>
+        <div role="gridcell" aria-colindex="3"><a href="/album/2e7HNQJ0BcMoqwsVDwDhK8">Dhurandhar</a></div>
+        <div role="gridcell" aria-colindex="4">2 days ago</div>
+        <div role="gridcell" aria-colindex="5"><div>6:02</div></div>
+      </div>
+      <div role="row" aria-rowindex="3">
+        <div role="gridcell" aria-colindex="2">
+          <a data-testid="internal-track-link" href="/track/AAAA"><div>Second Song</div></a>
+          <span><a href="/artist/BBBB">Solo Artist</a></span>
+        </div>
+        <div role="gridcell" aria-colindex="5"><div>3:44</div></div>
+      </div>
+      <div role="row" aria-rowindex="4">
+        <div role="gridcell" aria-colindex="2">
+          <a data-testid="internal-track-link" href="/track/5MCbGWnNLLjoHpbDO3BOgi"><div>Gehra Hua</div></a>
+        </div>
+        <div role="gridcell" aria-colindex="5"><div>6:02</div></div>
+      </div>
+    </div>`;
+
+    it('scrapes playlist rows, skips header, dedupes repeats', () => {
+      document.body.innerHTML = GRID_HTML;
+      const rows = H.scrapePlaylistRows(document.querySelector('[data-testid="playlist-tracklist"]'));
+      expect(rows).toHaveLength(2);
+      expect(rows[0]).toMatchObject({
+        position: 1, title: 'Gehra Hua', trackId: '5MCbGWnNLLjoHpbDO3BOgi',
+        url: 'https://open.spotify.com/track/5MCbGWnNLLjoHpbDO3BOgi',
+        artists: ['Shashwat Sachdev', 'Arijit Singh'], album: 'Dhurandhar',
+        duration: '6:02', explicit: true,
+      });
+      expect(rows[1].title).toBe('Second Song');
+    });
+
+    it('parses color-lyrics envelopes', () => {
+      const lines = H.parseColorLyrics({ lyrics: { lines: [
+        { startTimeMs: 5000, words: 'second line' },
+        { startTimeMs: 1000, words: [{ word: 'first' }, { word: 'line' }] },
+        { startTimeMs: 9000, words: '' },
+      ] } });
+      expect(lines.map((l) => l.text)).toEqual(['first line', 'second line']);
+    });
+
+    const LYRICS_HTML = `<section><h2>Lyrics</h2>
+      <div><div>I know that the bar closes at 11</div></div>
+      <div><div>Ohh</div></div>
+      <div><button>Show more</button></div>
+    </section>`;
+
+    it('extracts lyric lines, drops UI labels', () => {
+      document.body.innerHTML = LYRICS_HTML;
+      const lines = H.extractLyricsLines(document.querySelector('section'));
+      expect(lines).toContain('I know that the bar closes at 11');
+      expect(lines).toContain('Ohh');
+      expect(lines.join('|')).not.toMatch(/show more|lyrics/i);
+    });
+
+    it('builds playlist + lyrics markdown with receipts', () => {
+      const pl = H.buildLyricsMarkdown({ title: 'x' }, [], {});
+      expect(pl).toContain('No lyrics captured');
+      const md = H.buildPlaylistMarkdown(
+        { playlistId: 'PL1', url: 'https://open.spotify.com/playlist/PL1', title: 'Gehra Hua', owner: 'Paranjay', songCount: '136 songs' },
+        [{ position: 1, title: 'Gehra Hua', url: 'https://open.spotify.com/track/T', artists: ['Arijit Singh'], album: 'Dhurandhar', duration: '6:02', explicit: true }],
+        {},
+      );
+      expect(md).toContain('# Gehra Hua');
+      expect(md).toContain('Arijit Singh');
+      expect(md).toContain('open.spotify.com/track/T');
+      const ly = H.buildLyricsMarkdown(
+        { trackId: 'TR1', title: 'drop dead', artists: ['Olivia Rodrigo'], duration: '3:44' },
+        [{ startMs: 1000, text: 'timed line' }, 'plain line'],
+        { synced: true, source: 'Spotify synced lyrics' },
+      );
+      expect(ly).toContain('[0:01] timed line');
+      expect(ly).toContain('plain line');
+    });
+  });
+
   describe('scrapeSpotifyPanel (real transcript-panel DOM)', () => {
     // Faithful miniature of a live #transcript-panel: hashed classes intact
     // to prove the parser depends on structure, not class names.

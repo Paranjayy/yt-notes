@@ -469,9 +469,300 @@ function buildSpotifyMarkdown(meta = {}, segments = [], opts = {}) {
   return lines.join("\n");
 }
 
+/* ------------------------------------------------------------------ */
+/* Playlist + track (lyrics) surfaces                                   */
+/* ------------------------------------------------------------------ */
+
+function getSpotifyPlaylistId(urlString = "") {
+  try {
+    const url = new URL(urlString, "https://open.spotify.com");
+    const parts = url.pathname.split("/").filter(Boolean);
+    const i = parts.lastIndexOf("playlist");
+    if (i >= 0 && parts[i + 1]) return decodeURIComponent(parts[i + 1].split("?")[0]);
+    const m = String(urlString).match(/spotify:playlist:([A-Za-z0-9]+)/);
+    return m ? m[1] : "";
+  } catch {
+    const m = String(urlString).match(/playlist\/([A-Za-z0-9]+)/);
+    return m ? m[1] : "";
+  }
+}
+
+function isSpotifyPlaylistRoute(urlString = "") {
+  try {
+    const url = new URL(urlString, "https://open.spotify.com");
+    if (!/(\.|^)spotify\.com$/.test(url.hostname)) return false;
+    return Boolean(getSpotifyPlaylistId(url.toString()));
+  } catch {
+    return false;
+  }
+}
+
+function getSpotifyTrackId(urlString = "") {
+  try {
+    const url = new URL(urlString, "https://open.spotify.com");
+    const parts = url.pathname.split("/").filter(Boolean);
+    const i = parts.lastIndexOf("track");
+    if (i >= 0 && parts[i + 1]) return decodeURIComponent(parts[i + 1].split("?")[0]);
+    const m = String(urlString).match(/spotify:track:([A-Za-z0-9]+)/);
+    return m ? m[1] : "";
+  } catch {
+    const m = String(urlString).match(/track\/([A-Za-z0-9]+)/);
+    return m ? m[1] : "";
+  }
+}
+
+function isSpotifyTrackRoute(urlString = "") {
+  try {
+    const url = new URL(urlString, "https://open.spotify.com");
+    if (!/(\.|^)spotify\.com$/.test(url.hostname)) return false;
+    return Boolean(getSpotifyTrackId(url.toString()));
+  } catch {
+    return false;
+  }
+}
+
+function currentSpotifyRoute(urlString = "") {
+  if (isSpotifyEpisodeRoute(urlString)) return "episode";
+  if (isSpotifyPlaylistRoute(urlString)) return "playlist";
+  if (isSpotifyTrackRoute(urlString)) return "track";
+  return "";
+}
+
+/**
+ * Parse a playlist tracklist grid WITHOUT hashed classes:
+ * grid = [data-testid="playlist-tracklist"], rows = div[role="row"]
+ * (rowindex 1 is the header), title = a[data-testid="internal-track-link"],
+ * artists = a[href^="/artist/"], album = col-3 a[href^="/album/"],
+ * duration = col-5 clock text. DOM-only, jsdom-testable.
+ */
+function scrapePlaylistRows(grid) {
+  if (!grid) return [];
+  let rows = [];
+  try {
+    rows = Array.from(grid.querySelectorAll('div[role="row"]'));
+  } catch {
+    return [];
+  }
+  const out = [];
+  const seen = new Set();
+  for (const row of rows) {
+    try {
+      if ((row.getAttribute("aria-rowindex") || "") === "1") continue;
+      const titleLink = row.querySelector('a[data-testid="internal-track-link"]');
+      const href = titleLink?.getAttribute("href") || "";
+      const idMatch = href.match(/\/track\/([A-Za-z0-9]+)/);
+      // Liked-songs/search rows can lack track links — keep them only when
+      // a title cell exists so position numbers stay truthful.
+      const titleCell = row.querySelector('div[role="gridcell"]');
+      const title = (titleLink?.textContent || "").replace(/\s+/g, " ").trim();
+      if (!title && !titleCell) continue;
+      const trackId = idMatch ? idMatch[1] : "";
+      const key = trackId ? `id:${trackId}` : `row:${out.length}:${title}`;
+      if (trackId && seen.has(key)) continue;
+      seen.add(key);
+      const artists = Array.from(row.querySelectorAll('a[href^="/artist/"]'))
+        .map((a) => (a.textContent || "").replace(/\s+/g, " ").trim())
+        .filter(Boolean)
+        .filter((v, i, arr) => arr.indexOf(v) === i);
+      const albumLink = row.querySelector('a[href^="/album/"]');
+      const album = (albumLink?.textContent || "").replace(/\s+/g, " ").trim();
+      const durMatch = (row.textContent || "").match(/\b\d{1,3}:\d{2}(?::\d{2})?\b/);
+      let explicit = false;
+      try {
+        explicit = Boolean(row.querySelector('[aria-label="Explicit"]'));
+      } catch {
+        explicit = false;
+      }
+      out.push({
+        position: out.length + 1,
+        title: title || "(untitled)",
+        trackId,
+        url: trackId ? `https://open.spotify.com/track/${trackId}` : "",
+        artists,
+        album,
+        duration: durMatch ? durMatch[0] : "",
+        explicit,
+      });
+    } catch {
+      continue;
+    }
+  }
+  return out;
+}
+
+/**
+ * Normalize the color-lyrics endpoint envelope into timed lines.
+ * Accepts {lyrics:{lines:[{startTimeMs,words}]}} where words is a string or
+ * [{word}] array, plus flat {lines:[{startTimeMs,text}]} shapes.
+ */
+function parseColorLyrics(payload) {
+  if (!payload || typeof payload !== "object") return [];
+  const raw = Array.isArray(payload?.lyrics?.lines)
+    ? payload.lyrics.lines
+    : Array.isArray(payload?.lines)
+      ? payload.lines
+      : [];
+  const out = [];
+  for (const line of raw) {
+    if (!line || typeof line !== "object") continue;
+    let text = line.text ?? line.lyric ?? "";
+    if (!text && Array.isArray(line.words)) {
+      text = line.words.map((w) => (typeof w === "string" ? w : w?.word ?? w?.text ?? "")).join(" ");
+    } else if (!text && typeof line.words === "string") {
+      text = line.words;
+    }
+    text = String(text).replace(/\s+/g, " ").trim();
+    if (!text) continue;
+    const ms = Number(line.startTimeMs ?? line.startMs ?? line.start ?? 0);
+    out.push({ startMs: Number.isFinite(ms) ? Math.round(ms) : 0, text });
+  }
+  return out.sort((a, b) => a.startMs - b.startMs);
+}
+
+const LYRICS_UI_LABELS = /^(lyrics|show (more|less)|see more|provided by.*|.*musixmatch.*|advertisement)$/i;
+
+/**
+ * Extract lyric lines from a rendered Lyrics section element WITHOUT hashed
+ * classes: walks leaf rows, keeps text lines, drops UI labels. DOM-only.
+ */
+function extractLyricsLines(section) {
+  if (!section) return [];
+  let candidates = [];
+  try {
+    candidates = Array.from(section.querySelectorAll("p, div, span, li"));
+  } catch {
+    return [];
+  }
+  const lines = [];
+  for (const el of candidates) {
+    // Leaf-ish only: skip containers that merely wrap other candidates.
+    try {
+      if (el.querySelector("p, div, li")) continue;
+      if (el.querySelector("span") && el.querySelector("span") !== el) {
+        const nested = Array.from(el.querySelectorAll("span")).some((s) => s !== el && (s.textContent || "").trim());
+        if (nested) continue;
+      }
+    } catch {
+      continue;
+    }
+    const t = (el.textContent || "").replace(/\s+/g, " ").trim();
+    if (!t || t.length < 1 || LYRICS_UI_LABELS.test(t)) continue;
+    if (/(show more|show less|see more on genius)/i.test(t) && t.length < 40) continue;
+    lines.push(t);
+  }
+  // Dedupe (React double-render) preserving order.
+  return lines.filter((l, i) => lines.indexOf(l) === i);
+}
+
+function buildPlaylistMarkdown(meta = {}, tracks = [], opts = {}) {
+  const {
+    playlistId = "",
+    url = "",
+    title = "Spotify playlist",
+    owner = "",
+    songCount = "",
+    totalDuration = "",
+    description = "",
+  } = meta;
+  const capturedAt = opts.capturedAt || new Date().toISOString();
+  const lines = [];
+  lines.push(`# ${escapeMarkdown(title)}`);
+  lines.push("");
+  lines.push("`spotify` `playlist`");
+  lines.push("");
+  lines.push("| Field | Value |");
+  lines.push("| --- | --- |");
+  lines.push(`| Playlist | ${escapeMarkdown(title)} |`);
+  if (owner) lines.push(`| Owner | ${escapeMarkdown(owner)} |`);
+  if (songCount) lines.push(`| Songs | ${escapeMarkdown(songCount)} |`);
+  else if (tracks.length) lines.push(`| Songs | ${tracks.length} visible |`);
+  if (totalDuration) lines.push(`| Total length | ${escapeMarkdown(totalDuration)} |`);
+  if (playlistId) lines.push(`| Playlist ID | \`${playlistId}\` |`);
+  if (url) lines.push(`| URL | ${url} |`);
+  lines.push(`| Captured | ${capturedAt} |`);
+  lines.push("");
+  if (description) {
+    lines.push("## Description");
+    lines.push("");
+    lines.push(String(description).trim());
+    lines.push("");
+  }
+  lines.push(`## Tracks (${tracks.length} captured)`);
+  lines.push("");
+  if (!tracks.length) {
+    lines.push("> No tracks captured. Scroll the playlist so rows render, then re-run backup.");
+    lines.push("");
+  } else {
+    tracks.forEach((t) => {
+      const artists = (t.artists || []).join(", ");
+      const dur = t.duration ? ` · ${t.duration}` : "";
+      const exp = t.explicit ? " 🅴" : "";
+      const head = t.url ? `[${t.title}](${t.url})` : t.title;
+      lines.push(`${t.position}. ${head}${artists ? ` — ${artists}` : ""}${t.album ? ` · _${t.album}_` : ""}${dur}${exp}`);
+    });
+    lines.push("");
+  }
+  lines.push("---");
+  lines.push(`_Source: Spotify • ${url || `https://open.spotify.com/playlist/${playlistId}`} • captured ${capturedAt}_`);
+  lines.push("");
+  return lines.join("\n");
+}
+
+function buildLyricsMarkdown(meta = {}, lyricLines = [], opts = {}) {
+  const {
+    trackId = "",
+    url = "",
+    title = "Spotify track",
+    artists = [],
+    album = "",
+    duration = "",
+    playCount = "",
+    provider = "",
+  } = meta;
+  const capturedAt = opts.capturedAt || new Date().toISOString();
+  const synced = opts.synced === true;
+  const source = opts.source || (synced ? "Spotify synced lyrics" : "page lyrics section");
+  const lines = [];
+  lines.push(`# ${escapeMarkdown(title)}`);
+  lines.push("");
+  lines.push("`spotify` `lyrics`" + (synced ? " `synced`" : ""));
+  lines.push("");
+  lines.push("| Field | Value |");
+  lines.push("| --- | --- |");
+  lines.push(`| Track | ${escapeMarkdown(title)} |`);
+  if (artists.length) lines.push(`| Artists | ${escapeMarkdown(artists.join(", "))} |`);
+  if (album) lines.push(`| Album | ${escapeMarkdown(album)} |`);
+  if (duration) lines.push(`| Duration | ${escapeMarkdown(duration)} |`);
+  if (playCount) lines.push(`| Plays | ${escapeMarkdown(playCount)} |`);
+  if (trackId) lines.push(`| Track ID | \`${trackId}\` |`);
+  if (url) lines.push(`| URL | ${url} |`);
+  if (provider) lines.push(`| Provider | ${escapeMarkdown(provider)} |`);
+  lines.push(`| Lyrics source | ${escapeMarkdown(source)} |`);
+  lines.push(`| Captured | ${capturedAt} |`);
+  lines.push("");
+  lines.push("## Lyrics");
+  lines.push("");
+  if (!lyricLines.length) {
+    lines.push("> No lyrics captured. Spotify shows lyrics only for tracks that have them (login may be required).");
+    lines.push("");
+  } else {
+    for (const l of lyricLines) {
+      if (l && typeof l === "object" && "text" in l) {
+        lines.push(l.startMs != null && synced ? `[${formatSpotifyTimestamp(l.startMs)}] ${l.text}` : l.text);
+      } else {
+        lines.push(String(l));
+      }
+    }
+    lines.push("");
+  }
+  lines.push("---");
+  lines.push(`_Source: Spotify • ${url || `https://open.spotify.com/track/${trackId}`} • captured ${capturedAt}_`);
+  lines.push("");
+  return lines.join("\n");
+}
+
 // Node / Vitest export; browser build attaches to window instead.
-if (typeof module !== "undefined" && module.exports) {
-  module.exports = {
+if (typeof module !== "undefined" && module.exports) {  module.exports = {
     getSpotifyEpisodeId,
     isSpotifyEpisodeRoute,
     formatSpotifyTimestamp,
@@ -485,6 +776,16 @@ if (typeof module !== "undefined" && module.exports) {
     scrapeSpotifyPanel,
     renderTranscriptLines,
     buildSpotifyMarkdown,
+    getSpotifyPlaylistId,
+    isSpotifyPlaylistRoute,
+    getSpotifyTrackId,
+    isSpotifyTrackRoute,
+    currentSpotifyRoute,
+    scrapePlaylistRows,
+    parseColorLyrics,
+    extractLyricsLines,
+    buildPlaylistMarkdown,
+    buildLyricsMarkdown,
   };
 } else if (typeof window !== "undefined") {
   window.SpotifyHelpers = {
@@ -501,5 +802,15 @@ if (typeof module !== "undefined" && module.exports) {
     scrapeSpotifyPanel,
     renderTranscriptLines,
     buildSpotifyMarkdown,
+    getSpotifyPlaylistId,
+    isSpotifyPlaylistRoute,
+    getSpotifyTrackId,
+    isSpotifyTrackRoute,
+    currentSpotifyRoute,
+    scrapePlaylistRows,
+    parseColorLyrics,
+    extractLyricsLines,
+    buildPlaylistMarkdown,
+    buildLyricsMarkdown,
   };
 }
