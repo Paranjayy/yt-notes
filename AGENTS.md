@@ -22,6 +22,14 @@
   stays green (unit suite passes, modulo known pre-existing failures which
   must be named in the commit message if touched).
 
+## Store readiness (Chrome Web Store skill)
+
+- `CHROMEWEBSTORE.md` is the submission tracker: single purpose,
+  per-permission justifications, privacy notes, pre-submit checklist.
+- Whenever `manifest.json` permissions/hosts change, update the
+  justification table in the same commit. Keep the manifest description's
+  surface list current.
+
 ## Capture correctness (non-negotiable)
 
 - **Receipts, not claims.** A transcript badge may say "verified" only when
