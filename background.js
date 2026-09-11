@@ -38,6 +38,18 @@ chrome.runtime.onInstalled.addListener(() => {
       contexts: ["all"],
     });
     chrome.contextMenus.create({
+      id: "sc-copy-ai-snapshot-low",
+      parentId: "sc-copy-ai-snapshot",
+      title: "Low clean — faithful (keeps classes/ids)",
+      contexts: ["all"],
+    });
+    chrome.contextMenus.create({
+      id: "sc-copy-ai-snapshot-high",
+      parentId: "sc-copy-ai-snapshot",
+      title: "High clean — dense (strips hashed classes/ids)",
+      contexts: ["all"],
+    });
+    chrome.contextMenus.create({
       id: "sc-start-element-annotator",
       title: "🎯 Annotate element for AI",
       contexts: ["all"],
@@ -161,8 +173,9 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === "sc-collect-visible-playlist-transcripts" && tab?.id != null) {
     chrome.tabs.sendMessage(tab.id, { type: "sc_collect_visible_playlist_transcripts" }).catch(() => {});
   }
-  if (info.menuItemId === "sc-copy-ai-snapshot" && tab?.id != null) {
-    chrome.tabs.sendMessage(tab.id, { type: "sc_get_ai_snapshot" }, (res) => {
+  if ((info.menuItemId === "sc-copy-ai-snapshot-low" || info.menuItemId === "sc-copy-ai-snapshot-high") && tab?.id != null) {
+    const mode = info.menuItemId.endsWith("-high") ? "high" : "low";
+    chrome.tabs.sendMessage(tab.id, { type: "sc_get_ai_snapshot", mode }, (res) => {
       if (!chrome.runtime.lastError && res?.ok && res.snapshot) {
         chrome.scripting.executeScript({
           target: { tabId: tab.id },
@@ -181,13 +194,25 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
         // Fallback for non-YouTube / arbitrary web pages
         chrome.scripting.executeScript({
           target: { tabId: tab.id },
-          func: () => {
+          func: (fallbackMode) => {
             const root = document.querySelector("main, #content, ytd-app, body") || document.documentElement;
             const clone = root.cloneNode(true);
             clone.querySelectorAll("script, style, link[rel='stylesheet'], noscript, iframe, template").forEach(el => el.remove());
             clone.querySelectorAll("svg").forEach(svg => { svg.innerHTML = "<!-- [SVG CONTENT STRIPPED] -->"; });
             clone.querySelectorAll("[style*='data:image']").forEach(el => el.removeAttribute("style"));
             clone.querySelectorAll("img[src^='data:image']").forEach(img => { img.setAttribute("src", "[inline-base64-image]"); });
+            if (fallbackMode === "high") {
+              // Mirror helpers.stripDomNoise(high) as string transforms for
+              // pages without our content script.
+              clone.querySelectorAll("*").forEach(el => {
+                el.removeAttribute("class");
+                const id = el.getAttribute("id");
+                if (id && /^id__/.test(id)) el.removeAttribute("id");
+                el.removeAttribute("aria-labelledby");
+                el.removeAttribute("aria-describedby");
+              });
+            }
+            const bytesBefore = clone.outerHTML.length;
             let cleanHtml = clone.outerHTML.replace(/\s+/g, ' ').replace(/> </g, '><').trim();
             if (cleanHtml.length > 60000) cleanHtml = cleanHtml.slice(0, 60000) + '... [TRUNCATED]';
             const payload = {
@@ -195,7 +220,10 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
                 timestamp: new Date().toISOString(),
                 url: location.href,
                 title: document.title,
-                type: "Token-Optimized"
+                type: fallbackMode === "high" ? "High-Density" : "Token-Optimized",
+                mode: fallbackMode,
+                bytesBefore,
+                bytesAfter: cleanHtml.length
               },
               stack: [document.querySelector("[class*='tw-'], [class*='bg-'], [class*='text-']") ? "Tailwind" : "HTML5/CSS"],
               clean_dom: cleanHtml
@@ -207,7 +235,8 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
               document.body.appendChild(toast);
               setTimeout(() => toast.remove(), 3000);
             });
-          }
+          },
+          args: [mode]
         }).catch((err) => console.warn("Could not copy AI snapshot:", err));
       }
     });

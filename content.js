@@ -663,6 +663,25 @@
   // normal widget/UI path: the inactive queue tab should only return factual
   // caption-track results, never click controls or surface a toast.
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    // This script runs on YouTube AND X/Reddit pages. YouTube-data handlers
+    // must stay silent off YouTube: the platform scripts (spotify.js,
+    // twitter.js) answer the same shared message types there, and the first
+    // response wins — a YouTube "empty" reply would shadow the real one.
+    const isYouTubeHost =
+      location.hostname.includes("youtube.com") || location.hostname === "youtu.be";
+    const YOUTUBE_ONLY_TYPES = new Set([
+      "sc_collect_transcript",
+      "sc_playlist_transcript_progress",
+      "sc_get_capture_status",
+      "sc_get_current_markdown",
+      "sc_download_current_markdown",
+      "sc_download_current_transcript",
+      "sc_download_visible_playlist_backup",
+      "sc_collect_visible_playlist_transcripts",
+      "sc_get_channel_id",
+      "sc_get_playlist_videos",
+    ]);
+    if (YOUTUBE_ONLY_TYPES.has(message.type) && !isYouTubeHost) return;
     if (message.type === "sc_collect_transcript") {
       collectTranscriptForBackground().then(sendResponse).catch((error) => {
         sendResponse({ status: "error", reason: error?.message || "Transcript collection failed.", segments: [] });
@@ -765,7 +784,7 @@
     }
     if (message.type === "sc_get_ai_snapshot") {
       try {
-        const snapshot = getAiSnapshotContext();
+        const snapshot = getAiSnapshotContext(undefined, message.mode);
         sendResponse({ ok: true, snapshot });
       } catch (err) {
         sendResponse({ ok: false, error: err.message });
@@ -2701,56 +2720,44 @@
     return stack;
   }
 
-  function generateCleanDOM(targetElement) {
+  function generateCleanDOM(targetElement, mode = "low") {
+    const cleanMode = mode === "high" ? "high" : "low";
     const root = targetElement || document.querySelector("ytd-app, #content, main, body") || document.documentElement;
     const clone = root.cloneNode(true);
 
-    // Remove noise elements
-    const elementsToRemove = clone.querySelectorAll(
-      "script, style, link[rel='stylesheet'], noscript, iframe, template, [data-sc-ignore], #sc-youtube-widget, #sc-annotator-overlay, #sc-floating-action-button, #sc-social-panel, #sc-annotation-modal"
-    );
-    elementsToRemove.forEach(el => el.remove());
+    // Never snapshot our own UI.
+    clone.querySelectorAll(
+      "[data-sc-ignore], #sc-youtube-widget, #sc-annotator-overlay, #sc-floating-action-button, #sc-social-panel, #sc-annotation-modal, #sc-x-widget, #sc-spotify-widget, #sc-spotify-pl-widget, #sc-spotify-ly-widget"
+    ).forEach((el) => el.remove());
 
-    // Clean SVGs - strip bulky paths/polygons and replace with lightweight comment
-    const svgs = clone.querySelectorAll("svg");
-    svgs.forEach(svg => {
-      svg.innerHTML = "<!-- [SVG CONTENT STRIPPED] -->";
-    });
-
-    // Clean attributes and images
-    const all = clone.querySelectorAll("*");
-    all.forEach(el => {
-      if (el.tagName === "IMG") {
-        if (el.src && el.src.startsWith("data:")) el.removeAttribute("src");
-        if (el.srcset) el.removeAttribute("srcset");
-      }
-      if (el.hasAttribute("style")) {
-        const style = el.getAttribute("style");
-        if (style && style.length > 120) {
-          el.removeAttribute("style");
-        }
-      }
-      Array.from(el.attributes).forEach(attr => {
-        if (attr.name.startsWith("data-sc-") || attr.name.startsWith("__react") || attr.name.startsWith("data-google-") || attr.name.startsWith("data-analytics-")) {
-          el.removeAttribute(attr.name);
-        }
+    const bytesBefore = clone.outerHTML.length;
+    if (typeof window.stripDomNoise === "function") {
+      window.stripDomNoise(clone, cleanMode);
+    } else {
+      // Fallback mirrors helpers.stripDomNoise(low) when helpers.js is stale.
+      clone.querySelectorAll("script, style, link[rel='stylesheet'], noscript, iframe, template").forEach((el) => el.remove());
+      clone.querySelectorAll("svg").forEach((svg) => {
+        svg.innerHTML = "<!-- [SVG CONTENT STRIPPED] -->";
       });
-    });
-
-    return clone.outerHTML;
+    }
+    const html = clone.outerHTML;
+    return { html, bytesBefore, bytesAfter: html.length, mode: cleanMode };
   }
 
-  function getAiSnapshotContext(targetElement) {
-    const cleanHtml = generateCleanDOM(targetElement);
+  function getAiSnapshotContext(targetElement, mode = "low") {
+    const cleaned = generateCleanDOM(targetElement, mode);
     return {
       metadata: {
         timestamp: new Date().toISOString(),
         url: window.location.href,
         title: document.title,
-        type: "Token-Optimized"
+        type: cleaned.mode === "high" ? "High-Density" : "Token-Optimized",
+        mode: cleaned.mode,
+        bytesBefore: cleaned.bytesBefore,
+        bytesAfter: cleaned.bytesAfter
       },
       stack: detectTechStack(),
-      clean_dom: cleanHtml
+      clean_dom: cleaned.html
     };
   }
 

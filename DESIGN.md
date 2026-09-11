@@ -55,3 +55,14 @@ status plus source and check timestamp.
 - One platform at a time, robust over broad: Spotify is the reference
   second surface. Twitter/Instagram/Reddit come after, each with its own
   helpers + parser tests + status states before any widget chrome.
+- X is now the third surface (post + profile routes only — no home,
+  explore, search, DMs, or settings capture, ever).
+
+## DOM Lab (future — do not build yet)
+
+- The Low/High snapshot modes are the seed: Low = faithful, High =
+  parser-anchored density (measured 70%+ byte reduction on X by dropping
+  hashed classes/generated ids).
+- Later GUI: any-website snapshot panel with mode toggle, before/after
+  byte receipts, and versioned DOM history (hash + timestamp per
+  snapshot, diff view) for extension-building iteration.

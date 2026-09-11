@@ -52,22 +52,24 @@ async function refreshStatus() {
     const tab = await activeTab();
     activeTabId = tab?.id ?? null;
     const response = await requestPage('sc_get_capture_status');
-    const platform = response?.platform === 'spotify' ? 'spotify' : 'youtube';
-    const kind = platform === 'spotify' ? 'Spotify episode' : 'YouTube video';
+    const platform = String(response?.platform || 'youtube');
+    const kind = platform.startsWith('spotify') ? 'Spotify episode' : platform === 'x' ? 'X post' : 'YouTube video';
     if (!response?.videoId && !response?.episodeId) {
       titleEl.textContent = `No active ${kind.toLowerCase()}`;
-      metaEl.textContent = platform === 'spotify'
+      metaEl.textContent = platform.startsWith('spotify')
         ? 'Open a Spotify episode to capture it.'
-        : 'Open a watch, live, or Shorts video to capture it.';
+        : platform === 'x'
+          ? 'Open an X post or profile to capture it.'
+          : 'Open a watch, live, or Shorts video to capture it.';
       captureLabel.checked = false;
       captureLabel.disabled = true;
       setCaptureLabel('Use saved capture');
     } else {
       titleEl.textContent = response.title || `Current ${kind.toLowerCase()}`;
-      metaEl.textContent = response.transcriptAvailable ? 'Transcript is ready locally.' : (platform === 'spotify' ? 'Transcript not synced yet — it auto-syncs, or press Sync in the page widget.' : 'Transcript not saved yet — Sync it in the page widget.');
+      metaEl.textContent = response.transcriptAvailable ? 'Transcript is ready locally.' : (platform.startsWith('spotify') ? 'Transcript not synced yet — it auto-syncs, or press Sync in the page widget.' : platform === 'x' ? 'Posts not captured yet — they auto-read, or press Capture in the page widget.' : 'Transcript not saved yet — Sync it in the page widget.');
       captureLabel.disabled = false;
       captureLabel.checked = true;
-      setCaptureLabel(platform === 'spotify' ? 'Use saved Spotify capture' : 'Use saved YouTube capture');
+      setCaptureLabel(platform.startsWith('spotify') ? 'Use saved Spotify capture' : platform === 'x' ? 'Use saved X capture' : 'Use saved YouTube capture');
     }
   } catch (error) {
     const tab = await activeTab().catch(() => null);
@@ -103,7 +105,7 @@ async function copyActivePageContext(instruction = '') {
       if (capture?.ok && capture.markdown) {
         const max = pageContextLimit();
         const markdown = String(capture.markdown);
-        const kind = capture.platform === 'spotify' ? 'Spotify' : 'YouTube';
+        const kind = capture.platform === 'x' ? 'X' : capture.platform?.startsWith?.('spotify') ? 'Spotify' : 'YouTube';
         const limited = markdown.length > max ? `${markdown.slice(0, max)}\n\n[Capture truncated at ${max.toLocaleString()} characters. Choose “Full saved capture” to include more.]` : markdown;
         const prompt = `${prefix}Structured local ${kind} capture:\n\n${limited}`;
         await navigator.clipboard.writeText(prompt);
