@@ -585,6 +585,42 @@
     if (callback) callback();
   }
 
+  // --- Namespaced diagnostic logger ---
+  // Levels: error/warn always print; info prints key lifecycle events;
+  // debug only prints when sc_debug_verbose is on. The last 120 entries
+  // are kept in-memory and copyable from the Export tab.
+  const SC_LOG_BUFFER = [];
+  const SC_LOG_MAX = 120;
+  let scLogVerbose = false;
+  storage.get(["sc_debug_verbose"], (data) => {
+    scLogVerbose = data?.sc_debug_verbose === true;
+  });
+
+  function scLog(level, area, message, data) {
+    const entry = { t: new Date().toISOString(), level, area, videoId: currentVideoId || "", message };
+    if (data !== undefined) {
+      try {
+        entry.data = JSON.parse(JSON.stringify(data));
+      } catch {
+        entry.data = String(data);
+      }
+    }
+    SC_LOG_BUFFER.push(entry);
+    if (SC_LOG_BUFFER.length > SC_LOG_MAX) SC_LOG_BUFFER.splice(0, SC_LOG_BUFFER.length - SC_LOG_MAX);
+    const line = `[SC:${area}] ${message}${currentVideoId ? ` (video ${currentVideoId})` : ""}`;
+    if (level === "error") console.error(line, data ?? "");
+    else if (level === "warn") console.warn(line, data ?? "");
+    else if (level === "debug" && !scLogVerbose) return;
+    else console.log(line, data ?? "");
+  }
+
+  async function copyDiagnosticLog() {
+    const log = SC_LOG_BUFFER.map((e) => `[${e.t}] ${e.level.toUpperCase()} [${e.area}]${e.videoId ? ` (${e.videoId})` : ""} ${e.message}${e.data !== undefined ? ` :: ${JSON.stringify(e.data)}` : ""}`).join("\n");
+    const header = `Social Companion diagnostic log — ${new Date().toISOString()} — ${window.location.href}\nVerbose: ${scLogVerbose}\n\n`;
+    const copied = await scCopyText(header + log);
+    showToast(copied ? `📋 Diagnostic log copied (${SC_LOG_BUFFER.length} entries).` : "❌ Copy failed — allow clipboard access.");
+  }
+
   // Global variables
   let currentVideoId = "";
   let activeTabName = "notes";
@@ -607,8 +643,10 @@
 
   function setTranscriptState(status, message, source = "") {
     transcriptState = { status, videoId: currentVideoId, message, source, updatedAt: new Date().toISOString() };
+    if (status === "waiting") scLog("debug", "transcript", `state=waiting: ${message}`);
+    else scLog("info", "transcript", `state=${status}: ${message}`, source || undefined);
     renderTranscriptStatus();
-    if (status === "ready") maybeAutoCaptureCurrentVideo().catch((error) => console.warn("Auto-capture check failed", error));
+    if (status === "ready") maybeAutoCaptureCurrentVideo().catch((error) => scLog("warn", "autocapture", "check failed", error?.message));
   }
 
   async function maybeAutoCaptureCurrentVideo() {
@@ -1242,6 +1280,7 @@
     if (videoId) {
       currentVideoId = videoId;
       ytCaptions = [];
+      scLog("info", "route", `navigated to ${videoId}`, { url: location.href });
       setTranscriptState("waiting", "Waiting for captions for this video…");
       cachedMarkdown = ""; // reset cache for new video
       cachedMarkdownVideoId = "";
@@ -1250,10 +1289,19 @@
       injectYouTubeWidget(videoId, 0);
       injectTimelineMarkers();
 
-      // Delay transcript fetch slightly to ensure page data is loaded
-      setTimeout(() => fetchYouTubeTranscript(), 1500);
+      // Delay transcript fetch slightly to ensure page data is loaded.
+      // Both timers are bound to this videoId: on autoplay/queue advance
+      // they must not touch the next video's state.
+      setTimeout(() => {
+        if (currentVideoId !== videoId || getYouTubeVideoId() !== videoId) {
+          scLog("debug", "transcript", "initial fetch dropped (navigated)", { videoId });
+          return;
+        }
+        fetchYouTubeTranscript();
+      }, 1500);
       // Retry once more after 4s in case YouTube loads data lazily
       setTimeout(() => {
+        if (currentVideoId !== videoId || getYouTubeVideoId() !== videoId) return;
         if (ytCaptions.length === 0) fetchYouTubeTranscript();
       }, 4000);
 
@@ -1903,6 +1951,16 @@
             <pre id="sc-export-preview" style="font-size: 11px; white-space: pre-wrap; background: rgba(0,0,0,0.05); padding: 8px; border-radius: 6px; margin-top: 6px; max-height: 180px; overflow-y: auto;"></pre>
           </div>
 
+          <div style="margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.08);">
+            <strong style="font-size: 13px;">🩺 Diagnostics:</strong>
+            <div class="sc-btn-row" style="margin-top:8px;">
+              <button class="sc-btn sc-btn-secondary" id="sc-btn-copy-diag-log" style="justify-content: center;">📋 Copy diagnostic log</button>
+            </div>
+            <label class="sc-options-row" style="margin-top:6px; cursor:pointer;">
+              <input type="checkbox" id="sc-chk-verbose-log"> Verbose console logging (detailed [SC:*] lines)
+            </label>
+          </div>
+
           <div style="margin-top: 16px;">
             <strong style="font-size: 13px;">Send context to AI chatbot:</strong>
             <div class="sc-llm-routing">
@@ -2184,6 +2242,18 @@
     container.querySelectorAll(".sc-llm-routing button").forEach((btn) => {
       btn.addEventListener("click", () => sendToLLM(btn.dataset.llm));
     });
+
+    container.querySelector("#sc-btn-copy-diag-log")?.addEventListener("click", () => copyDiagnosticLog());
+    const verboseChk = container.querySelector("#sc-chk-verbose-log");
+    if (verboseChk) {
+      verboseChk.checked = scLogVerbose;
+      verboseChk.addEventListener("change", () => {
+        scLogVerbose = verboseChk.checked;
+        storage.set({ sc_debug_verbose: scLogVerbose });
+        showToast(scLogVerbose ? "🔍 Verbose [SC:*] logging on." : "Verbose logging off.");
+        scLog("info", "diag", `verbose logging ${scLogVerbose ? "enabled" : "disabled"}`);
+      });
+    }
   }
 
   async function updateExportPreview() {
@@ -3102,6 +3172,8 @@ ${JSON.stringify(snapshot, null, 2)}
 
   // Force sync / clear stale data and reload transcript
   function forceSyncTranscript() {
+    const expectedVideoId = currentVideoId;
+    scLog("info", "sync", "force sync requested", { expectedVideoId });
     ytCaptions = [];
     hasAttemptedAutoClick = false;
     setTranscriptState("waiting", "Syncing captions — checking YouTube three times…");
@@ -3119,13 +3191,19 @@ ${JSON.stringify(snapshot, null, 2)}
     const retryDelays = [0, 1400, 3600];
     retryDelays.forEach((delay, attempt) => {
       setTimeout(() => {
+        if (currentVideoId !== expectedVideoId || getYouTubeVideoId() !== expectedVideoId) {
+          scLog("debug", "sync", `retry ${attempt} dropped (navigated)`, { expectedVideoId });
+          return;
+        }
         if (ytCaptions.length > 0) return;
         fetchYouTubeTranscript();
         // A later retry is more likely to find YouTube's lazily rendered panel.
         scrapeNativeYouTubeTranscript(attempt > 0);
         if (attempt === retryDelays.length - 1) {
           setTimeout(() => {
+            if (currentVideoId !== expectedVideoId || getYouTubeVideoId() !== expectedVideoId) return;
             if (!ytCaptions.length) {
+              scLog("warn", "sync", "no transcript after three checks", { expectedVideoId });
               setTranscriptState("unavailable", "No transcript exposed for this video after three checks.");
               showToast("ℹ️ Transcript still unavailable — YouTube may not expose one for this video");
             }
@@ -3135,16 +3213,19 @@ ${JSON.stringify(snapshot, null, 2)}
     });
   }
 
-  // Fetch transcript: script parsing + DOM clicker fallback
+  // Fetch transcript: script parsing + DOM clicker fallback.
+  // Never wipes already-verified captions for the same video — a late fetch
+  // (autoplay/queue race) may only replace them on success.
   function fetchYouTubeTranscript() {
-    ytCaptions = [];
+    const expectedVideoId = currentVideoId;
+    if (!expectedVideoId) return;
 
     // First attempt: Scrape ytInitialPlayerResponse directly from script tags
     const playerResponse = getPlayerResponseFromScripts();
     const isResponseValidForCurrentVideo =
       playerResponse &&
       playerResponse.videoDetails &&
-      playerResponse.videoDetails.videoId === currentVideoId;
+      playerResponse.videoDetails.videoId === expectedVideoId;
 
     if (
       isResponseValidForCurrentVideo &&
@@ -3154,15 +3235,23 @@ ${JSON.stringify(snapshot, null, 2)}
     ) {
       const tracks =
         playerResponse.captions.playerCaptionsTracklistRenderer.captionTracks;
-      loadTranscriptFromTracks(tracks);
+      loadTranscriptFromTracks(tracks, expectedVideoId);
     } else {
-      if (playerResponse?.videoDetails?.videoId && playerResponse.videoDetails.videoId !== currentVideoId) {
+      if (currentVideoId !== expectedVideoId || getYouTubeVideoId() !== expectedVideoId) {
+        scLog("debug", "transcript", "fetch dropped (navigated mid-flight)", { expectedVideoId });
+        return;
+      }
+      if (playerResponse?.videoDetails?.videoId && playerResponse.videoDetails.videoId !== expectedVideoId) {
+        scLog("warn", "transcript", "player data belongs to a different video — ignored", {
+          expected: expectedVideoId,
+          found: playerResponse.videoDetails.videoId,
+        });
         setTranscriptState("mismatch", "Transcript data belongs to a different video — ignored.");
         return;
       }
       setTranscriptState("waiting", "Captions are not ready yet — checking YouTube’s transcript panel…");
       // Fallback: Scrape native transcript DOM
-      scrapeNativeYouTubeTranscript();
+      scrapeNativeYouTubeTranscript(undefined, expectedVideoId);
     }
   }
 
@@ -3272,8 +3361,7 @@ ${JSON.stringify(snapshot, null, 2)}
     }
   }
 
-  async function loadTranscriptFromTracks(tracks) {
-    const expectedVideoId = currentVideoId;
+  async function loadTranscriptFromTracks(tracks, expectedVideoId = currentVideoId) {
     const englishTrack =
       tracks.find((t) => t.languageCode === "en") || tracks[0];
     try {
@@ -3302,9 +3390,16 @@ ${JSON.stringify(snapshot, null, 2)}
         const duration = Number(document.querySelector("video")?.duration || 0);
         const lastStart = ytCaptions[ytCaptions.length - 1]?.start || 0;
         if (playerVideoId !== currentVideoId || (Number.isFinite(duration) && duration > 0 && lastStart > duration + 45)) {
+          scLog("warn", "transcript", "caption-track timing/video check failed", {
+            expectedVideoId,
+            playerVideoId,
+            duration,
+            lastStart,
+          });
           setTranscriptState("mismatch", "Transcript timing/video check failed — not marked ready.");
         } else {
           storage.set({ [`sc_transcript_meta_${currentVideoId}`]: { videoId: currentVideoId, durationSeconds: duration, segmentCount: ytCaptions.length, collectedAt: new Date().toISOString(), source: "caption-track" } });
+          scLog("debug", "transcript", `caption-track committed (${ytCaptions.length} segments)`, { expectedVideoId });
           setTranscriptState("ready", `Transcript ready · ${ytCaptions.length} segments · caption track verified.`, "caption-track");
         }
       }
@@ -3328,8 +3423,10 @@ ${JSON.stringify(snapshot, null, 2)}
     }
   }
 
-  // Dynamic deep transcript DOM scraper
-  function scrapeNativeYouTubeTranscript(forceClick = false) {
+  // Dynamic deep transcript DOM scraper.
+  // expectedVideoId drops stale autoplay/queue work: results are committed
+  // only when the page still shows that video.
+  function scrapeNativeYouTubeTranscript(forceClick = false, expectedVideoId = currentVideoId) {
     const transcriptBox = document.getElementById("sc-transcript-box");
 
     // Find all timestamped elements — covers old + new YouTube DOM
@@ -3402,8 +3499,16 @@ ${JSON.stringify(snapshot, null, 2)}
         });
 
       if (ytCaptions.length > 0) {
+        if (currentVideoId !== expectedVideoId || getYouTubeVideoId() !== expectedVideoId) {
+          scLog("debug", "transcript", "native scrape dropped (navigated)", { expectedVideoId });
+          return;
+        }
         const playerVideoId = getPlayerResponseFromScripts()?.videoDetails?.videoId || currentVideoId;
-        if (playerVideoId !== currentVideoId) {
+        if (playerVideoId !== expectedVideoId) {
+          scLog("warn", "transcript", "visible transcript belongs to a different video — ignored", {
+            expected: expectedVideoId,
+            found: playerVideoId,
+          });
           ytCaptions = [];
           setTranscriptState("mismatch", "Visible transcript belongs to a different video — ignored.");
           renderTranscript();
@@ -3420,6 +3525,10 @@ ${JSON.stringify(snapshot, null, 2)}
     }
 
     if (forceClick) {
+      if (currentVideoId !== expectedVideoId || getYouTubeVideoId() !== expectedVideoId) {
+        scLog("debug", "transcript", "transcript-button click dropped (navigated)", { expectedVideoId });
+        return;
+      }
       // Try multiple selectors for the "Show transcript" button
       const showBtn =
         document.querySelector(
