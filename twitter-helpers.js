@@ -129,6 +129,13 @@ function scrapeTweetArticle(article) {
   const hasQuote = Boolean(
     textEl && qa('[data-testid="tweetText"]').length > 1,
   );
+  // Content photo URLs only (avatar lives outside tweetPhoto). Video
+  // posters Thumbnails surface as pbs.twimg.com imgs too — keep them.
+  const photos = qa('[data-testid="tweetPhoto"] img[src*="pbs.twimg.com"]')
+    .map((img) => img.getAttribute("src") || "")
+    .filter(Boolean)
+    .filter((v, i, arr) => arr.indexOf(v) === i)
+    .slice(0, 4);
 
   if (!text && !statusUrl) return null;
   return {
@@ -139,7 +146,7 @@ function scrapeTweetArticle(article) {
     reposts: reposts || gm.reposts || "",
     likes: likes || gm.likes || "",
     views,
-    hasPhoto, hasVideo, hasQuote,
+    hasPhoto, hasVideo, hasQuote, photos,
   };
 }
 
@@ -202,8 +209,24 @@ function scrapeProfileHeader(doc) {
   };
 }
 
-function buildXMarkdown({ route = {}, profile = null, tweets = [], capturedAt = "" }) {
+function buildXMarkdown({ route = {}, profile = null, tweets = [], capturedAt = "", format = "full" }) {
   const at = capturedAt || new Date().toISOString();
+  if (format === "text") {
+    return tweets
+      .map((t, i) => `${i + 1}. ${t.author} (@${t.handle}):\n${t.text || "_(media-only)_"}`)
+      .join("\n\n");
+  }
+  if (format === "links") {
+    return tweets.map((t) => t.statusUrl).filter(Boolean).join("\n");
+  }
+  if (format === "compact") {
+    return tweets
+      .map((t) => {
+        const snippet = (t.text || "_(media-only)_").replace(/\s+/g, " ").slice(0, 140);
+        return `@${t.handle}: ${snippet} (💬 ${t.replies || 0} · 🔁 ${t.reposts || 0} · ❤️ ${t.likes || 0})${t.statusUrl ? ` ${t.statusUrl}` : ""}`;
+      })
+      .join("\n");
+  }
   const lines = [];
   const isPost = route.kind === "post";
   const head = isPost
@@ -241,6 +264,9 @@ function buildXMarkdown({ route = {}, profile = null, tweets = [], capturedAt = 
       if (media) stats.push(media);
       lines.push(stats.join(" · "));
       if (t.statusUrl) lines.push(t.statusUrl);
+      if (Array.isArray(t.photos) && t.photos.length) {
+        t.photos.forEach((src) => lines.push(`![](${src})`));
+      }
       lines.push("");
     });
   }

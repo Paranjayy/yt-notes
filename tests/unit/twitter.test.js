@@ -46,8 +46,7 @@ describe('twitter-helpers.js', () => {
   });
 
   describe('buildXMarkdown', () => {
-    it('renders receipts, never empty claims', () => {
-      const md = H.buildXMarkdown({
+    it('renders receipts, never empty claims', () => {      const md = H.buildXMarkdown({
         route: { kind: 'post', handle: 'theo', statusId: '1', url: 'https://x.com/theo/status/1' },
         profile: null,
         tweets: [{ author: 'Theo', handle: 'theo', time: 'Sep 10', text: 'hello', replies: '1', reposts: '2', likes: '3', views: '', statusUrl: 'https://x.com/theo/status/1', hasPhoto: false, hasVideo: true, hasQuote: false }],
@@ -57,6 +56,35 @@ describe('twitter-helpers.js', () => {
       expect(md).toContain('🎬 video');
       const empty = H.buildXMarkdown({ route: { kind: 'profile', handle: 'theo', url: 'https://x.com/theo' }, tweets: [] });
       expect(empty).toContain('No posts captured');
+    });
+  });
+
+  describe('photos + copy formats', () => {
+    it('extracts content photo urls, ignores avatars', () => {
+      document.body.innerHTML = fixture('x-article.html');
+      const article = document.querySelector('article[data-testid="tweet"]');
+      const photoBox = article.querySelector('[data-testid="tweetPhoto"]');
+      const img = document.createElement('img');
+      img.setAttribute('src', 'https://pbs.twimg.com/media/ABC123?format=jpg');
+      photoBox.appendChild(img);
+      const t = H.scrapeTweetArticle(article);
+      expect(t.photos).toEqual(['https://pbs.twimg.com/media/ABC123?format=jpg']);
+    });
+
+    it('renders text / links / compact variants', () => {
+      const tweets = [
+        { author: 'Theo', handle: 'theo', time: 'Sep 10', text: 'hello world', replies: '79', reposts: '47', likes: '897', views: '146469', statusUrl: 'https://x.com/theo/status/1', hasPhoto: false, hasVideo: false, hasQuote: false, photos: [] },
+        { author: 'Theo', handle: 'theo', time: '', text: '', replies: '', reposts: '', likes: '', views: '', statusUrl: 'https://x.com/theo/status/2', hasPhoto: true, hasVideo: false, hasQuote: false, photos: ['https://pbs.twimg.com/media/X'] },
+      ];
+      const route = { kind: 'profile', handle: 'theo', url: 'https://x.com/theo' };
+      const text = H.buildXMarkdown({ route, tweets, format: 'text' });
+      expect(text).toContain('1. Theo (@theo):\nhello world');
+      const links = H.buildXMarkdown({ route, tweets, format: 'links' });
+      expect(links).toBe('https://x.com/theo/status/1\nhttps://x.com/theo/status/2');
+      const compact = H.buildXMarkdown({ route, tweets, format: 'compact' });
+      expect(compact).toContain('@theo: hello world (💬 79 · 🔁 47 · ❤️ 897) https://x.com/theo/status/1');
+      const full = H.buildXMarkdown({ route, tweets, format: 'full' });
+      expect(full).toContain('![](https://pbs.twimg.com/media/X)');
     });
   });
 });

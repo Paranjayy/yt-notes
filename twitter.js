@@ -226,6 +226,14 @@
           <button id="sc-x-copy" style="padding:7px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-weight:700;font-size:12px;cursor:pointer;">Copy</button>
           <button id="sc-x-dl" style="padding:7px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-weight:700;font-size:12px;cursor:pointer;">Download .md</button>
         </div>
+        <div>
+          <div style="font-size:10px;font-weight:700;letter-spacing:.06em;opacity:.6;margin-bottom:4px;">QUICK COPY</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <button data-x-copy="text" style="padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-weight:700;font-size:11px;cursor:pointer;">Text only</button>
+            <button data-x-copy="links" style="padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-weight:700;font-size:11px;cursor:pointer;">Links</button>
+            <button data-x-copy="compact" style="padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-weight:700;font-size:11px;cursor:pointer;">Compact</button>
+          </div>
+        </div>
         <div id="sc-x-meta" style="font-size:11px;opacity:.75;">…</div>
         <div id="sc-x-lines" style="max-height:280px;overflow-y:auto;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:10px;font-size:12px;">Not captured yet.</div>
         <div style="font-size:11px;opacity:.6;">Public posts only — no DMs, no private content. Scroll the timeline for more, then Capture again.</div>
@@ -265,6 +273,25 @@
         scToast(`❌ Download failed — ${err?.message || "retry"}.`);
       }
     };
+    el.querySelectorAll("[data-x-copy]").forEach((btn) => {
+      btn.onclick = async () => {
+        const format = btn.getAttribute("data-x-copy");
+        try {
+          if (!tweets.length) await capture({ scroll: false });
+          if (!tweets.length) {
+            scToast("⚠️ Nothing captured yet — scroll, then Capture posts.");
+            return;
+          }
+          const r = parseRoute(location.href);
+          r.url = location.href;
+          const out = (H.buildXMarkdown || (() => ""))({ route: r, profile, tweets, capturedAt: new Date().toISOString(), format });
+          await navigator.clipboard.writeText(out);
+          scToast(`📋 Copied ${format} (${tweets.length} posts).`);
+        } catch (err) {
+          scToast(`❌ Copy failed — ${err?.message || "retry"}.`);
+        }
+      };
+    });
     wireChrome(el);
     setStatus("idle", "Post surface detected.");
   }
