@@ -33,32 +33,54 @@ async function activeTab() {
 
 async function requestPage(type) {
   if (activeTabId == null) throw new Error('No active tab is available.');
-  return chrome.tabs.sendMessage(activeTabId, { type });
+  try {
+    return await chrome.tabs.sendMessage(activeTabId, { type });
+  } catch {
+    throw new Error('This tab is not connected — reload it once, then retry.');
+  }
 }
 
 async function refreshStatus() {
+  const captureLabel = document.getElementById('preferCapture');
+  const setCaptureLabel = (text) => {
+    const label = captureLabel?.closest('label');
+    if (!label) return;
+    const node = Array.from(label.childNodes).find((n) => n.nodeType === Node.TEXT_NODE && n.textContent.trim());
+    if (node) node.textContent = ` ${text}`;
+  };
   try {
     const tab = await activeTab();
     activeTabId = tab?.id ?? null;
     const response = await requestPage('sc_get_capture_status');
-    if (!response?.videoId) {
-      titleEl.textContent = 'No active YouTube video';
-      metaEl.textContent = 'Open a watch, live, or Shorts video to capture it.';
-      document.getElementById('preferCapture').checked = false;
-      document.getElementById('preferCapture').disabled = true;
+    const platform = response?.platform === 'spotify' ? 'spotify' : 'youtube';
+    const kind = platform === 'spotify' ? 'Spotify episode' : 'YouTube video';
+    if (!response?.videoId && !response?.episodeId) {
+      titleEl.textContent = `No active ${kind.toLowerCase()}`;
+      metaEl.textContent = platform === 'spotify'
+        ? 'Open a Spotify episode to capture it.'
+        : 'Open a watch, live, or Shorts video to capture it.';
+      captureLabel.checked = false;
+      captureLabel.disabled = true;
+      setCaptureLabel('Use saved capture');
     } else {
-      titleEl.textContent = response.title || 'Current YouTube video';
-      metaEl.textContent = response.transcriptAvailable ? 'Transcript is ready locally.' : 'Transcript not saved yet — Sync it in the page widget.';
-      document.getElementById('preferCapture').disabled = false;
-      document.getElementById('preferCapture').checked = true;
+      titleEl.textContent = response.title || `Current ${kind.toLowerCase()}`;
+      metaEl.textContent = response.transcriptAvailable ? 'Transcript is ready locally.' : (platform === 'spotify' ? 'Transcript not synced yet — it auto-syncs, or press Sync in the page widget.' : 'Transcript not saved yet — Sync it in the page widget.');
+      captureLabel.disabled = false;
+      captureLabel.checked = true;
+      setCaptureLabel(platform === 'spotify' ? 'Use saved Spotify capture' : 'Use saved YouTube capture');
     }
-  } catch {
+  } catch (error) {
     const tab = await activeTab().catch(() => null);
     activeTabId = tab?.id ?? null;
     titleEl.textContent = tab?.title || 'Active page';
-    metaEl.textContent = 'Copy selected text or a short page context, then choose where to use it.';
-    document.getElementById('preferCapture').checked = false;
-    document.getElementById('preferCapture').disabled = true;
+    // The common "blank/broken popup" cause: the content script isn't in this
+    // tab yet (extension just installed/updated). Say so instead of nothing.
+    metaEl.textContent = /receiving end|connection|no response|not connected/i.test(error?.message || '')
+      ? 'Extension updated — reload this tab once, then reopen the popup.'
+      : 'Copy selected text or a short page context, then choose where to use it.';
+    captureLabel.checked = false;
+    captureLabel.disabled = true;
+    setCaptureLabel('Use saved capture');
   }
   const last = await chrome.storage.local.get('sc_provider_last_status').catch(() => ({}));
   const receipt = last?.sc_provider_last_status;
@@ -81,10 +103,11 @@ async function copyActivePageContext(instruction = '') {
       if (capture?.ok && capture.markdown) {
         const max = pageContextLimit();
         const markdown = String(capture.markdown);
+        const kind = capture.platform === 'spotify' ? 'Spotify' : 'YouTube';
         const limited = markdown.length > max ? `${markdown.slice(0, max)}\n\n[Capture truncated at ${max.toLocaleString()} characters. Choose “Full saved capture” to include more.]` : markdown;
-        const prompt = `${prefix}Structured local YouTube capture:\n\n${limited}`;
+        const prompt = `${prefix}Structured local ${kind} capture:\n\n${limited}`;
         await navigator.clipboard.writeText(prompt);
-        setStatus(markdown.length > max ? 'Structured capture copied (truncated to selected size).' : 'Structured YouTube capture copied.', 'success');
+        setStatus(markdown.length > max ? 'Structured capture copied (truncated to selected size).' : `Structured ${kind} capture copied.`, 'success');
         return prompt;
       }
     }
@@ -311,8 +334,12 @@ document.getElementById('saveRecipe').addEventListener('click', async () => {
   setStatus(`Saved recipe: ${name}.`, 'success');
 });
 
-refreshStatus();
-loadAutoCaptureSettings();
+refreshStatus().catch((error) => setStatus(error?.message || 'Popup could not reach the active tab — reload the tab and retry.', 'error'));
+try {
+  loadAutoCaptureSettings();
+} catch (error) {
+  setStatus(error?.message || 'Popup settings failed to load.', 'error');
+}
 renderPromptHistory();
 renderProviderActivity();
 renderRecipes();
