@@ -57,6 +57,9 @@ status plus source and check timestamp.
   helpers + parser tests + status states before any widget chrome.
 - X is now the third surface (post + profile routes only — no home,
   explore, search, DMs, or settings capture, ever).
+- Reddit is the fourth surface (subreddit feed + comment thread only —
+  no user pages, inbox, or settings, ever). Its shreddit-* components
+  expose facts as attributes, so parsing is attribute-first.
 
 ## DOM Lab (future — do not build yet)
 
