@@ -73,6 +73,16 @@ describe('spotify-helpers.js', () => {
     });
   });
 
+  describe('getTranscriptApiAction', () => {
+    it('maps HTTP statuses to transcript strategy', () => {
+      expect(H.getTranscriptApiAction(404)).toBe('empty');
+      expect(H.getTranscriptApiAction(401)).toBe('auth');
+      expect(H.getTranscriptApiAction(403)).toBe('skip-api');
+      expect(H.getTranscriptApiAction(500)).toBe('retry');
+      expect(H.getTranscriptApiAction(429)).toBe('retry');
+    });
+  });
+
   describe('scrapeSpotifyPanel (real transcript-panel DOM)', () => {
     // Faithful miniature of a live #transcript-panel: hashed classes intact
     // to prove the parser depends on structure, not class names.

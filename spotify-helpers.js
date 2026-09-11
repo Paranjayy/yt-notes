@@ -172,6 +172,21 @@ function mergeTranscriptSegments(segments) {
 }
 
 /**
+ * Decide what to do for a transcript/token HTTP status.
+ * - 404 on the read-along endpoint: episode genuinely has no transcript.
+ * - 401: login required.
+ * - 403: token endpoint blocked (content/tracker blocker) or forbidden —
+ *   the page Transcript tab is still usable, so skip the API, don't error.
+ * - anything else: retryable.
+ */
+function getTranscriptApiAction(status) {
+  if (status === 404) return "empty";
+  if (status === 401) return "auth";
+  if (status === 403) return "skip-api";
+  return "retry";
+}
+
+/**
  * Normalize titles so a Spotify-exclusive episode can be matched against a
  * YouTube upload with slightly different punctuation/casing/suffixes.
  * "Madeline Argy Debrief: Toxic Relationships • Call Her Daddy" -> core title.
@@ -462,6 +477,7 @@ if (typeof module !== "undefined" && module.exports) {
     formatSpotifyTimestamp,
     parseDurationToMs,
     parseTranscriptReadAlong,
+    getTranscriptApiAction,
     mergeTranscriptSegments,
     normalizeEpisodeTitle,
     episodeMatchScore,
@@ -477,6 +493,7 @@ if (typeof module !== "undefined" && module.exports) {
     formatSpotifyTimestamp,
     parseDurationToMs,
     parseTranscriptReadAlong,
+    getTranscriptApiAction,
     mergeTranscriptSegments,
     normalizeEpisodeTitle,
     episodeMatchScore,

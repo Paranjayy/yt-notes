@@ -25,6 +25,18 @@ status plus source and check timestamp.
 
 ## Spotify specifics
 
+- Capture is **automatic, like YouTube**: on episode route the Transcript
+  tab is auto-clicked, its scroll container is step-scrolled once so lazy
+  rows render, and a `MutationObserver` captures rows the instant they
+  appear. Manual Sync re-runs the same pipeline on demand.
+- The widget is a **floating panel** (fixed, draggable by header,
+  collapsible, hideable, geometry persisted) — it never obstructs page
+  content, mirroring the X/Reddit companion pattern.
+- The transcript/token API is **best-effort**: a 403/blocked token
+  endpoint sets a per-episode `skip-api` flag and falls through to the
+  page tab with the source labeled accordingly — never a dead error.
+  Exports say which path produced them.
+
 - Web transcript panels are **untimed and speaker-grouped** with an
   auto-generated disclaimer row. Timed cues come only from the
   `transcript-read-along` API. Exports render whichever shape was

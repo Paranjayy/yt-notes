@@ -24,6 +24,12 @@
   let transcriptNotice = "";
   let transcriptMeta = { status: "idle", message: "Waiting for this episode…", source: "" };
   let lastCapture = { episodeId: "", markdown: "", at: "" };
+  // Per-episode one-shot flags: the transcript API is unreachable from this
+  // browser profile (content blocker / logged-out token endpoint), and the
+  // panel was already auto-scrolled to force lazy rows to render.
+  let apiBlockedForEpisode = "";
+  let autoScrolledFor = "";
+  let _panelObserver = null;
 
   function setStatus(status, message, source = "") {
     transcriptMeta = { status, videoId: currentEpisodeId, message, source, updatedAt: new Date().toISOString() };
@@ -53,6 +59,11 @@
       #sc-spotify-widget, #sc-spotify-widget * {
         user-select: text !important;
         -webkit-user-select: text !important;
+      }
+      #sc-sp-head, #sc-sp-head * {
+        user-select: none !important;
+        -webkit-user-select: none !important;
+        cursor: move;
       }`;
     document.head.appendChild(style);
   }
@@ -196,14 +207,129 @@
   }
 
   async function fetchWebPlayerToken() {
-    const res = await fetch(
-      "https://open.spotify.com/get_access_token?reason=transport&productType=web-player",
-      { credentials: "include" },
-    );
-    if (!res.ok) throw new Error(`Token request failed (${res.status})`);
+    let res;
+    try {
+      res = await fetch(
+        "https://open.spotify.com/get_access_token?reason=transport&productType=web-player",
+        { credentials: "include" },
+      );
+    } catch (e) {
+      const err = new Error("Transcript token request was blocked (content blocker or offline?).");
+      err.code = "token-blocked";
+      throw err;
+    }
+    if (!res.ok) {
+      const action = (H.getTranscriptApiAction || (() => "retry"))(res.status);
+      const err = new Error(
+        action === "skip-api"
+          ? "Transcript API unreachable here (tracker blocker or logged-out token endpoint) — using the page Transcript tab instead."
+          : `Token request failed (${res.status})`,
+      );
+      err.code = action === "skip-api" ? "token-blocked" : "token-error";
+      err.status = res.status;
+      throw err;
+    }
     const data = await res.json();
-    if (!data?.accessToken) throw new Error("No Spotify web-player token (are you logged in?)");
+    if (!data?.accessToken) {
+      const err = new Error("No Spotify web-player token (are you logged in?)");
+      err.code = "auth";
+      throw err;
+    }
     return data.accessToken;
+  }
+
+  function sleep(ms) {
+    return new Promise((r) => setTimeout(r, ms));
+  }
+
+  /** Nearest ancestor that actually scrolls (Spotify nests custom scrollers). */
+  function scrollContainerOf(el) {
+    let node = el?.parentElement || null;
+    while (node && node !== document.body && node !== document.documentElement) {
+      try {
+        const style = getComputedStyle(node);
+        if (
+          (style.overflowY === "auto" || style.overflowY === "scroll") &&
+          node.scrollHeight > node.clientHeight + 20
+        ) {
+          return node;
+        }
+      } catch {}
+      node = node.parentElement;
+    }
+    return document.scrollingElement || null;
+  }
+
+  /**
+   * Step-scroll the transcript's scroll container top→bottom so Spotify
+   * lazy-renders every cue row, then restore the top. Runs at most once per
+   * episode automatically; manual Sync always re-runs it on demand.
+   */
+  async function autoScrollPanelToLoad(episodeId) {
+    const panel = transcriptPanel();
+    const scroller = panel ? scrollContainerOf(panel) : null;
+    if (!panel || !scroller) return false;
+    try {
+      const step = Math.max(240, Math.floor((scroller.clientHeight || 600) * 0.8));
+      const max = scroller.scrollHeight || 0;
+      for (let y = 0; y <= max; y += step) {
+        if (getEpisodeId(location.href) !== episodeId) return false;
+        scroller.scrollTop = y;
+        await sleep(220);
+      }
+      scroller.scrollTop = 0;
+      await sleep(250);
+      return true;
+    } catch (e) {
+      console.warn("[Social Companion] transcript auto-scroll failed:", e);
+      return false;
+    }
+  }
+
+  /**
+   * Watch for the transcript panel to render (SPA navigation renders it
+   * lazily) and auto-capture the moment rows appear — the Spotify
+   * equivalent of YouTube's auto transcript sync.
+   */
+  function watchTranscriptPanel(episodeId) {
+    if (_panelObserver) {
+      _panelObserver.disconnect();
+      _panelObserver = null;
+    }
+    const stopAfter = setTimeout(() => {
+      if (_panelObserver) {
+        _panelObserver.disconnect();
+        _panelObserver = null;
+      }
+    }, 90000);
+    _panelObserver = new MutationObserver(() => {
+      if (getEpisodeId(location.href) !== episodeId || segments.length) {
+        clearTimeout(stopAfter);
+        if (_panelObserver) {
+          _panelObserver.disconnect();
+          _panelObserver = null;
+        }
+        return;
+      }
+      let parsed = null;
+      try {
+        parsed = scrapeDomTranscript();
+      } catch {
+        return;
+      }
+      if (parsed.segments.length > 0) {
+        transcriptNotice = parsed.notice;
+        segments = parsed.segments;
+        setStatus("ready", `Transcript verified · ${parsed.segments.length} lines (page tab, auto-captured)`, "page transcript tab (untimed, speaker-grouped)");
+        renderLines();
+        clearTimeout(stopAfter);
+        if (_panelObserver) {
+          _panelObserver.disconnect();
+          _panelObserver = null;
+        }
+      }
+    });
+    _panelObserver.observe(document.body, { childList: true, subtree: true });
   }
 
   async function fetchReadAlongTranscript(episodeId) {
@@ -228,24 +354,38 @@
     return { segments: parsed, raw: json };
   }
 
-  async function collectTranscript({ allowTabClick = true } = {}) {
+  async function collectTranscript({ allowTabClick = true, autoScroll = false } = {}) {
     const episodeId = getEpisodeId(location.href);
     if (!episodeId) throw new Error("Open a Spotify episode first.");
     // 1) Timed read-along API first — it carries timestamps the DOM lacks.
-    try {
-      const { segments: apiSegs } = await fetchReadAlongTranscript(episodeId);
-      if (apiSegs.length) {
-        transcriptNotice = "";
-        return { segments: apiSegs, source: "Spotify transcript API (timed)", status: `Transcript verified · ${apiSegs.length} timed lines` };
+    // Skipped entirely once this browser profile proves it unreachable (403 /
+    // blocked token endpoint): the page Transcript tab is the path instead.
+    if (apiBlockedForEpisode !== episodeId) {
+      try {
+        const { segments: apiSegs } = await fetchReadAlongTranscript(episodeId);
+        if (apiSegs.length) {
+          transcriptNotice = "";
+          return { segments: apiSegs, source: "Spotify transcript API (timed)", status: `Transcript verified · ${apiSegs.length} timed lines` };
+        }
+      } catch (e) {
+        if (e?.code === "no-transcript" || e?.code === "auth") throw e;
+        if (e?.code === "token-blocked") {
+          apiBlockedForEpisode = episodeId;
+          console.warn("[Social Companion] transcript API unreachable, using page tab:", e.message);
+        } else {
+          console.warn("[Social Companion] Spotify transcript API failed, trying page tab:", e);
+        }
       }
-    } catch (e) {
-      if (e?.code === "no-transcript" || e?.code === "auth") throw e;
-      console.warn("[Social Companion] Spotify transcript API failed, trying page tab:", e);
     }
-    // 2) Rendered DOM tab (untimed, speaker-grouped).
+    // 2) Rendered DOM tab (untimed, speaker-grouped) — auto-clicked like
+    // YouTube's auto transcript sync, then step-scrolled so lazy rows render.
     if (allowTabClick) {
       try {
         await ensureTranscriptTabLoaded();
+        if (autoScroll && autoScrolledFor !== episodeId) {
+          autoScrolledFor = episodeId;
+          await autoScrollPanelToLoad(episodeId);
+        }
       } catch (e) {
         console.warn("[Social Companion] Spotify DOM transcript failed:", e);
       }
@@ -253,7 +393,10 @@
     const { notice, segments: domSegs } = scrapeDomTranscript();
     if (domSegs.length) {
       transcriptNotice = notice;
-      return { segments: domSegs, source: "page transcript tab (untimed, speaker-grouped)", status: `Transcript verified · ${domSegs.length} lines (page tab, no timestamps)` };
+      const via = apiBlockedForEpisode === episodeId
+        ? "page transcript tab (untimed — transcript API blocked here, allow open.spotify.com in your content blocker for timed lines)"
+        : "page transcript tab (untimed, speaker-grouped)";
+      return { segments: domSegs, source: via, status: `Transcript verified · ${domSegs.length} lines (page tab, no timestamps)` };
     }
     const panel = transcriptPanel();
     const raw = panel ? (panel.textContent || "").replace(/\s+/g, " ").trim() : "";
@@ -387,29 +530,31 @@
 
   function injectWidget() {
     if (document.getElementById("sc-spotify-widget")) return;
-    const host =
-      $('[data-testid="action-bar"]')?.parentElement ||
-      $('[data-testid="entityTitle"]')?.closest("div")?.parentElement ||
-      document.querySelector("main") ||
-      document.body;
-    if (!host) {
-      setTimeout(injectWidget, 1200);
-      return;
-    }
     const el = document.createElement("div");
     el.id = "sc-spotify-widget";
-    el.style.cssText = "margin:12px 0;border-radius:14px;border:1px solid rgba(255,255,255,.12);background:rgba(18,18,22,.96);color:#f8fafc;font-family:system-ui,sans-serif;box-shadow:0 8px 32px rgba(0,0,0,.3);overflow:hidden;";
+    // Floating panel (mirrors the X/Reddit companion): draggable by its
+    // header, collapsible, position persisted — never blocks page content.
+    el.style.cssText = "position:fixed;bottom:96px;right:24px;width:380px;max-height:540px;display:flex;flex-direction:column;border-radius:14px;border:1px solid rgba(255,255,255,.12);background:rgba(18,18,22,.97);color:#f8fafc;font-family:system-ui,sans-serif;box-shadow:0 8px 32px rgba(0,0,0,.45);overflow:hidden;z-index:9999;";
     el.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:12px 14px;background:#24212d;border-bottom:1px solid rgba(167,139,250,.28);">
-        <strong style="font-size:14px;">🎙️ Spotify capture</strong>
-        <span id="sc-sp-status" style="font-size:11px;padding:3px 8px;border:1px solid #555;border-radius:999px;white-space:nowrap;">…</span>
+      <div id="sc-sp-head" style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 12px;background:#24212d;border-bottom:1px solid rgba(167,139,250,.28);cursor:move;user-select:none;-webkit-user-select:none;">
+        <strong style="font-size:13px;">🎙️ Spotify capture</strong>
+        <span style="display:flex;align-items:center;gap:6px;">
+          <span id="sc-sp-status" style="font-size:11px;padding:3px 8px;border:1px solid #555;border-radius:999px;white-space:nowrap;">…</span>
+          <button id="sc-sp-min" title="Collapse / expand" style="width:22px;height:22px;border-radius:6px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-size:13px;line-height:1;cursor:pointer;">–</button>
+          <button id="sc-sp-hide" title="Hide until next episode" style="width:22px;height:22px;border-radius:6px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-size:12px;line-height:1;cursor:pointer;">×</button>
+        </span>
       </div>
+      <div id="sc-sp-body" style="display:flex;flex-direction:column;min-height:0;overflow:hidden;"></div>`;
+    document.body.appendChild(el);
+
+    const body = el.querySelector("#sc-sp-body");
+    body.innerHTML = `
       <div style="display:flex;gap:4px;padding:6px;background:rgba(0,0,0,.2);">
         <button data-sc-tab="transcript" style="flex:1;padding:9px;border:none;border-radius:8px;background:#1db954;color:#04120a;font-weight:800;font-size:12px;cursor:pointer;">Transcript</button>
         <button data-sc-tab="details" style="flex:1;padding:9px;border:none;border-radius:8px;background:transparent;color:#94a3b8;font-weight:700;font-size:12px;cursor:pointer;">Details</button>
         <button data-sc-tab="related" style="flex:1;padding:9px;border:none;border-radius:8px;background:transparent;color:#94a3b8;font-weight:700;font-size:12px;cursor:pointer;">Related</button>
       </div>
-      <div id="sc-sp-pane-transcript" style="padding:12px 14px;">
+      <div id="sc-sp-pane-transcript" style="padding:12px 14px;overflow-y:auto;">
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
           <button id="sc-sp-sync" style="padding:7px 11px;border-radius:8px;border:none;background:#1db954;color:#04120a;font-weight:800;font-size:12px;cursor:pointer;">Sync transcript</button>
           <button id="sc-sp-select" style="padding:7px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-weight:700;font-size:12px;cursor:pointer;" title="Select the transcript text on the page so you can copy part of it">Select text</button>
@@ -420,11 +565,9 @@
         <div id="sc-sp-meta" style="font-size:11px;opacity:.75;margin-bottom:8px;">Loading episode metadata…</div>
         <div id="sc-sp-lines" style="max-height:280px;overflow-y:auto;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:10px;font-size:12px;display:flex;flex-direction:column;gap:6px;">Not synced yet.</div>
       </div>
-      <div id="sc-sp-pane-details" style="display:none;padding:12px 14px;font-size:12px;"></div>
-      <div id="sc-sp-pane-related" style="display:none;padding:12px 14px;font-size:12px;"></div>
+      <div id="sc-sp-pane-details" style="display:none;padding:12px 14px;font-size:12px;overflow-y:auto;"></div>
+      <div id="sc-sp-pane-related" style="display:none;padding:12px 14px;font-size:12px;overflow-y:auto;"></div>
       <div style="font-size:11px;opacity:.6;padding:0 14px 12px;">Transcripts need the episode's Transcript tab (login). Text selection is unlocked inside transcript/description. Nothing private is exported — only visible episode text.</div>`;
-    if (host === document.body) document.body.prepend(el);
-    else host.insertAdjacentElement("afterend", el);
 
     const tabs = $all("[data-sc-tab]", el);
     const panes = {
@@ -452,7 +595,7 @@
       btn.textContent = "Syncing…";
       btn.disabled = true;
       try {
-        const out = await collectTranscript();
+        const out = await collectTranscript({ allowTabClick: true, autoScroll: true });
         segments = out.segments;
         setStatus("ready", out.status, out.source);
         renderLines();
@@ -487,7 +630,70 @@
       downloadFile(safeFilename(meta), markdown);
     };
     el.querySelector("#sc-sp-search").oninput = (e) => renderLines(e.target.value);
+    wireFloatingChrome(el);
     renderStatus();
+  }
+
+  // Draggable / collapsible / hideable floating chrome with persisted geometry.
+  function wireFloatingChrome(el) {
+    const head = el.querySelector("#sc-sp-head");
+    const body = el.querySelector("#sc-sp-body");
+    const minBtn = el.querySelector("#sc-sp-min");
+    const hideBtn = el.querySelector("#sc-sp-hide");
+    try {
+      chrome.storage.local.get(["sc_spotify_widget_pos", "sc_spotify_widget_collapsed"], (data) => {
+        const pos = data?.sc_spotify_widget_pos;
+        if (pos && Number.isFinite(pos.left) && Number.isFinite(pos.top)) {
+          el.style.left = `${Math.max(0, Math.min(window.innerWidth - 80, pos.left))}px`;
+          el.style.top = `${Math.max(0, Math.min(window.innerHeight - 60, pos.top))}px`;
+          el.style.right = "auto";
+          el.style.bottom = "auto";
+        }
+        if (data?.sc_spotify_widget_collapsed && body && minBtn) {
+          body.style.display = "none";
+          minBtn.textContent = "+";
+        }
+      });
+    } catch {}
+    if (minBtn && body) {
+      minBtn.onclick = () => {
+        const collapsed = body.style.display !== "none";
+        body.style.display = collapsed ? "none" : "flex";
+        minBtn.textContent = collapsed ? "+" : "–";
+        try {
+          chrome.storage.local.set({ sc_spotify_widget_collapsed: collapsed });
+        } catch {}
+      };
+    }
+    if (hideBtn) {
+      hideBtn.onclick = () => el.remove();
+    }
+    if (!head) return;
+    let drag = null;
+    head.addEventListener("mousedown", (e) => {
+      if (e.target.closest("#sc-sp-min, #sc-sp-hide")) return;
+      const rect = el.getBoundingClientRect();
+      drag = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      e.preventDefault();
+    });
+    window.addEventListener("mousemove", (e) => {
+      if (!drag || !document.body.contains(el)) {
+        drag = null;
+        return;
+      }
+      el.style.left = `${Math.max(0, Math.min(window.innerWidth - 80, e.clientX - drag.x))}px`;
+      el.style.top = `${Math.max(0, Math.min(window.innerHeight - 60, e.clientY - drag.y))}px`;
+      el.style.right = "auto";
+      el.style.bottom = "auto";
+    });
+    window.addEventListener("mouseup", () => {
+      if (!drag) return;
+      drag = null;
+      try {
+        const rect = el.getBoundingClientRect();
+        chrome.storage.local.set({ sc_spotify_widget_pos: { left: Math.round(rect.left), top: Math.round(rect.top) } });
+      } catch {}
+    });
   }
 
   function renderLines(filter = "") {
@@ -605,6 +811,10 @@
     const id = getEpisodeId(location.href);
     if (!id) {
       currentEpisodeId = "";
+      if (_panelObserver) {
+        _panelObserver.disconnect();
+        _panelObserver = null;
+      }
       document.getElementById("sc-spotify-widget")?.remove();
       return;
     }
@@ -612,20 +822,24 @@
       currentEpisodeId = id;
       segments = [];
       transcriptNotice = "";
-      setStatus("waiting", "Episode detected. Sync the transcript to verify.");
+      setStatus("waiting", "Episode detected. Auto-syncing transcript…");
       injectSelectionFix();
       injectWidget();
+      // Observer path: capture the instant Spotify renders panel rows.
+      watchTranscriptPanel(id);
+      // Active path (mirrors YouTube auto-sync): auto-click the Transcript
+      // tab, step-scroll lazy rows into render, then scrape.
       setTimeout(async () => {
         if (getEpisodeId(location.href) !== id || segments.length) return;
         try {
-          const out = await collectTranscript({ allowTabClick: false });
-          if (getEpisodeId(location.href) !== id) return;
+          const out = await collectTranscript({ allowTabClick: true, autoScroll: true });
+          if (getEpisodeId(location.href) !== id || segments.length) return;
           segments = out.segments;
           setStatus("ready", out.status, out.source);
           renderLines();
         } catch {
           if (getEpisodeId(location.href) === id && !segments.length) {
-            setStatus("waiting", "Open the Transcript tab (login may be required), then Sync.");
+            setStatus("waiting", "Transcript tab not readable yet — it syncs when rows render, or press Sync.");
             renderLines();
           }
         }
