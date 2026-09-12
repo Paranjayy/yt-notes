@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Social Companion & YT Note-Taker",
-  "version": "1.21.3",
-  "description": "Premium companion for YouTube, Spotify, X (Twitter), Reddit, and Cambridge Dictionary. Take notes, extract transcripts, lyrics, threads, and export to markdown/JSON/CSV.",
+  "version": "1.22.0",
+  "description": "Premium companion for YouTube, Spotify, X (Twitter), Reddit, DeepWiki, and Cambridge Dictionary. Take notes, extract transcripts, lyrics, threads, wiki pages, and export to markdown/JSON/CSV.",
   "permissions": [
     "storage",
     "activeTab",
@@ -26,6 +26,9 @@
     "https://*.x.com/*",
     "https://*.reddit.com/*",
     "https://*.dictionary.cambridge.org/*",
+    "https://deepwiki.com/*",
+    "https://*.deepwiki.com/*",
+    "https://app.devin.ai/*",
     "https://chatgpt.com/*",
     "https://gemini.google.com/*",
     "https://claude.ai/*",
@@ -70,6 +73,15 @@
         "https://*.spotify.com/*"
       ],
       "js": ["helpers.js", "spotify-helpers.js", "spotify.js"],
+      "run_at": "document_end"
+    },
+    {
+      "matches": [
+        "https://deepwiki.com/*",
+        "https://*.deepwiki.com/*",
+        "https://app.devin.ai/*"
+      ],
+      "js": ["helpers.js", "deepwiki-helpers.js", "deepwiki.js"],
       "run_at": "document_end"
     },
     {
