@@ -22,7 +22,8 @@ Markdown/JSON/CSV. No account, no server, no data collection.
 | `downloads` | Save Markdown/JSON/CSV/ZIP captures to the user's Downloads folder. |
 
 Host permissions map 1:1 to capture surfaces: YouTube, Spotify (+ `scdn.co`
-artwork), X/Twitter, Reddit, Cambridge Dictionary wordlists, the four AI
+artwork), X/Twitter, Reddit, DeepWiki (`deepwiki.com` + Devin `app.devin.ai`
+wiki pages, same visible-page capture model), Cambridge Dictionary wordlists, the four AI
 provider composers (user-invoked handoff only), Google APIs (YouTube Data
 enrichment with a user-supplied key), and the companion website bridge.
 
