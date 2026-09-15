@@ -320,6 +320,79 @@
       line-height: 1.4;
     }
 
+    /* Video context shelf — deliberately quieter than the note editor. */
+    .sc-context-shelf {
+      margin: 14px 0 12px;
+      border: 1px solid var(--sc-border-dark);
+      border-radius: 12px;
+      overflow: hidden;
+      background: linear-gradient(145deg, rgba(139,92,246,0.08), rgba(255,255,255,0.018));
+    }
+    .sc-context-shelf summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 10px 12px;
+      cursor: pointer;
+      list-style: none;
+      color: var(--sc-text-muted-light);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+    }
+    .sc-context-shelf summary::-webkit-details-marker { display: none; }
+    .sc-context-shelf summary::after { content: '＋'; color: var(--sc-primary); font-size: 15px; }
+    .sc-context-shelf[open] summary::after { content: '−'; }
+    .sc-context-shelf summary:hover { color: var(--sc-text-dark); }
+    .sc-context-content {
+      display: grid;
+      grid-template-columns: minmax(110px, 0.9fr) 1.35fr;
+      gap: 12px;
+      padding: 0 12px 12px;
+      border-top: 1px solid var(--sc-border-dark);
+    }
+    .sc-context-thumb {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      object-fit: cover;
+      align-self: start;
+      margin-top: 12px;
+      border-radius: 8px;
+      border: 1px solid var(--sc-border-dark);
+      background: rgba(0,0,0,.25);
+    }
+    .sc-context-thumb-link { display: block; min-width: 0; }
+    .sc-context-details { min-width: 0; padding-top: 11px; }
+    .sc-context-title {
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      font-size: 12px;
+      font-weight: 750;
+      line-height: 1.35;
+      color: var(--sc-text-dark);
+    }
+    .sc-context-channel { margin-top: 3px; color: var(--sc-text-muted-light); font-size: 11px; }
+    .sc-context-stats { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+    .sc-context-stat {
+      padding: 5px 7px;
+      border-radius: 7px;
+      background: rgba(255,255,255,.045);
+      color: var(--sc-text-muted-light);
+      font-size: 10px;
+      line-height: 1.2;
+    }
+    .sc-context-stat strong { display: block; color: var(--sc-text-dark); font-size: 11px; }
+    .sc-context-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+    .sc-context-actions .sc-btn { padding: 6px 8px; font-size: 10px; }
+    @media (max-width: 420px) {
+      .sc-context-content { grid-template-columns: 1fr; }
+      .sc-context-thumb { max-height: 150px; }
+    }
+
     .sc-note-actions {
       display: flex;
       gap: 12px;
@@ -328,6 +401,13 @@
       border-top: 1px solid var(--sc-border-dark);
       padding-top: 6px;
     }
+    .sc-note-shortcut-hint { margin: -5px 0 10px; color: var(--sc-text-muted-light); font-size: 10px; text-align: right; }
+    .sc-note-timeline { margin: 14px 0 2px; padding: 10px 12px 11px; border: 1px solid var(--sc-border-dark); border-radius: 10px; background: rgba(255,255,255,.018); }
+    .sc-note-timeline-head { display: flex; justify-content: space-between; gap: 8px; color: var(--sc-text-muted-light); font-size: 10px; font-weight: 700; }
+    .sc-note-timeline-track { position: relative; height: 16px; margin: 6px 0 0; cursor: pointer; }
+    .sc-note-timeline-track::before { content: ''; position: absolute; top: 6px; left: 0; right: 0; height: 4px; border-radius: 999px; background: rgba(255,255,255,.12); }
+    .sc-note-timeline-marker { position: absolute; top: 2px; width: 12px; height: 12px; padding: 0; border: 2px solid var(--sc-bg-dark); border-radius: 50%; background: var(--sc-primary); transform: translateX(-50%); cursor: pointer; box-shadow: 0 0 0 1px rgba(139,92,246,.45); }
+    .sc-note-timeline-marker:hover { transform: translateX(-50%) scale(1.25); }
     html[theme="dark"] .sc-note-actions,
     @media (prefers-color-scheme: dark) {
       .sc-adaptive-theme .sc-note-actions {
@@ -628,6 +708,7 @@
   let transcriptState = { status: "idle", videoId: "", message: "Waiting for this video…", source: "" };
   let screenshotList = [];
   let autoPauseOnType = false;
+  let contextShelfOpen = true;
   let notesSearchQuery = "";
   let transcriptSearchQuery = "";
   let cachedMarkdown = ""; // pre-cached export markdown for sync clipboard copy
@@ -694,6 +775,12 @@
   storage.get(["sc_preference_autopause"], (data) => {
     if (data && data.sc_preference_autopause !== undefined) {
       autoPauseOnType = data.sc_preference_autopause;
+    }
+  });
+  storage.get(["sc_preference_context_shelf"], (data) => {
+    if (data?.sc_preference_context_shelf !== undefined) {
+      contextShelfOpen = data.sc_preference_context_shelf !== false;
+      renderVideoContextShelf();
     }
   });
 
@@ -1908,9 +1995,12 @@
             </div>
           </div>
         </div>
+        <div class="sc-note-shortcut-hint">Shortcuts: <strong>N</strong> focus · <strong>⌘/Ctrl + Enter</strong> save</div>
         <div id="sc-screenshots-row" class="sc-screenshots-container"></div>
         <input type="text" class="sc-search-bar" id="sc-notes-search" placeholder="Search notes..." value="${notesSearchQuery}">
         <div id="sc-notes-list" style="margin-top: 12px;"></div>
+        <div id="sc-notes-timeline"></div>
+        <div id="sc-video-context-shelf"></div>
       </div>
 
       <!-- Transcript tab -->
@@ -2002,6 +2092,23 @@
     const autoPauseChk = container.querySelector("#sc-chk-autopause");
     const notesSearch = container.querySelector("#sc-notes-search");
     const transcriptSearch = container.querySelector("#sc-transcript-search");
+
+    if (!window.__scNoteShortcutsBound) {
+      window.__scNoteShortcutsBound = true;
+      document.addEventListener("keydown", (event) => {
+        if (activeTabName !== "notes" || !document.getElementById("sc-youtube-widget")) return;
+        const target = event.target;
+        const isEditable = target?.matches?.("input, textarea, select, [contenteditable='true']");
+        if (event.key.toLowerCase() === "n" && !isEditable && !event.metaKey && !event.ctrlKey && !event.altKey) {
+          event.preventDefault();
+          document.getElementById("sc-note-input")?.focus();
+        }
+        if (event.key === "Enter" && isEditable && target?.id === "sc-note-input" && (event.metaKey || event.ctrlKey)) {
+          event.preventDefault();
+          document.getElementById("sc-btn-add-note")?.click();
+        }
+      });
+    }
 
     autoPauseChk.addEventListener("change", (e) => {
       autoPauseOnType = e.target.checked;
@@ -3059,6 +3166,8 @@ ${JSON.stringify(snapshot, null, 2)}
 
       if (filtered.length === 0) {
         listContainer.innerHTML = `<div style="color: var(--sc-text-muted-light); text-align: center; font-size: 13px; padding: 12px 0;">No matching notes found.</div>`;
+        renderNotesTimeline(notes);
+        renderVideoContextShelf();
         return;
       }
 
@@ -3072,6 +3181,7 @@ ${JSON.stringify(snapshot, null, 2)}
           <div class="sc-note-text" id="sc-text-${n.id}">${escapeHtml(n.text)}</div>
           <div class="sc-note-actions">
             <button class="sc-note-action-btn sc-edit" data-edit-id="${n.id}">Edit</button>
+            <button class="sc-note-action-btn sc-copy" data-copy-id="${n.id}">Copy</button>
             <button class="sc-note-action-btn sc-delete" data-del-id="${n.id}">Delete</button>
           </div>
         </div>
@@ -3091,13 +3201,116 @@ ${JSON.stringify(snapshot, null, 2)}
         });
       });
 
+      listContainer.querySelectorAll(".sc-copy").forEach((btn) => {
+        btn.addEventListener("click", async (e) => {
+          const note = notes.find((item) => item.id === e.target.dataset.copyId);
+          if (!note) return;
+          const copied = await scCopyText(`[${formatTime(note.time)}] ${note.text}\n${canonicalYouTubeUrl(currentVideoId, note.time)}`);
+          showToast(copied ? "📋 Note and timestamp copied!" : "❌ Could not copy note.");
+        });
+      });
+
       listContainer.querySelectorAll(".sc-edit").forEach((btn) => {
         btn.addEventListener("click", (e) => {
           const noteId = e.target.dataset.editId;
           enterNoteEditMode(noteId);
         });
       });
+      renderNotesTimeline(notes);
+      renderVideoContextShelf();
       updateExportPreview();
+    });
+  }
+
+  function renderNotesTimeline(notes) {
+    const host = document.getElementById("sc-notes-timeline");
+    if (!host) return;
+    const duration = Number(document.querySelector("video")?.duration || 0);
+    if (!Array.isArray(notes) || notes.length === 0 || !Number.isFinite(duration) || duration <= 0) {
+      host.innerHTML = "";
+      return;
+    }
+    host.innerHTML = `
+      <div class="sc-note-timeline">
+        <div class="sc-note-timeline-head"><span>Note timeline</span><span>${notes.length} marker${notes.length === 1 ? "" : "s"}</span></div>
+        <div class="sc-note-timeline-track" role="list" aria-label="Note timestamps"></div>
+      </div>
+    `;
+    const track = host.querySelector(".sc-note-timeline-track");
+    notes.forEach((note) => {
+      const marker = document.createElement("button");
+      marker.type = "button";
+      marker.className = "sc-note-timeline-marker";
+      marker.style.left = `${Math.min(100, Math.max(0, (Number(note.time) / duration) * 100))}%`;
+      marker.title = `[${formatTime(note.time)}] ${note.text}`;
+      marker.setAttribute("aria-label", `Jump to note at ${formatTime(note.time)}`);
+      marker.addEventListener("click", (event) => {
+        event.stopPropagation();
+        seekTo(note.time);
+      });
+      track.appendChild(marker);
+    });
+    track.addEventListener("click", (event) => {
+      const rect = track.getBoundingClientRect();
+      seekTo(((event.clientX - rect.left) / rect.width) * duration);
+    });
+  }
+
+  function contextStat(label, value) {
+    if (value === undefined || value === null || String(value).trim() === "") return "";
+    return `<span class="sc-context-stat"><strong>${escapeHtml(String(value))}</strong>${escapeHtml(label)}</span>`;
+  }
+
+  function renderVideoContextShelf() {
+    const shelfHost = document.getElementById("sc-video-context-shelf");
+    if (!shelfHost || !currentVideoId) return;
+
+    let meta = {};
+    try { meta = extractYouTubeMetadata() || {}; } catch {}
+    const title = meta.title || document.title.replace(/\s*-\s*YouTube\s*$/, "") || "Current video";
+    const thumbnail = meta.thumbnail || `https://img.youtube.com/vi/${currentVideoId}/mqdefault.jpg`;
+    const stats = [
+      contextStat("views", meta.views),
+      contextStat("likes", meta.likes),
+      contextStat("duration", meta.duration),
+      contextStat("comments", meta.commentsCount),
+      contextStat("uploaded", meta.uploadDate),
+    ].filter(Boolean).join("");
+
+    shelfHost.innerHTML = `
+      <details class="sc-context-shelf" id="sc-context-details" ${contextShelfOpen ? "open" : ""}>
+        <summary>Video context <span style="font-weight:500;letter-spacing:0;text-transform:none;">thumbnail &amp; stats</span></summary>
+        <div class="sc-context-content">
+          <a class="sc-context-thumb-link" href="${escapeHtml(thumbnail)}" target="_blank" rel="noreferrer" title="Open thumbnail">
+            <img class="sc-context-thumb" src="${escapeHtml(thumbnail)}" alt="Video thumbnail" loading="lazy">
+          </a>
+          <div class="sc-context-details">
+            <div class="sc-context-title">${escapeHtml(title)}</div>
+            ${meta.channel ? `<div class="sc-context-channel">${escapeHtml(meta.channel)}</div>` : ""}
+            <div class="sc-context-stats">${stats || contextStat("video", currentVideoId)}</div>
+            <div class="sc-context-actions">
+              <button class="sc-btn sc-btn-secondary" id="sc-context-copy-link" type="button">Copy link</button>
+              <a class="sc-btn sc-btn-secondary" href="${escapeHtml(canonicalYouTubeUrl(currentVideoId))}" target="_blank" rel="noreferrer">Open video</a>
+            </div>
+          </div>
+        </div>
+      </details>
+    `;
+
+    const details = shelfHost.querySelector("#sc-context-details");
+    details.addEventListener("toggle", () => {
+      contextShelfOpen = details.open;
+      storage.set({ sc_preference_context_shelf: contextShelfOpen });
+    });
+    shelfHost.querySelector("#sc-context-copy-link")?.addEventListener("click", async () => {
+      const copied = await scCopyText(canonicalYouTubeUrl(currentVideoId));
+      showToast(copied ? "🔗 Video link copied!" : "❌ Could not copy the video link.");
+    });
+
+    const img = shelfHost.querySelector(".sc-context-thumb");
+    img?.addEventListener("error", () => {
+      if (img.src.includes("mqdefault")) return;
+      img.src = `https://img.youtube.com/vi/${currentVideoId}/mqdefault.jpg`;
     });
   }
 
