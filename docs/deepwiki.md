@@ -26,6 +26,8 @@ tokens, or private chats are read or exported.
   footer`, Devin prompt UI (`[data-devin-input-box]`, `[aria-label="Prompt"]`),
   source/citation controls, toolbars. Verified by jsdom tests fed with real
   pasted wiki HTML (`tests/unit/fixtures/deepwiki-page.html`).
+- Rendered Mermaid diagrams (`svg.flowchart`, graphics-document SVGs) are
+  preserved as fenced `svg` blocks; ordinary UI SVG icons remain stripped.
 
 ## Why live-DOM only (no fetch walk)
 
@@ -33,9 +35,10 @@ Devin's wiki is client-rendered React: `fetch(page.href)` returns the app
 shell, and the wiki API (`/api/wiki/get_full_multi_language_wiki`) 404s from
 outside the session — every fetched page extracts as "Could not find wiki
 article". The exporter that worked navigated the live SPA and scraped the
-rendered `wiki-body` (43/43 pages). The extension does the same thing for the
-visible page: wait ~600ms after SPA navigation, read the rendered article,
-receipt an empty result as "not rendered yet" instead of an empty page.
+  rendered `wiki-body` (43/43 pages). The extension does the same thing for the
+  visible page: use a cheap heading/body stability check after SPA navigation,
+  then clone and read the rendered article once, with an empty result receipted
+  as "not rendered yet" instead of an empty page.
 
 Console noise that is NOT a capture signal: `MediaSession`
 `enterpictureinpicture`, Monaco `Unexpected usage`, Linear 404, mermaid

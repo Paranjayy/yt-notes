@@ -50,6 +50,13 @@ describe('deepwiki-helpers.js', () => {
       expect(md).not.toContain('Ask Devin');
       expect(H.extractWikiMarkdown(document.createElement('div'))).toBe('');
     });
+
+    it('preserves rendered Mermaid SVG diagrams as fenced svg blocks', () => {
+      document.body.innerHTML = '<main><div><h1>Diagram page</h1><pre><svg class="flowchart" role="graphics-document" viewBox="0 0 100 50"><path d="M0 0 L100 50"></path></svg></pre></div></main>';
+      const md = H.extractWikiMarkdown(document);
+      expect(md).toContain('```svg');
+      expect(md).toContain('M0 0 L100 50');
+    });
   });
 
   describe('buildDeepwikiMarkdown', () => {

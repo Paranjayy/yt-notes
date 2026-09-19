@@ -145,11 +145,25 @@ function cleanWikiNode(root) {
     } catch {}
   }
   try {
+    const diagrams = new Set(root.querySelectorAll('svg.flowchart, svg[role*="graphics-document"], svg[aria-roledescription]'));
     root.querySelectorAll("svg").forEach((svg) => {
-      svg.innerHTML = "<!-- [SVG CONTENT STRIPPED] -->";
+      if (diagrams.has(svg)) {
+        svg.setAttribute("data-sc-diagram", "true");
+      } else {
+        svg.innerHTML = "<!-- [SVG CONTENT STRIPPED] -->";
+      }
     });
   } catch {}
   return root;
+}
+
+function svgToMarkdown(node) {
+  try {
+    const serialized = typeof XMLSerializer !== "undefined" ? new XMLSerializer().serializeToString(node) : node.outerHTML || "";
+    return serialized ? `\n\n\`\`\`svg\n${serialized}\n\`\`\`\n\n` : "";
+  } catch {
+    return "";
+  }
 }
 
 function cleanText(text) {
@@ -220,6 +234,8 @@ function blockMarkdown(node, depth = 0) {
     return text ? `${text}\n\n` : "";
   }
   if (tag === "pre") {
+    const diagram = node.querySelector?.('svg[data-sc-diagram], svg.flowchart, svg[role*="graphics-document"], svg[aria-roledescription]');
+    if (diagram) return svgToMarkdown(diagram);
     const code = (node.innerText || node.textContent || "").replace(/\r/g, "").replace(/\n+$/, "");
     let language = "";
     try {
@@ -266,6 +282,9 @@ function blockMarkdown(node, depth = 0) {
     return `${output}\n`;
   }
   if (tag === "hr") return "\n---\n\n";
+  if (tag === "svg" && (node.matches?.('[data-sc-diagram], .flowchart, [role*="graphics-document"], [aria-roledescription]'))) {
+    return svgToMarkdown(node);
+  }
   if (tag === "img") {
     const src = node.getAttribute ? node.getAttribute("src") : "";
     const alt = node.getAttribute ? node.getAttribute("alt") || "" : "";

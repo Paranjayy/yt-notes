@@ -82,25 +82,39 @@
     });
   }
 
-  async function waitForRenderedPage(targetHref, timeoutMs = 18000) {
+  async function waitForRenderedPage(targetHref, expectedTitle = "", timeoutMs = 9000) {
     const targetKey = keyForUrl(targetHref);
     const started = Date.now();
+    let lastLength = 0;
+    let stableReads = 0;
     while (Date.now() - started < timeoutMs) {
       if (routeKey() === targetKey) {
-        const snap = snapshotVisible();
-        if (snap.markdown.length >= 50) return snap;
+        // Do not clone/parse the whole article on every poll. Large Mermaid
+        // SVGs make that path especially expensive. A cheap body-text
+        // signature is enough to know when React has finished replacing the
+        // previous page; snapshot once after two stable reads.
+        const body = (H.findWikiBody || (() => null))(document);
+        const heading = body?.querySelector?.("h1")?.textContent?.replace(/\s+/g, " ").trim() || "";
+        const titleReady = !expectedTitle || heading === expectedTitle || heading.includes(expectedTitle) || expectedTitle.includes(heading);
+        const textLength = Number(body?.textContent?.replace(/\s+/g, " ").trim().length || 0);
+        stableReads = textLength === lastLength ? stableReads + 1 : 0;
+        lastLength = textLength;
+        if (titleReady && textLength >= 50 && stableReads >= 1) {
+          const snap = snapshotVisible();
+          if (snap.markdown.length >= 50) return snap;
+        }
       }
-      await new Promise((resolve) => setTimeout(resolve, 250));
+      await new Promise((resolve) => setTimeout(resolve, 120));
     }
     throw new Error(`Timed out waiting for ${targetHref}`);
   }
 
-  async function navigateToPage(targetHref) {
+  async function navigateToPage(targetHref, expectedTitle = "") {
     if (routeKey() === keyForUrl(targetHref)) return snapshotVisible();
     const anchor = findPageAnchor(targetHref);
     if (!anchor) throw new Error(`Could not find the wiki link for ${targetHref}`);
     anchor.click();
-    return waitForRenderedPage(targetHref);
+    return waitForRenderedPage(targetHref, expectedTitle);
   }
 
   async function capture({ allPages = true } = {}) {
@@ -140,14 +154,14 @@
         const target = targets[index];
         setStatus("waiting", `Reading wiki page ${index + 1}/${targets.length}…`);
         try {
-          const pageSnap = await navigateToPage(target.href);
+          const pageSnap = await navigateToPage(target.href, target.title);
           articles.push({ id: target.id, title: pageSnap.title || target.title, markdown: pageSnap.markdown, url: target.href });
         } catch (error) {
           scToast(`⚠️ Skipped ${target.title || target.id}: ${error.message}`);
         }
       }
       if (routeKey() !== originalKey) {
-        try { await navigateToPage(startHref); } catch {}
+        try { await navigateToPage(startHref, originalArticle.title); } catch {}
       }
       const restored = snapshotVisible();
       articleMarkdown = restored.markdown || originalArticle.markdown;
