@@ -1,9 +1,7 @@
 // Social Companion — DeepWiki capture (deepwiki.com + Devin app.devin.ai wiki)
-// Single rendered article + sidebar page inventory. Route-gated to public
-// wiki surfaces only. No fetch() walk: Devin's wiki is client-rendered and
-// fetch() returns the app shell (see docs/deepwiki.md), so extraction runs
-// against the live DOM. Full multi-page auto-walk is out of scope for v1 —
-// it would navigate the user away from their page.
+// Rendered article + sidebar inventory for public DeepWiki and Devin wikis.
+// Devin's wiki is client-rendered, so multi-page capture walks the live SPA
+// links instead of fetching the app shell.
 
 (function () {
   "use strict";
@@ -13,10 +11,12 @@
 
   let currentKey = "";
   let pages = [];
+  let articles = [];
   let articleMarkdown = "";
   let pageTitle = "";
   let dwStatus = { status: "idle", message: "Waiting…" };
   let _observer = null;
+  let captureWalkActive = false;
 
   function scToast(msg, ms = 2600) {
     try {
@@ -40,6 +40,11 @@
     const r = parseRoute(location.href);
     if (!r.kind) return "";
     return `${r.host}:${r.owner}/${r.repo}#${r.pageId || "index"}`;
+  }
+
+  function keyForUrl(url) {
+    const r = parseRoute(url);
+    return r.kind ? `${r.host}:${r.owner}/${r.repo}#${r.pageId || "index"}` : "";
   }
 
   function setStatus(status, message) {
@@ -70,24 +75,88 @@
     return { pages: found, markdown: md, title };
   }
 
-  async function capture() {
+  function findPageAnchor(targetHref) {
+    const targetKey = keyForUrl(targetHref);
+    return Array.from(document.querySelectorAll("a[href]")).find((anchor) => {
+      try { return keyForUrl(anchor.href) === targetKey; } catch { return false; }
+    });
+  }
+
+  async function waitForRenderedPage(targetHref, timeoutMs = 18000) {
+    const targetKey = keyForUrl(targetHref);
+    const started = Date.now();
+    while (Date.now() - started < timeoutMs) {
+      if (routeKey() === targetKey) {
+        const snap = snapshotVisible();
+        if (snap.markdown.length >= 50) return snap;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    throw new Error(`Timed out waiting for ${targetHref}`);
+  }
+
+  async function navigateToPage(targetHref) {
+    if (routeKey() === keyForUrl(targetHref)) return snapshotVisible();
+    const anchor = findPageAnchor(targetHref);
+    if (!anchor) throw new Error(`Could not find the wiki link for ${targetHref}`);
+    anchor.click();
+    return waitForRenderedPage(targetHref);
+  }
+
+  async function capture({ allPages = true } = {}) {
     const r = parseRoute(location.href);
     if (!r.kind) throw new Error("Open a DeepWiki repo or page first.");
     setStatus("waiting", "Reading rendered article…");
     // Give React a beat to hydrate after SPA navigation.
     await new Promise((resolve) => setTimeout(resolve, 600));
-    if (routeKey() !== (r.kind ? `${r.host}:${r.owner}/${r.repo}#${r.pageId || "index"}` : "")) {
+    if (routeKey() !== keyForUrl(r.url || location.href)) {
       throw new Error("Navigated away mid-capture.");
     }
     const snap = snapshotVisible();
     pages = snap.pages;
     articleMarkdown = snap.markdown;
     pageTitle = snap.title;
-    if (!articleMarkdown || articleMarkdown.length < 50) {
-      setStatus("unavailable", "Article not rendered yet — wait for it to load, then Capture again.");
-    } else {
-      setStatus("ready", `Captured ${pageTitle || r.pageId || "wiki page"} (${articleMarkdown.length.toLocaleString()} chars, ${pages.length} pages listed).`);
+    const startHref = location.href.split("#")[0];
+    const startPage = { id: r.pageId || "index", title: pageTitle || r.pageId || "Overview", href: startHref };
+    if (!pages.some((page) => keyForUrl(page.href) === routeKey())) pages = [startPage, ...pages];
+
+    const targets = [];
+    const seen = new Set();
+    for (const page of pages) {
+      const key = keyForUrl(page.href);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      targets.push(page);
     }
+    articles = [];
+    const originalKey = routeKey();
+    const originalArticle = { id: r.pageId || "index", title: pageTitle, markdown: articleMarkdown, url: startHref };
+    const shouldWalk = allPages && targets.length > 1;
+    if (!shouldWalk && articleMarkdown.length >= 50) articles.push(originalArticle);
+
+    if (shouldWalk) {
+      captureWalkActive = true;
+      for (let index = 0; index < targets.length; index += 1) {
+        const target = targets[index];
+        setStatus("waiting", `Reading wiki page ${index + 1}/${targets.length}…`);
+        try {
+          const pageSnap = await navigateToPage(target.href);
+          articles.push({ id: target.id, title: pageSnap.title || target.title, markdown: pageSnap.markdown, url: target.href });
+        } catch (error) {
+          scToast(`⚠️ Skipped ${target.title || target.id}: ${error.message}`);
+        }
+      }
+      if (routeKey() !== originalKey) {
+        try { await navigateToPage(startHref); } catch {}
+      }
+      const restored = snapshotVisible();
+      articleMarkdown = restored.markdown || originalArticle.markdown;
+      pageTitle = restored.title || originalArticle.title;
+      currentKey = routeKey();
+      captureWalkActive = false;
+    }
+    if (!articleMarkdown || articleMarkdown.length < 50) setStatus("unavailable", "Article not rendered yet — wait for it to load, then Capture again.");
+    else setStatus("ready", `Captured ${articles.length || 1}/${targets.length || 1} wiki pages (${pages.length} listed).`);
     renderPreview();
     const markdown = (H.buildDeepwikiMarkdown || (() => ""))({
       route: r,
@@ -95,6 +164,7 @@
       pageId: r.pageId,
       markdown: articleMarkdown,
       pages,
+      articles,
       capturedAt: new Date().toISOString(),
       url: location.href.split("?")[0],
     });
@@ -210,7 +280,7 @@
         </div>
         <div id="sc-dw-meta" style="font-size:11px;opacity:.75;">…</div>
         <div id="sc-dw-lines" style="max-height:280px;overflow-y:auto;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:10px;font-size:12px;">Not captured yet.</div>
-        <div style="font-size:11px;opacity:.6;">Public wiki pages only. Full multi-page auto-walk is out of scope — capture each rendered page.</div>
+        <div style="font-size:11px;opacity:.6;">Capture walks the rendered wiki pages in this tab, then returns you to the page you started on.</div>
       </div>`;
     document.body.appendChild(el);
     el.querySelector("#sc-dw-capture").onclick = async (e) => {
@@ -218,7 +288,7 @@
       btn.textContent = "Capturing…";
       btn.disabled = true;
       try {
-        await capture();
+        await capture({ allPages: true });
       } catch (err) {
         setStatus("error", err?.message || "Capture failed.");
         renderPreview();
@@ -229,9 +299,7 @@
     };
     const quickCopy = async (format) => {
       try {
-        if ((!articleMarkdown && !pages.length) || routeKey() !== currentKey) {
-          await capture();
-        }
+        await capture({ allPages: true });
         const r = parseRoute(location.href);
         const out = (H.buildDeepwikiMarkdown || (() => ""))({
           route: r,
@@ -239,6 +307,7 @@
           pageId: r.pageId,
           markdown: articleMarkdown,
           pages,
+          articles,
           capturedAt: new Date().toISOString(),
           url: location.href.split("?")[0],
           format,
@@ -255,7 +324,7 @@
     el.querySelector("#sc-dw-snap-high").onclick = () => copyAiSnapshot("high");
     el.querySelector("#sc-dw-dl").onclick = async () => {
       try {
-        const { route, markdown } = await capture();
+        const { route, markdown } = await capture({ allPages: true });
         const base = (`deepwiki-${route.owner}-${route.repo}-${route.pageId || "index"}`).replace(/[^a-z0-9_-]+/gi, "_").slice(0, 100);
         downloadFile(`${base}.md`, markdown);
       } catch (err) {
@@ -373,7 +442,7 @@
       return;
     }
     if (message.type === "sc_get_current_markdown" || message.type === "sc_download_current_markdown" || message.type === "sc_download_current_transcript") {
-      capture().then(({ route, markdown }) => {
+      capture({ allPages: true }).then(({ route, markdown }) => {
         if (message.type === "sc_get_current_markdown") {
           sendResponse({ ok: true, markdown, title: pageTitle || `DeepWiki: ${route.pageId || route.repo}`, platform: "deepwiki" });
         } else {
@@ -399,6 +468,7 @@
     }
     if (key !== currentKey) {
       currentKey = key;
+      if (captureWalkActive) return;
       pages = [];
       articleMarkdown = "";
       pageTitle = "";
@@ -408,7 +478,7 @@
       setTimeout(async () => {
         if (routeKey() !== key || articleMarkdown.length >= 50) return;
         try {
-          await capture();
+          await capture({ allPages: false });
         } catch {
           if (routeKey() === key && articleMarkdown.length < 50) {
             setStatus("waiting", "Article not rendered yet — it captures as it loads, or press Capture.");

@@ -15,15 +15,12 @@ function parseDeepwikiRoute(urlString = "") {
     const host = url.hostname;
     const parts = url.pathname.split("/").filter(Boolean);
 
-    // Public DeepWiki: deepwiki.com/<owner>/<repo>[/...]
+    // Public DeepWiki: deepwiki.com/<owner>/<repo>[/<page-slug>]
     if (/(^|\.)deepwiki\.com$/.test(host)) {
       if (parts.length < 2) return { kind: "", host: "deepwiki", owner: "", repo: "", pageId: "" };
       const [owner, repo, ...rest] = parts;
-      const pageIdx = rest.findIndex((p) => p === "page");
-      if (pageIdx >= 0 && rest[pageIdx + 1]) {
-        return { kind: "page", host: "deepwiki", owner, repo, pageId: rest[pageIdx + 1], url: url.toString().split("?")[0] };
-      }
-      return { kind: "repo", host: "deepwiki", owner, repo, pageId: "", url: url.toString().split("?")[0] };
+      const pageId = rest.join("/");
+      return { kind: pageId ? "page" : "repo", host: "deepwiki", owner, repo, pageId, url: url.toString().split("?")[0] };
     }
 
     // Devin wiki: app.devin.ai/org/<org>/wiki/<owner>/<repo>[/page/<id>]
@@ -62,7 +59,12 @@ function scrapeDeepwikiSidebar(root, baseUrl = "") {
   if (!root || !root.querySelectorAll) return [];
   let links = [];
   try {
-    links = Array.from(root.querySelectorAll('a[href*="/wiki/"][href*="/page/"]'));
+    const baseRoute = parseDeepwikiRoute(baseUrl);
+    if (baseRoute.host === "deepwiki") {
+      links = Array.from(root.querySelectorAll("a[href]"));
+    } else {
+      links = Array.from(root.querySelectorAll('a[href*="/wiki/"][href*="/page/"]'));
+    }
   } catch {
     return [];
   }
@@ -71,18 +73,27 @@ function scrapeDeepwikiSidebar(root, baseUrl = "") {
   for (const link of links) {
     let href = "";
     try {
-      href = link.href || link.getAttribute("href") || "";
-      if (href && baseUrl && !/^https?:\/\//.test(href)) href = new URL(href, baseUrl).toString();
+      const rawHref = link.getAttribute("href") || link.href || "";
+      href = rawHref && baseUrl ? new URL(rawHref, baseUrl).toString() : rawHref;
     } catch {
       continue;
     }
     if (!href || seen.has(href)) continue;
-    const match = href.match(/\/page\/([^/?#]+)/);
-    if (!match) continue;
+    const linkedRoute = parseDeepwikiRoute(href);
+    const baseRoute = parseDeepwikiRoute(baseUrl);
+    let id = "";
+    if (baseRoute.host === "deepwiki") {
+      if (linkedRoute.host !== "deepwiki" || linkedRoute.owner !== baseRoute.owner || linkedRoute.repo !== baseRoute.repo || linkedRoute.kind !== "page") continue;
+      id = linkedRoute.pageId;
+    } else {
+      const match = href.match(/\/page\/([^/?#]+)/);
+      if (!match) continue;
+      id = match[1];
+    }
     const title = linkTitle(link);
     if (!title) continue;
     seen.add(href);
-    out.push({ id: match[1], title, href: href.split("#")[0] });
+    out.push({ id, title, href: href.split("#")[0] });
   }
   return out;
 }
@@ -307,7 +318,7 @@ function slugifyTitle(title) {
     .slice(0, 120);
 }
 
-function buildDeepwikiMarkdown({ route = {}, pageTitle = "", pageId = "", markdown = "", pages = [], capturedAt = "", url = "", format = "full" } = {}) {
+function buildDeepwikiMarkdown({ route = {}, pageTitle = "", pageId = "", markdown = "", pages = [], articles = [], capturedAt = "", url = "", format = "full" } = {}) {
   const at = capturedAt || new Date().toISOString();
   const repo = route.owner && route.repo ? `${route.owner}/${route.repo}` : "unknown repo";
   if (format === "links") return (pages || []).map((p) => p.href).filter(Boolean).join("\n");
@@ -328,7 +339,19 @@ function buildDeepwikiMarkdown({ route = {}, pageTitle = "", pageId = "", markdo
   lines.push(`| Pages discovered | ${(pages || []).length} |`);
   lines.push(`| Captured | ${at} |`);
   lines.push("");
-  if (markdown && markdown.trim().length >= 50) {
+  const capturedArticles = (articles || []).filter((article) => article?.markdown && article.markdown.trim().length >= 50);
+  if (capturedArticles.length > 0) {
+    lines.push(`## Articles (${capturedArticles.length} captured)`);
+    lines.push("");
+    for (const article of capturedArticles) {
+      lines.push(`### ${article.title || article.id || "Wiki page"}`);
+      lines.push("");
+      lines.push(`Source: ${article.url || ""}`);
+      lines.push("");
+      lines.push(article.markdown.trim());
+      lines.push("");
+    }
+  } else if (markdown && markdown.trim().length >= 50) {
     lines.push("## Article");
     lines.push("");
     lines.push(markdown.trim());

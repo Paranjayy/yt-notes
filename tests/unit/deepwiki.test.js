@@ -9,6 +9,7 @@ describe('deepwiki-helpers.js', () => {
   describe('parseDeepwikiRoute', () => {
     it('gates to deepwiki + devin wiki routes only', () => {
       expect(H.parseDeepwikiRoute('https://deepwiki.com/Paranjayy/yt-notes')).toMatchObject({ kind: 'repo', owner: 'Paranjayy', repo: 'yt-notes' });
+      expect(H.parseDeepwikiRoute('https://deepwiki.com/ParrrotVR/ultrapoolwebport/1-overview')).toMatchObject({ kind: 'page', owner: 'ParrrotVR', repo: 'ultrapoolwebport', pageId: '1-overview' });
       expect(H.parseDeepwikiRoute('https://app.devin.ai/org/personal-80-138f3/wiki/Paranjayy/Learning-OSS/page/1.1?branch=main')).toMatchObject({ kind: 'page', host: 'devin', owner: 'Paranjayy', repo: 'Learning-OSS', pageId: '1.1' });
       expect(H.parseDeepwikiRoute('https://app.devin.ai/org/x/wiki/a/b')).toMatchObject({ kind: 'repo' });
       expect(H.parseDeepwikiRoute('https://www.reddit.com/r/macapps/')).toMatchObject({ kind: '' });
@@ -25,6 +26,15 @@ describe('deepwiki-helpers.js', () => {
       expect(pages[0]).toMatchObject({ id: 'repo-note', title: 'Repo Note' });
       expect(pages[2].title).toContain('Getting Started');
       expect(H.scrapeDeepwikiSidebar(null)).toEqual([]);
+    });
+
+    it('discovers public DeepWiki slug routes, not just Devin /page routes', () => {
+      document.body.innerHTML = '<nav><a href="/ParrrotVR/ultrapoolwebport/1-overview">Overview</a><a href="/ParrrotVR/ultrapoolwebport/2-runtime">Runtime</a><a href="/other/repo/1-nope">Other</a></nav>';
+      const pages = H.scrapeDeepwikiSidebar(document, 'https://deepwiki.com/ParrrotVR/ultrapoolwebport/1-overview');
+      expect(pages).toEqual([
+        { id: '1-overview', title: 'Overview', href: 'https://deepwiki.com/ParrrotVR/ultrapoolwebport/1-overview' },
+        { id: '2-runtime', title: 'Runtime', href: 'https://deepwiki.com/ParrrotVR/ultrapoolwebport/2-runtime' },
+      ]);
     });
   });
 
@@ -55,6 +65,13 @@ describe('deepwiki-helpers.js', () => {
       expect(md).toContain('`deepwiki`');
       expect(md).toContain('Pages discovered');
       expect(md).toContain('Wiki pages (1 discovered)');
+      const multi = H.buildDeepwikiMarkdown({
+        route: { owner: 'a', repo: 'b' },
+        pages: [{ id: '1', title: 'One', href: 'https://x/page/1' }, { id: '2', title: 'Two', href: 'https://x/page/2' }],
+        articles: [{ id: '1', title: 'One', url: 'https://x/page/1', markdown: '# One\n\nA captured page with enough content to satisfy the rendered-article receipt threshold.' }, { id: '2', title: 'Two', url: 'https://x/page/2', markdown: '# Two\n\nAnother captured page with enough content to satisfy the rendered-article receipt threshold.' }],
+      });
+      expect(multi).toContain('Articles (2 captured)');
+      expect(multi).toContain('# Two');
       const empty = H.buildDeepwikiMarkdown({ route: { owner: 'a', repo: 'b' }, pages: [], markdown: '' });
       expect(empty).toContain('not captured');
       const links = H.buildDeepwikiMarkdown({ pages: [{ href: 'https://x/page/1' }], format: 'links' });

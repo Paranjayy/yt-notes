@@ -7,7 +7,8 @@ Links / Download .md / 📸 DOM / 📸 High**, plus the shared popup contract
 
 ## Surfaces
 
-- Public: `https://deepwiki.com/<owner>/<repo>` (+ `/page/<id>` variants).
+- Public: `https://deepwiki.com/<owner>/<repo>` plus slug pages such as
+  `/1-overview`.
 - Devin (signed-in): `https://app.devin.ai/org/<org>/wiki/<owner>/<repo>/page/<id>`.
 
 Only wiki repo/page routes are capture surfaces (`parseDeepwikiRoute`); Devin
@@ -16,8 +17,9 @@ tokens, or private chats are read or exported.
 
 ## Stable anchors (never hashed classes)
 
-- Sidebar inventory: `a[href*="/wiki/"][href*="/page/"]` in sidebar order,
-  deduped by absolute href (`scrapeDeepwikiSidebar`).
+- Sidebar inventory: Devin `/wiki/.../page/...` links and public
+  `/<owner>/<repo>/<page-slug>` links in sidebar order, deduped by absolute
+  href (`scrapeDeepwikiSidebar`).
 - Article: `[data-scroll-restoration-id="wiki-body"]`, fallback
   `main#main-content` → `main` → `article` (`findWikiBody`).
 - Junk stripped from a detached clone: `button/form/input/textarea/nav/header/
@@ -39,10 +41,11 @@ Console noise that is NOT a capture signal: `MediaSession`
 `enterpictureinpicture`, Monaco `Unexpected usage`, Linear 404, mermaid
 `Failed to render`, `aria-hidden` focus warnings.
 
-## Scope note
+## Multi-page capture
 
-v1 captures the rendered page + sidebar inventory. A full multi-page
-auto-walk (click each sidebar link, wait, scrape, next) is intentionally out
-of scope — it would navigate the user away from their page. Use the console
-exporter from the linked chat for one-shot 43-page dumps; use this widget for
-per-page captures.
+Capture, Copy, Download, the popup, and the right-click Save current capture
+action walk every discovered sidebar page through the live SPA. Each page is
+waited on until its rendered article passes the non-empty receipt threshold;
+unrendered pages are skipped and reported rather than exported as empty
+claims. After the walk, the original page is restored. No cookies, tokens, or
+private chat content are read.
