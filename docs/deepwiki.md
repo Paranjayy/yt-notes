@@ -1,7 +1,7 @@
 # DeepWiki capture
 
 `deepwiki` `wiki-page` — same widget workflow as Reddit/X: **Capture → Copy /
-Links / Download .md / 📸 DOM / 📸 High**, plus the shared popup contract
+Links / Download .md / 📸 DOM / 📸 High / 📋 Debug log**, plus the shared popup contract
 (`sc_get_capture_status`, `sc_get_current_markdown`, … with
 `platform: "deepwiki"`).
 
@@ -43,6 +43,15 @@ article". The exporter that worked navigated the live SPA and scraped the
 Console noise that is NOT a capture signal: `MediaSession`
 `enterpictureinpicture`, Monaco `Unexpected usage`, Linear 404, mermaid
 `Failed to render`, `aria-hidden` focus warnings.
+
+## Diagnostics
+
+The widget's **📋 Debug log** button copies a bounded, privacy-safe JSON report.
+It includes route transitions, discovered/visited page counts, render waits,
+skips, restore failures, timings, and output sizes. It deliberately omits
+article text, cookies, tokens, and account data. Detailed console output can be
+enabled by the shared `sc_debug_verbose` setting; errors and warnings are
+always logged with the `[Social Companion:DeepWiki]` prefix.
 
 ## Multi-page capture
 

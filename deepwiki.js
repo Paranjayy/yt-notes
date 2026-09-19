@@ -17,6 +17,35 @@
   let dwStatus = { status: "idle", message: "Waiting…" };
   let _observer = null;
   let captureWalkActive = false;
+  const DW_LOG_LIMIT = 400;
+  const dwLogBuffer = [];
+  let dwVerbose = false;
+
+  function dwLog(level, event, details = {}) {
+    const entry = {
+      time: new Date().toISOString(),
+      level,
+      event,
+      route: routeKey(),
+      url: location.href.split("?")[0],
+      ...details,
+    };
+    dwLogBuffer.push(entry);
+    if (dwLogBuffer.length > DW_LOG_LIMIT) dwLogBuffer.splice(0, dwLogBuffer.length - DW_LOG_LIMIT);
+    if (level === "error" || level === "warn" || dwVerbose) {
+      const method = level === "error" ? "error" : level === "warn" ? "warn" : "log";
+      try { console[method](`[Social Companion:DeepWiki] ${event}`, details); } catch {}
+    }
+  }
+
+  try {
+    chrome.storage.local.get(["sc_debug_verbose"], (data) => {
+      dwVerbose = data?.sc_debug_verbose === true;
+      dwLog("info", "diagnostics.ready", { verbose: dwVerbose, bufferLimit: DW_LOG_LIMIT });
+    });
+  } catch {
+    dwLog("warn", "diagnostics.storage_unavailable");
+  }
 
   function scToast(msg, ms = 2600) {
     try {
@@ -49,6 +78,7 @@
 
   function setStatus(status, message) {
     dwStatus = { status, message };
+    dwLog("info", "status", { status, message: String(message).slice(0, 180) });
     const badge = document.getElementById("sc-dw-status");
     const palette = { ready: "#34d399", waiting: "#fbbf24", unavailable: "#94a3b8", error: "#fb7185", idle: "#94a3b8" };
     if (badge) {
@@ -62,6 +92,7 @@
   }
 
   function snapshotVisible() {
+    const started = performance.now();
     const scrape = H.scrapeDeepwikiSidebar || (() => []);
     const extract = H.extractWikiMarkdown || (() => "");
     const found = scrape(document, location.href);
@@ -72,7 +103,14 @@
       const h1 = body ? body.querySelector("h1") : null;
       title = (h1 && h1.textContent ? h1.textContent : document.title || "").replace(/\s+/g, " ").trim().slice(0, 160);
     } catch {}
-    return { pages: found, markdown: md, title };
+    const result = { pages: found, markdown: md, title };
+    dwLog("info", "snapshot", {
+      durationMs: Math.round(performance.now() - started),
+      pageCount: found.length,
+      markdownChars: md.length,
+      title: title.slice(0, 120),
+    });
+    return result;
   }
 
   function findPageAnchor(targetHref) {
@@ -85,6 +123,7 @@
   async function waitForRenderedPage(targetHref, expectedTitle = "", timeoutMs = 9000) {
     const targetKey = keyForUrl(targetHref);
     const started = Date.now();
+    dwLog("info", "page.wait.start", { targetKey, expectedTitle, timeoutMs });
     let lastLength = 0;
     let stableReads = 0;
     while (Date.now() - started < timeoutMs) {
@@ -101,25 +140,42 @@
         lastLength = textLength;
         if (titleReady && textLength >= 50 && stableReads >= 1) {
           const snap = snapshotVisible();
-          if (snap.markdown.length >= 50) return snap;
+          if (snap.markdown.length >= 50) {
+            dwLog("info", "page.wait.ready", { targetKey, elapsedMs: Date.now() - started, markdownChars: snap.markdown.length });
+            return snap;
+          }
         }
       }
       await new Promise((resolve) => setTimeout(resolve, 120));
     }
+    dwLog("warn", "page.wait.timeout", { targetKey, elapsedMs: Date.now() - started, currentKey: routeKey() });
     throw new Error(`Timed out waiting for ${targetHref}`);
   }
 
   async function navigateToPage(targetHref, expectedTitle = "") {
-    if (routeKey() === keyForUrl(targetHref)) return snapshotVisible();
+    const targetKey = keyForUrl(targetHref);
+    if (routeKey() === targetKey) {
+      dwLog("info", "page.navigate.already_there", { targetKey });
+      return snapshotVisible();
+    }
     const anchor = findPageAnchor(targetHref);
-    if (!anchor) throw new Error(`Could not find the wiki link for ${targetHref}`);
+    if (!anchor) {
+      dwLog("warn", "page.navigate.anchor_missing", { targetKey, targetHref: targetHref.split("?")[0] });
+      throw new Error(`Could not find the wiki link for ${targetHref}`);
+    }
+    dwLog("info", "page.navigate.click", { targetKey, targetHref: targetHref.split("?")[0] });
     anchor.click();
     return waitForRenderedPage(targetHref, expectedTitle);
   }
 
-  async function capture({ allPages = true } = {}) {
+  async function capture({ allPages = true, source = "unknown" } = {}) {
+    const started = performance.now();
     const r = parseRoute(location.href);
-    if (!r.kind) throw new Error("Open a DeepWiki repo or page first.");
+    if (!r.kind) {
+      dwLog("error", "capture.invalid_surface", { source });
+      throw new Error("Open a DeepWiki repo or page first.");
+    }
+    dwLog("info", "capture.start", { source, allPages, host: r.host, owner: r.owner, repo: r.repo, pageId: r.pageId || "index" });
     setStatus("waiting", "Reading rendered article…");
     // Give React a beat to hydrate after SPA navigation.
     await new Promise((resolve) => setTimeout(resolve, 600));
@@ -146,6 +202,7 @@
     const originalKey = routeKey();
     const originalArticle = { id: r.pageId || "index", title: pageTitle, markdown: articleMarkdown, url: startHref };
     const shouldWalk = allPages && targets.length > 1;
+    dwLog("info", "capture.inventory", { source, discoveredPages: pages.length, uniqueTargets: targets.length, shouldWalk, initialMarkdownChars: articleMarkdown.length });
     if (!shouldWalk && articleMarkdown.length >= 50) articles.push(originalArticle);
 
     if (shouldWalk) {
@@ -156,12 +213,19 @@
         try {
           const pageSnap = await navigateToPage(target.href, target.title);
           articles.push({ id: target.id, title: pageSnap.title || target.title, markdown: pageSnap.markdown, url: target.href });
+          dwLog("info", "capture.page.success", { index: index + 1, total: targets.length, id: target.id, markdownChars: pageSnap.markdown.length });
         } catch (error) {
+          dwLog("warn", "capture.page.skipped", { index: index + 1, total: targets.length, id: target.id, error: error?.message || String(error) });
           scToast(`⚠️ Skipped ${target.title || target.id}: ${error.message}`);
         }
       }
       if (routeKey() !== originalKey) {
-        try { await navigateToPage(startHref, originalArticle.title); } catch {}
+        try {
+          await navigateToPage(startHref, originalArticle.title);
+          dwLog("info", "capture.restore.success", { originalKey });
+        } catch (error) {
+          dwLog("error", "capture.restore.failed", { originalKey, error: error?.message || String(error) });
+        }
       }
       const restored = snapshotVisible();
       articleMarkdown = restored.markdown || originalArticle.markdown;
@@ -182,7 +246,26 @@
       capturedAt: new Date().toISOString(),
       url: location.href.split("?")[0],
     });
+    dwLog("info", "capture.complete", { source, durationMs: Math.round(performance.now() - started), capturedArticles: articles.length, listedPages: pages.length, markdownChars: markdown.length });
     return { route: r, markdown };
+  }
+
+  async function copyDeepwikiDiagnostics() {
+    const report = {
+      generatedAt: new Date().toISOString(),
+      product: "Social Companion DeepWiki capture",
+      privacy: "Routes, counts, timings, and errors only; article text, cookies, tokens, and account data are omitted.",
+      current: { url: location.href.split("?")[0], route: routeKey(), status: dwStatus, pages: pages.length, articles: articles.length, articleChars: articleMarkdown.length },
+      events: dwLogBuffer,
+    };
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(report, null, 2));
+      scToast(`📋 Diagnostic log copied (${dwLogBuffer.length} events).`);
+      dwLog("info", "diagnostics.copied", { eventCount: dwLogBuffer.length });
+    } catch (error) {
+      dwLog("error", "diagnostics.copy_failed", { error: error?.message || String(error) });
+      scToast(`❌ Diagnostic log failed — ${error?.message || "retry"}.`);
+    }
   }
 
   function renderPreview() {
@@ -291,6 +374,7 @@
           <button id="sc-dw-dl" style="padding:7px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-weight:700;font-size:12px;cursor:pointer;">Download .md</button>
           <button id="sc-dw-snap" title="Copy low-clean DOM snapshot" style="padding:7px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-weight:700;font-size:12px;cursor:pointer;">📸 DOM</button>
           <button id="sc-dw-snap-high" title="Copy high-density DOM snapshot" style="padding:7px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-weight:700;font-size:12px;cursor:pointer;">📸 High</button>
+          <button id="sc-dw-diag" title="Copy privacy-safe DeepWiki diagnostic log" style="padding:7px 11px;border-radius:8px;border:1px solid rgba(251,191,36,.45);background:rgba(251,191,36,.08);color:inherit;font-weight:700;font-size:12px;cursor:pointer;">📋 Debug log</button>
         </div>
         <div id="sc-dw-meta" style="font-size:11px;opacity:.75;">…</div>
         <div id="sc-dw-lines" style="max-height:280px;overflow-y:auto;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:10px;font-size:12px;">Not captured yet.</div>
@@ -302,7 +386,7 @@
       btn.textContent = "Capturing…";
       btn.disabled = true;
       try {
-        await capture({ allPages: true });
+        await capture({ allPages: true, source: "widget.capture" });
       } catch (err) {
         setStatus("error", err?.message || "Capture failed.");
         renderPreview();
@@ -313,7 +397,7 @@
     };
     const quickCopy = async (format) => {
       try {
-        await capture({ allPages: true });
+        await capture({ allPages: true, source: `widget.copy.${format}` });
         const r = parseRoute(location.href);
         const out = (H.buildDeepwikiMarkdown || (() => ""))({
           route: r,
@@ -336,9 +420,10 @@
     el.querySelector("#sc-dw-links").onclick = () => quickCopy("links");
     el.querySelector("#sc-dw-snap").onclick = () => copyAiSnapshot("low");
     el.querySelector("#sc-dw-snap-high").onclick = () => copyAiSnapshot("high");
+    el.querySelector("#sc-dw-diag").onclick = copyDeepwikiDiagnostics;
     el.querySelector("#sc-dw-dl").onclick = async () => {
       try {
-        const { route, markdown } = await capture({ allPages: true });
+        const { route, markdown } = await capture({ allPages: true, source: "widget.download" });
         const base = (`deepwiki-${route.owner}-${route.repo}-${route.pageId || "index"}`).replace(/[^a-z0-9_-]+/gi, "_").slice(0, 100);
         downloadFile(`${base}.md`, markdown);
       } catch (err) {
@@ -445,6 +530,7 @@
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     const r = parseRoute(location.href);
     if (!r.kind) return;
+    dwLog("info", "message.received", { type: message.type });
     if (message.type === "sc_get_capture_status") {
       sendResponse({
         ok: true,
@@ -456,7 +542,9 @@
       return;
     }
     if (message.type === "sc_get_current_markdown" || message.type === "sc_download_current_markdown" || message.type === "sc_download_current_transcript") {
-      capture({ allPages: true }).then(({ route, markdown }) => {
+      const started = performance.now();
+      capture({ allPages: true, source: `message.${message.type}` }).then(({ route, markdown }) => {
+        dwLog("info", "message.success", { type: message.type, durationMs: Math.round(performance.now() - started), markdownChars: markdown.length });
         if (message.type === "sc_get_current_markdown") {
           sendResponse({ ok: true, markdown, title: pageTitle || `DeepWiki: ${route.pageId || route.repo}`, platform: "deepwiki" });
         } else {
@@ -464,13 +552,17 @@
           downloadFile(`${base}.md`, markdown);
           sendResponse({ ok: true });
         }
-      }).catch((e) => sendResponse({ ok: false, reason: e?.message || "Couldn't capture this page." }));
+      }).catch((e) => {
+        dwLog("error", "message.failed", { type: message.type, durationMs: Math.round(performance.now() - started), error: e?.message || String(e) });
+        sendResponse({ ok: false, reason: e?.message || "Couldn't capture this page." });
+      });
       return true;
     }
   });
 
   function onRouteChange() {
     const key = routeKey();
+    dwLog("info", "route.change", { key: key || "outside-deepwiki" });
     if (!key) {
       currentKey = "";
       if (_observer) {
@@ -492,7 +584,7 @@
       setTimeout(async () => {
         if (routeKey() !== key || articleMarkdown.length >= 50) return;
         try {
-          await capture({ allPages: false });
+          await capture({ allPages: false, source: "auto" });
         } catch {
           if (routeKey() === key && articleMarkdown.length < 50) {
             setStatus("waiting", "Article not rendered yet — it captures as it loads, or press Capture.");
