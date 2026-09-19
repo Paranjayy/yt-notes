@@ -21,7 +21,8 @@ tokens, or private chats are read or exported.
   `/<owner>/<repo>/<page-slug>` links in sidebar order, deduped by absolute
   href (`scrapeDeepwikiSidebar`).
 - Article: `[data-scroll-restoration-id="wiki-body"]`, fallback
-  `main#main-content` → `main` → `article` (`findWikiBody`).
+  `main#main-content` → `main` → `article` → semantic `[class~="prose"]`
+  (`findWikiBody`).
 - Junk stripped from a detached clone: `button/form/input/textarea/nav/header/
   footer`, Devin prompt UI (`[data-devin-input-box]`, `[aria-label="Prompt"]`),
   source/citation controls, toolbars. Verified by jsdom tests fed with real

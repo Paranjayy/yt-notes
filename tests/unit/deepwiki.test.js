@@ -51,6 +51,13 @@ describe('deepwiki-helpers.js', () => {
       expect(H.extractWikiMarkdown(document.createElement('div'))).toBe('');
     });
 
+    it('extracts public DeepWiki prose containers without a main or article wrapper', () => {
+      document.body.innerHTML = '<div class="prose prose-invert"><h1>Public page</h1><p>This public DeepWiki article is rendered inside the stable prose container.</p></div>';
+      const md = H.extractWikiMarkdown(document);
+      expect(md).toContain('# Public page');
+      expect(md).toContain('This public DeepWiki article');
+    });
+
     it('preserves rendered Mermaid SVG diagrams as fenced svg blocks', () => {
       document.body.innerHTML = '<main><div><h1>Diagram page</h1><pre><svg class="flowchart" role="graphics-document" viewBox="0 0 100 50"><path d="M0 0 L100 50"></path></svg></pre></div></main>';
       const md = H.extractWikiMarkdown(document);

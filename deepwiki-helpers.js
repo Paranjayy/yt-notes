@@ -107,6 +107,9 @@ function findWikiBody(root) {
       root.querySelector("main#main-content") ||
       root.querySelector("main") ||
       root.querySelector("article") ||
+      // Public DeepWiki renders its article in a semantic prose container.
+      // This is a stable class token, not a generated CSS-module selector.
+      root.querySelector('[class~="prose"]') ||
       null
     );
   } catch {
