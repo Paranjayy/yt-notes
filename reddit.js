@@ -151,7 +151,22 @@
   }
 
   function currentPostFact() {
-    // Full-post facts: prefer the main post element, fall back to feed parse.
+    // Full-post facts: PDP shape first (h1 / shreddit-title / text-body —
+    // image/media posts carry no card attributes), feed parse as backup.
+    // Never returns null on a post route: worst case a minimal receipt from
+    // the URL + document title so exports don't fall back to a subreddit
+    // header with "Post text not captured".
+    try {
+      if (typeof H.scrapePostDetail === "function") {
+        const r = parseRoute(location.href);
+        const pdp = H.scrapePostDetail(document, r);
+        if (pdp && (pdp.body || (pdp.title && pdp.title !== "(untitled)"))) return pdp;
+        if (pdp && pdp.postId) {
+          // Keep even a thin PDP fact over nothing — body may stream in late.
+          return pdp;
+        }
+      }
+    } catch {}
     let main = null;
     try {
       const els = Array.from(document.querySelectorAll("shreddit-post:not([slot])"));
@@ -165,7 +180,11 @@
     } catch {
       main = null;
     }
-    if (!main) return null;
+    if (!main) {
+      const r = parseRoute(location.href);
+      if (!r.postId) return null;
+      return { postId: r.postId, title: (document.title || "").split(" : r/")[0] || r.postId, url: r.url || location.href, author: "", body: "", media: [] };
+    }
     const scrape = H.scrapeFeedPost || (() => null);
     const p = scrape(main);
     if (!p) return null;

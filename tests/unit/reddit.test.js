@@ -56,6 +56,30 @@ describe('reddit-helpers.js', () => {
       expect(joined).not.toContain('Flairish');
       expect(H.extractPostBody(null)).toBe('');
     });
+
+    it('reads PDP image-post bodies from shreddit-post-text-body', () => {
+      document.body.innerHTML = `<shreddit-post id="t3_1wiagzg"><h1 id="post-title-t3_1wiagzg">I AM DONEE</h1><shreddit-post-text-body><div id="t3_1wiagzg-post-rtjson-content"><p>FAAAK body with photo post.</p><p>Second para here.</p></div></shreddit-post-text-body></shreddit-post>`;
+      expect(H.extractPostBody(document.querySelector('shreddit-post'))).toContain('FAAAK body');
+    });
+  });
+
+  describe('scrapePostDetail (PDP image/media posts)', () => {
+    it('parses title/author/body without card attributes', () => {
+      document.body.innerHTML = `<shreddit-title title="I AM DONEE.... : r/rajkot"></shreddit-title>
+        <shreddit-post id="t3_1wiagzg"><h1 id="post-title-t3_1wiagzg">I AM DONEE.... I CANTTT.....</h1>
+        <a href="/user/real_pinak/" aria-label="Author: real_pinak">real_pinak</a>
+        <shreddit-post-text-body><div id="t3_1wiagzg-post-rtjson-content"><p>FAAAK....... FAAAKKKKK..... JUST END ME</p></div></shreddit-post-text-body></shreddit-post>`;
+      const pdp = H.scrapePostDetail(document, { kind: 'post', subreddit: 'rajkot', postId: '1wiagzg', url: 'https://www.reddit.com/r/rajkot/comments/1wiagzg/x/' });
+      expect(pdp.postId).toBe('1wiagzg');
+      expect(pdp.title).toContain('I AM DONEE');
+      expect(pdp.author).toBe('real_pinak');
+      expect(pdp.body).toContain('FAAAK');
+    });
+
+    it('returns null without a post id, minimal fact from route otherwise', () => {
+      document.body.innerHTML = `<div>no post here</div>`;
+      expect(H.scrapePostDetail(document, { kind: 'post', subreddit: 'x' })).toBeNull();
+    });
   });
 
   describe('collectRedditMedia', () => {
@@ -74,6 +98,11 @@ describe('reddit-helpers.js', () => {
       expect(urls).toContain('https://www.reddit.com/gallery/jkl012');
       expect(urls.join('|')).not.toContain('redditstatic');
       expect(H.collectRedditMedia(null)).toEqual([]);
+    });
+
+    it('collects PDP external-preview images', () => {
+      document.body.innerHTML = `<shreddit-post id="t3_1wiagzg"><img src="https://external-preview.redd.it/abc.png?width=640&auto=webp&s=zzz"></shreddit-post>`;
+      expect(H.collectRedditMedia(document.querySelector('shreddit-post'))).toContain('https://external-preview.redd.it/abc.png');
     });
   });
 
