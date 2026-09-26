@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Social Companion & YT Note-Taker",
-  "version": "1.23.5",
+  "version": "1.23.6",
   "description": "Premium companion for YouTube, Spotify, X (Twitter), Reddit, DeepWiki, and Cambridge Dictionary. Take notes, extract transcripts, lyrics, threads, wiki pages, and export to markdown/JSON/CSV.",
   "permissions": [
     "storage",

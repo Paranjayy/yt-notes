@@ -3811,20 +3811,35 @@ ${JSON.stringify(snapshot, null, 2)}
         ?.innerText ||
       document.querySelector("h1.ytd-watch-metadata")?.innerText ||
       document.title;
+    // Scoped to ytd-watch-metadata on purpose: a bare
+    // `ytd-video-owner-renderer #channel-name a` matches the playlist
+    // sidebar owner first when ?list=... is present (e.g. "Yajuvendrasinh"),
+    // and collab videos render the visible name in #attributed-channel-name
+    // ("Nerd Snipe and 2 more") while #channel-name is hidden/stale.
+    const helperChannel =
+      window.YoutubeHelpers?.extractYouTubeChannelName?.(document)?.trim() || "";
     const channelEl =
+      (helperChannel ? { innerText: helperChannel } : null) ||
+      document.querySelector(
+        "ytd-watch-metadata #owner ytd-video-owner-renderer #attributed-channel-name a",
+      ) ||
+      document.querySelector(
+        "ytd-watch-metadata ytd-video-owner-renderer #attributed-channel-name a",
+      ) ||
+      document.querySelector(
+        "ytd-watch-metadata #owner ytd-video-owner-renderer #channel-name a",
+      ) ||
       document.querySelector(
         "ytd-watch-metadata ytd-video-owner-renderer #channel-name a",
-      ) ||
-      document.querySelector("ytd-video-owner-renderer #channel-name a") ||
-      document.querySelector("#upload-info #channel-name a") ||
-      document.querySelector("#channel-name a");
-    const channel = channelEl ? channelEl.innerText.trim() : "Unknown";
+      );
+    const channel = channelEl ? (channelEl.innerText || "").trim() || "Unknown" : "Unknown";
     const subCount =
+      document.querySelector(
+        "ytd-watch-metadata #owner ytd-video-owner-renderer #owner-sub-count",
+      )?.innerText ||
       document.querySelector(
         "ytd-watch-metadata ytd-video-owner-renderer #owner-sub-count",
       )?.innerText ||
-      document.querySelector("ytd-video-owner-renderer #owner-sub-count")
-        ?.innerText ||
       "";
     const views =
       document.querySelector("ytd-watch-metadata #info-container #info span")
@@ -4484,23 +4499,16 @@ ${JSON.stringify(snapshot, null, 2)}
   }
 
   // --- X (Twitter) & Reddit Content Panels ---
+  // Legacy FAB retired: X/Reddit now ship dedicated widgets (twitter.js →
+  // #sc-x-widget, reddit.js → #sc-rd-widget). The 🚀 button only duplicated
+  // them and leaked into screenshots, so this is a no-op that also cleans
+  // up any FAB left by an older build.
   function initSocialCompanion(platform) {
-    const fab = document.createElement("div");
-    fab.className = "sc-floating-action-button";
-    fab.innerHTML = "🚀";
-    fab.title = `Open Social Companion for ${platform === "x" ? "X (Twitter)" : "Reddit"}`;
-    document.body.appendChild(fab);
-
-    let panel = null;
-    fab.addEventListener("click", () => {
-      if (panel) {
-        panel.remove();
-        panel = null;
-      } else {
-        panel = createSocialPanel(platform);
-        document.body.appendChild(panel);
-      }
-    });
+    try {
+      document.querySelectorAll(".sc-floating-action-button").forEach((el) => el.remove());
+      document.querySelectorAll(".sc-floating-panel").forEach((el) => el.remove());
+    } catch {}
+    return;
   }
 
   function createSocialPanel(platform) {

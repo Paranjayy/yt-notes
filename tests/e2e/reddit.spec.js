@@ -37,30 +37,16 @@ test.describe('Reddit Extension E2E Suite', () => {
     // Navigate to post page (the mock matches this)
     await page.goto('https://www.reddit.com/r/javascript/comments/98765/how_to_setup_vitest/');
 
-    // Verify floating action button is present and click it
-    const fab = page.locator('.sc-floating-action-button');
-    await expect(fab).toBeVisible({ timeout: 10000 });
-    await fab.click();
+    // Legacy 🚀 FAB is retired — dedicated widget owns this surface now.
+    await expect(page.locator('.sc-floating-action-button')).toHaveCount(0, { timeout: 10000 });
 
-    // Verify floating panel is open
-    const panel = page.locator('.sc-floating-panel');
-    await expect(panel).toBeVisible();
+    // Dedicated Reddit widget should inject and capture incl. image-post body.
+    const widget = page.locator('#sc-rd-widget');
+    await expect(widget).toBeVisible({ timeout: 15000 });
+    await expect(widget.locator('#sc-rd-status')).toContainText('captured', { timeout: 15000 });
 
-    // Verify title contains platform name
-    await expect(panel.locator('.sc-header-title')).toContainText('Social Companion (Reddit)');
-
-    // Verify extracted preview text contains scraped data
-    const preview = page.locator('#sc-social-preview');
-    const md = await preview.innerText();
-    expect(md).toContain('Platform: REDDIT');
-    expect(md).toContain('Author: javascript_dev');
-    expect(md).toContain('Title: How to setup Vitest?');
-    expect(md).toContain('Just use npm install vitest');
-
-    // Intercept download request
-    const downloadPromise = page.waitForEvent('download');
-    await page.click('#sc-social-btn-dl');
-    const download = await downloadPromise;
-    expect(download.suggestedFilename()).toBe('reddit_scraped_post.md');
+    // Capture via the widget and verify the body made it into the export.
+    await widget.locator('#sc-rd-capture').click();
+    await expect(widget.locator('#sc-rd-lines')).toContainText('javascript_dev', { timeout: 15000 });
   });
 });

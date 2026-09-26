@@ -162,6 +162,7 @@ async function mockYouTubePage(page, options = {}) {
 async function mockXPage(page, options = {}) {
   const {
     author = 'Jane Doe',
+    handle = 'janedoe',
     text = 'Just launched the Social Companion extension! It is fully goated. 🚀 #webdev #browser-ext',
     replies = '45',
     retweets = '12',
@@ -176,21 +177,24 @@ async function mockXPage(page, options = {}) {
         <title>${author} on X</title>
       </head>
       <body>
-        <div data-testid="User-Name">
-          <span>${author}</span>
-        </div>
-        <div data-testid="tweetText">
-          ${text}
-        </div>
-        <div style="display:flex;">
-          <span data-testid="reply">${replies}</span>
-          <span data-testid="retweet">${retweets}</span>
-          <span data-testid="like">${likes}</span>
-        </div>
-        
-        <!-- Hashtags -->
-        <a href="/hashtag/webdev">#webdev</a>
-        <a href="/hashtag/browser-ext">#browser-ext</a>
+        <main>
+          <div data-testid="primaryColumn">
+            <article data-testid="tweet">
+              <div data-testid="User-Name">
+                <span>${author} @${handle}</span>
+              </div>
+              <div data-testid="tweetText">
+                ${text}
+              </div>
+              <a href="/${handle}/status/123456"><time>2h</time></a>
+              <div role="group" aria-label="${replies} replies, ${retweets} reposts, ${likes} likes">
+                <span data-testid="reply">${replies}</span>
+                <span data-testid="retweet">${retweets}</span>
+                <span data-testid="like">${likes}</span>
+              </div>
+            </article>
+          </div>
+        </main>
       </body>
       </html>
     `;
@@ -206,6 +210,7 @@ async function mockRedditPage(page, options = {}) {
     title = 'Social Companion is awesome for taking study notes',
     author = 'redditor_prime',
     text = 'I have been using this tool to capture screenshots and notes from lectures. Highly recommend exporting as Markdown!',
+    postId = '98765',
   } = options;
 
   await page.route('https://www.reddit.com/r/**/comments/**', async (route) => {
@@ -217,14 +222,20 @@ async function mockRedditPage(page, options = {}) {
       </head>
       <body>
         <shreddit-title title="${title}"></shreddit-title>
-        
-        <div class="author-info">
-          <a href="/user/${author}/">${author}</a>
-        </div>
-
-        <div id="test-post-rtjson-content">
-          <p>${text}</p>
-        </div>
+        <shreddit-post id="t3_${postId}" post-title="${title}" author="${author}" score="42" comment-count="2" post-type="image" subreddit-prefixed-name="r/javascript" permalink="/r/javascript/comments/${postId}/slug/">
+          <h1 id="post-title-t3_${postId}">${title}</h1>
+          <div class="author-info">
+            <a href="/user/${author}/" aria-label="Author: ${author}">${author}</a>
+          </div>
+          <shreddit-post-text-body>
+            <div id="t3_${postId}-post-rtjson-content">
+              <p>${text}</p>
+            </div>
+          </shreddit-post-text-body>
+        </shreddit-post>
+        <shreddit-comment author="commenter_one" score="5" depth="0" permalink="/r/javascript/comments/${postId}/comment/abc/">
+          <div slot="comment"><p>Great post!</p></div>
+        </shreddit-comment>
       </body>
       </html>
     `;
