@@ -172,8 +172,80 @@ function scrapeVisibleTweets(root) {
   return out;
 }
 
-/** Profile header block (UserName / UserDescription / location / url / join). */
-function scrapeProfileHeader(doc) {
+/**
+ * Extract a self-thread from scraped tweets in visible order.
+ * Anchor = tweet matching statusId, else first tweet by handle, else first.
+ * Thread = anchor + later same-handle tweets (author's continuation).
+ * Heuristic receipt: same-author continuation in visible order — interleaved
+ * replies from others are excluded, quoted tweets are not followed.
+ */
+function extractThread(tweets, { statusId = "", handle = "" } = {}) {
+  if (!Array.isArray(tweets) || !tweets.length) return [];
+  let anchorIdx = 0;
+  if (statusId) {
+    const i = tweets.findIndex((t) => t && t.statusId === statusId);
+    if (i >= 0) anchorIdx = i;
+  } else if (handle) {
+    const i = tweets.findIndex((t) => t && t.handle === handle);
+    if (i >= 0) anchorIdx = i;
+  }
+  const anchor = tweets[anchorIdx];
+  if (!anchor) return [];
+  const author = anchor.handle || "";
+  const out = [anchor];
+  for (let i = anchorIdx + 1; i < tweets.length; i++) {
+    const t = tweets[i];
+    if (t && author && t.handle === author) out.push(t);
+  }
+  return out;
+}
+
+/** Unrolled thread export: numbered full-text posts with receipts. */
+function buildThreadMarkdown({ route = {}, profile = null, thread = [], capturedAt = "" }) {
+  const at = capturedAt || new Date().toISOString();
+  const lines = [];
+  const head = route.handle ? `Thread by @${route.handle}` : "Thread";
+  lines.push(`# ${head}`);
+  lines.push("");
+  lines.push("`x` `twitter` `thread`");
+  lines.push("");
+  lines.push("| Field | Value |");
+  lines.push("| --- | --- |");
+  if (route.handle) lines.push(`| Handle | @${route.handle} |`);
+  if (route.statusId) lines.push(`| Anchor Status ID | \`${route.statusId}\` |`);
+  lines.push(`| Posts in thread | ${thread.length} |`);
+  lines.push(`| Method | same-author continuation in visible order |`);
+  lines.push(`| URL | ${route.url || ""} |`);
+  if (profile?.displayName) lines.push(`| Name | ${profile.displayName} |`);
+  lines.push(`| Captured | ${at} |`);
+  lines.push("");
+  if (!thread.length) {
+    lines.push("> No thread posts captured. Open the thread so posts render, then re-run.");
+    lines.push("");
+  } else {
+    thread.forEach((t, i) => {
+      lines.push(`## ${i + 1}. ${t.author} (@${t.handle})${t.time ? ` · ${t.time}` : ""}`);
+      lines.push("");
+      if (t.text) lines.push(t.text);
+      else lines.push("_(no text — media-only post)_");
+      lines.push("");
+      const stats = [`💬 ${t.replies || "0"}`, `🔁 ${t.reposts || "0"}`, `❤️ ${t.likes || "0"}`];
+      if (t.views) stats.push(`👁️ ${t.views}`);
+      lines.push(stats.join(" · "));
+      if (t.statusUrl) lines.push(t.statusUrl);
+      if (Array.isArray(t.photos) && t.photos.length) {
+        t.photos.forEach((src) => lines.push(`![](${src})`));
+      }
+      lines.push("");
+    });
+  }
+  lines.push("---");
+  lines.push(`_Source: X thread • ${route.url || ""} • captured ${at}_`);
+  lines.push("");
+  return lines.join("\n");
+}
+
+/** Profile header block (UserName / UserDescription / location / url / join). */function scrapeProfileHeader(doc) {
   if (!doc) return null;
   const q = (sel) => {
     try {
@@ -284,6 +356,8 @@ if (typeof module !== "undefined" && module.exports) {
     scrapeTweetArticle,
     scrapeVisibleTweets,
     scrapeProfileHeader,
+    extractThread,
+    buildThreadMarkdown,
     buildXMarkdown,
   };
 } else if (typeof window !== "undefined") {
@@ -293,6 +367,8 @@ if (typeof module !== "undefined" && module.exports) {
     scrapeTweetArticle,
     scrapeVisibleTweets,
     scrapeProfileHeader,
+    extractThread,
+    buildThreadMarkdown,
     buildXMarkdown,
   };
 }

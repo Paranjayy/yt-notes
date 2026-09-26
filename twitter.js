@@ -267,6 +267,7 @@
             <button data-x-copy="text" style="padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-weight:700;font-size:11px;cursor:pointer;">Text only</button>
             <button data-x-copy="links" style="padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-weight:700;font-size:11px;cursor:pointer;">Links</button>
             <button data-x-copy="compact" style="padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-weight:700;font-size:11px;cursor:pointer;">Compact</button>
+            <button data-x-copy="thread" title="Unroll same-author thread in reading order" style="padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-weight:700;font-size:11px;cursor:pointer;">🧵 Unroll</button>
           </div>
         </div>
         <div id="sc-x-meta" style="font-size:11px;opacity:.75;">…</div>
@@ -314,13 +315,24 @@
       btn.onclick = async () => {
         const format = btn.getAttribute("data-x-copy");
         try {
-          if (!tweets.length) await capture({ scroll: false });
+          if (!tweets.length) await capture({ scroll: format === "thread" });
           if (!tweets.length) {
             scToast("⚠️ Nothing captured yet — scroll, then Capture posts.");
             return;
           }
           const r = parseRoute(location.href);
           r.url = location.href;
+          if (format === "thread") {
+            const thread = (H.extractThread || ((ts) => ts))(tweets, r);
+            if (thread.length <= 1) {
+              scToast("🧵 Single post — no continuation found.");
+              return;
+            }
+            const out = (H.buildThreadMarkdown || (() => ""))({ route: r, profile, thread, capturedAt: new Date().toISOString() });
+            await navigator.clipboard.writeText(out);
+            scToast(`🧵 Thread unrolled (${thread.length} posts).`);
+            return;
+          }
           const out = (H.buildXMarkdown || (() => ""))({ route: r, profile, tweets, capturedAt: new Date().toISOString(), format });
           await navigator.clipboard.writeText(out);
           scToast(`📋 Copied ${format} (${tweets.length} posts).`);

@@ -87,4 +87,29 @@ describe('twitter-helpers.js', () => {
       expect(full).toContain('![](https://pbs.twimg.com/media/X)');
     });
   });
+
+  describe('extractThread + buildThreadMarkdown', () => {
+    const T = (id, handle, text) => ({ author: handle, handle, time: '', text, replies: '', reposts: '', likes: '', views: '', statusUrl: `https://x.com/${handle}/status/${id}`, statusId: id, hasPhoto: false, hasVideo: false, hasQuote: false, photos: [] });
+    it('unrolls same-author continuation after the anchor, skipping others', () => {
+      const tweets = [T('1', 'theo', 'first'), T('2', 'heckler', 'reply'), T('3', 'theo', 'second'), T('4', 'theo', 'third')];
+      const thread = H.extractThread(tweets, { statusId: '1', handle: 'theo' });
+      expect(thread.map((t) => t.statusId)).toEqual(['1', '3', '4']);
+      expect(H.extractThread([], {})).toEqual([]);
+      expect(H.extractThread([T('9', 'solo', 'only')], {}).length).toBe(1);
+    });
+
+    it('renders numbered thread export with receipts', () => {
+      const thread = [T('1', 'theo', 'first'), T('3', 'theo', 'second')];
+      const md = H.buildThreadMarkdown({ route: { kind: 'post', handle: 'theo', statusId: '1', url: 'https://x.com/theo/status/1' }, thread });
+      expect(md).toContain('# Thread by @theo');
+      expect(md).toContain('`x` `twitter` `thread`');
+      expect(md).toContain('## 1.');
+      expect(md).toContain('first');
+      expect(md).toContain('## 2.');
+      expect(md).toContain('second');
+      expect(md).toContain('same-author continuation');
+      const empty = H.buildThreadMarkdown({ route: {}, thread: [] });
+      expect(empty).toContain('No thread posts captured');
+    });
+  });
 });
