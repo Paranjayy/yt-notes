@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Social Companion & YT Note-Taker",
-  "version": "1.24.0",
-  "description": "Premium companion for YouTube, Spotify, X (Twitter), Reddit, DeepWiki, and Cambridge Dictionary. Take notes, extract transcripts, lyrics, threads, wiki pages, and export to markdown/JSON/CSV.",
+  "version": "1.25.0",
+  "description": "Premium companion for YouTube, Spotify, X (Twitter), Reddit, Rosint, DeepWiki, and Cambridge Dictionary. Take notes, extract transcripts, lyrics, threads, wiki pages, archive profiles, and export to markdown/JSON/CSV.",
   "permissions": [
     "storage",
     "activeTab",
@@ -25,6 +25,7 @@
     "https://*.twitter.com/*",
     "https://*.x.com/*",
     "https://*.reddit.com/*",
+    "https://rosint.dev/*",
     "https://*.dictionary.cambridge.org/*",
     "https://deepwiki.com/*",
     "https://*.deepwiki.com/*",
@@ -65,6 +66,13 @@
         "https://*.reddit.com/*"
       ],
       "js": ["reddit-helpers.js", "reddit.js"],
+      "run_at": "document_end"
+    },
+    {
+      "matches": [
+        "https://rosint.dev/*"
+      ],
+      "js": ["rosint-helpers.js", "rosint.js"],
       "run_at": "document_end"
     },
     {
