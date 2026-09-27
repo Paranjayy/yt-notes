@@ -139,9 +139,48 @@ function scrapeRosintCard(card) {
   return { subreddit, timeRel, timeAbs, score, badges, commentsCount, title, body, url };
 }
 
+function scrapeRosintComment(anchor) {
+  let row = anchor;
+  for (let depth = 0; depth < 10 && row?.parentElement; depth++) {
+    row = row.parentElement;
+    if (row.querySelector('button[aria-label="Collapse comment"], button[aria-label="Expand comment"]')) break;
+  }
+  if (!row?.querySelector('button[aria-label="Collapse comment"], button[aria-label="Expand comment"]')) return null;
+  const url = anchor.getAttribute("href")?.split("?")[0] || "";
+  if (!url) return null;
+  const spans = Array.from(row.querySelectorAll("span")).map(rosTextOf);
+  const subreddit = Array.from(row.querySelectorAll('a[href*="reddit.com/r/"]')).map(rosTextOf).find((value) => ROS_SUB_RE.test(value)) || "";
+  const body = Array.from(row.querySelectorAll("p")).map(rosTextOf).filter(Boolean).join("\n\n").slice(0, 6000);
+  return {
+    subreddit,
+    timeRel: spans.map((value) => (value.match(/^\d+[smhdwy] ago/i) || [])[0]).find(Boolean) || "",
+    timeAbs: (spans.find((value) => ROS_ABS_RE.test(value)) || "").slice(0, 60),
+    score: spans.find((value) => ROS_NUM_RE.test(value)) || "",
+    badges: [],
+    commentsCount: "",
+    title: `Comment in ${subreddit || "Reddit"}`,
+    body,
+    url,
+  };
+}
+
 /** All result cards currently rendered under root, deduped by URL. */
-function scrapeRosintCards(root) {
+function scrapeRosintCards(root, kind = "Posts") {
   if (!root) return [];
+  if (kind === "Comments") {
+    const seen = new Set();
+    const out = [];
+    try {
+      const anchors = Array.from(root.querySelectorAll('a[href*="reddit.com/r/"]')).filter((a) => /^view comment\b/i.test(rosTextOf(a)));
+      for (const anchor of anchors) {
+        const card = scrapeRosintComment(anchor);
+        if (!card || seen.has(card.url)) continue;
+        seen.add(card.url);
+        out.push(card);
+      }
+    } catch {}
+    return out;
+  }
   let anchors = [];
   try {
     anchors = Array.from(root.querySelectorAll('a[href*="reddit.com/r/"]')).filter((a) =>
@@ -198,6 +237,26 @@ function findRosintTab(doc, name) {
     );
   } catch {
     return null;
+  }
+}
+
+function findRosintBodyToggles(doc) {
+  if (!doc) return [];
+  try {
+    return Array.from(doc.querySelectorAll('[aria-label="Show post body"]')).filter(
+      (el) => !el.parentElement?.closest('[aria-label="Show post body"]')
+    );
+  } catch {
+    return [];
+  }
+}
+
+function findRosintCommentToggles(doc) {
+  if (!doc) return [];
+  try {
+    return Array.from(doc.querySelectorAll('button[aria-label="Expand comment"]'));
+  } catch {
+    return [];
   }
 }
 
@@ -289,6 +348,8 @@ if (typeof module !== "undefined" && module.exports) {
     getRosintPage,
     hasRosintNextPage,
     findRosintTab,
+    findRosintBodyToggles,
+    findRosintCommentToggles,
     buildRosintMarkdown,
   };
 } else if (typeof window !== "undefined") {
@@ -300,6 +361,8 @@ if (typeof module !== "undefined" && module.exports) {
     getRosintPage,
     hasRosintNextPage,
     findRosintTab,
+    findRosintBodyToggles,
+    findRosintCommentToggles,
     buildRosintMarkdown,
   };
 }

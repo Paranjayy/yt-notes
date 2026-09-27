@@ -63,6 +63,42 @@ describe('rosint-helpers.js', () => {
     });
   });
 
+  describe('body expansion controls', () => {
+    it('finds only collapsed post-body controls, not comment loaders or expanded cards', () => {
+      document.body.innerHTML = `
+        <div role="button" aria-label="Show post body">Post A<button aria-label="Show post body">show body</button></div>
+        <button aria-label="Show post body">Post B</button>
+        <div role="button" aria-label="Hide post body">Post C</div>
+        <button aria-expanded="false">show 19 comments</button>`;
+      expect(H.findRosintBodyToggles(document).map((el) => el.tagName)).toEqual(['DIV', 'BUTTON']);
+    });
+  });
+
+  describe('comment cards', () => {
+    it('reads comment text and permalink without treating an embedded post as a comment', () => {
+      document.body.innerHTML = `
+        <div><a href="https://www.reddit.com/r/test/comments/post-a/">open in reddit</a></div>
+        <div class="comment-card">
+          <div class="comment-row">
+            <button aria-label="Collapse comment"></button><span>7</span>
+            <div><a href="https://www.reddit.com/r/test">r/test</a><span>2d ago</span>
+              <a href="https://www.reddit.com/r/test/comments/post-a/">view thread</a>
+              <a href="https://www.reddit.com/r/test/comments/post-a/comment-a/">view comment</a>
+              <p>Actual archived comment text.</p>
+            </div>
+          </div>
+        </div>`;
+      const cards = H.scrapeRosintCards(document, 'Comments');
+      expect(cards).toHaveLength(1);
+      expect(cards[0]).toMatchObject({ subreddit: 'r/test', score: '7', body: 'Actual archived comment text.', url: 'https://www.reddit.com/r/test/comments/post-a/comment-a/' });
+    });
+
+    it('finds collapsed comments for Full mode', () => {
+      document.body.innerHTML = '<button aria-label="Expand comment"></button><button aria-label="Collapse comment"></button>';
+      expect(H.findRosintCommentToggles(document)).toHaveLength(1);
+    });
+  });
+
   describe('buildRosintMarkdown', () => {
     it('renders profile + posts with receipts, receipted empty bodies', () => {
       document.body.innerHTML = fixture('rosint-profile.html');

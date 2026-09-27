@@ -9,13 +9,16 @@
   const H = window.RosintHelpers || {};
   const parseRoute = H.parseRosintRoute || (() => ({ kind: "", username: "" }));
 
-  const PAGE_CAP = 25;
+  const PAGE_CAP = 100;
 
   let currentKey = "";
   let posts = [];
   let comments = [];
   let profile = null;
   let pagesCrawled = { posts: 0, comments: 0 };
+  let captureModes = { posts: "full", comments: "full" };
+  let completedCapture = "";
+  let lastCrawledTab = "";
   let rsStatus = { status: "idle", message: "Waiting…" };
   let _observer = null;
 
@@ -61,11 +64,11 @@
     if (meta && currentKey) meta.textContent = message;
   }
 
-  function snapshotVisible() {
+  function snapshotVisible(kind = "Posts") {
     const scrapeProfile = H.scrapeRosintProfile || (() => null);
     const scrapeCards = H.scrapeRosintCards || (() => []);
     const r = parseRoute(location.href);
-    return { profile: scrapeProfile(document, r.username), cards: scrapeCards(document) };
+    return { profile: scrapeProfile(document, r.username), cards: scrapeCards(document, kind) };
   }
 
   async function waitFor(fn, timeoutMs = 6000) {
@@ -81,136 +84,138 @@
     }
   }
 
-  /** Click collapsed card headers so full bodies render. Skips the media
-   *  thumbnail (role=button, no aria-label) and the "show N comments"
-   *  loaders (aria-expanded) — inline comments stay collapsed so card
-   *  bodies aren't polluted; the Comments tab covers comments. */
-  async function expandBodies(key) {
-    let expanded = 0;
-    try {
-      const anchors = Array.from(document.querySelectorAll('a[href*="reddit.com/r/"]')).filter((a) =>
-        /open in reddit/i.test((a.textContent || "").replace(/\s+/g, " ").trim())
-      );
-      const seen = new Set();
-      for (const a of anchors) {
-        if (routeKey() !== key) break;
-        let node = a;
-        let card = null;
-        for (let d = 0; d < 12 && node?.parentElement; d++) {
-          node = node.parentElement;
-          try {
-            if (node.querySelectorAll('a[href*="reddit.com/r/"]').length === 1) card = node;
-            else break;
-          } catch {}
-        }
-        if (!card || seen.has(card)) continue;
-        seen.add(card);
-        const head = card.firstElementChild;
-        if (head && head.tagName === "DIV" && !head.hasAttribute("role")) {
-          try {
-            head.click();
-            expanded++;
-            if (expanded % 10 === 0) await sleep(250);
-          } catch {}
-        }
-      }
-    } catch {}
-    if (expanded) await sleep(800);
-    return expanded;
+  /** Open only labelled post bodies; inline comment loaders stay untouched. */
+  async function expandBodies(key, name) {
+    const find = name === "Comments" ? (H.findRosintCommentToggles || (() => [])) : (H.findRosintBodyToggles || (() => []));
+    const toggles = find(document);
+    for (const toggle of toggles) {
+      if (routeKey() !== key) break;
+      try { toggle.click(); } catch {}
+    }
+    if (toggles.length) await waitFor(() => find(document).length === 0 ? true : null, 3000);
+    return toggles.length;
   }
 
   async function clickTab(key, name) {
     const find = H.findRosintTab || (() => null);
     const btn = find(document, name);
     if (!btn) return false;
+    const visiblePosts = snapshotVisible("Posts").cards.length;
+    const visibleComments = snapshotVisible("Comments").cards.length;
+    const activeTab = lastCrawledTab || (visibleComments > visiblePosts ? "Comments" : "Posts");
+    const before = snapshotVisible(name).cards.map((card) => card.url).join("|");
+    const beforePage = (H.getRosintPage || (() => 1))(document);
     try {
       btn.click();
     } catch {
       return false;
     }
-    // Wait until this tab's cards show up (or timeout — empty tabs exist).
-    await waitFor(() => {
+    await sleep(300);
+    const changedTab = activeTab !== name;
+    const loaded = await waitFor(() => {
       if (routeKey() !== key) return true;
-      return snapshotVisible().cards.length ? true : null;
-    }, 5000);
-    await sleep(500);
-    return routeKey() === key;
+      const cards = snapshotVisible(name).cards;
+      if (!cards.length) return null;
+      if (!changedTab) return true;
+      const signature = cards.map((card) => card.url).join("|");
+      const page = (H.getRosintPage || (() => 1))(document);
+      return signature !== before || page !== beforePage ? true : null;
+    }, 10000);
+    if (loaded && routeKey() === key) lastCrawledTab = name;
+    return !!loaded && routeKey() === key;
   }
 
   function nextButton() {
     try {
       const btn = document.querySelector('button[aria-label="Next page"]');
-      if (!btn || btn.disabled || btn.hasAttribute("disabled")) return null;
+      if (!btn || btn.disabled || btn.hasAttribute("disabled") || btn.getAttribute("aria-disabled") === "true") return null;
       return btn;
     } catch {
       return null;
     }
   }
 
-  /** Crawl one tab across pages. Returns {items, pages}. */
-  async function crawlTab(key, name) {
+  /** Read one tab according to its selected mode. */
+  async function crawlTab(key, name, mode) {
     const items = new Map();
     let pages = 0;
-    if (!(await clickTab(key, name))) return { items: [], pages };
+    let complete = true;
+    if (!(await clickTab(key, name))) return { items: [], pages, complete: false };
     for (let page = 0; page < PAGE_CAP; page++) {
       if (routeKey() !== key) break;
-      await expandBodies(key);
+      if (mode === "full") await expandBodies(key, name);
       if (routeKey() !== key) break;
-      const snap = snapshotVisible();
+      const snap = snapshotVisible(name);
       for (const c of snap.cards) {
         if (c?.url && !items.has(c.url)) items.set(c.url, c);
       }
       pages++;
       setStatus("waiting", `Reading ${name}… page ${pages} (${items.size} items).`);
       renderPreview();
+      if (mode === "quick") break;
       const next = nextButton();
       if (!next) break;
-      const before = items.size;
+      const beforePage = (H.getRosintPage || (() => 1))(document);
       try {
         next.click();
       } catch {
+        complete = false;
         break;
       }
-      await sleep(1200);
+      const advanced = await waitFor(() => {
+        const currentPage = (H.getRosintPage || (() => 1))(document);
+        return currentPage > beforePage && snapshotVisible(name).cards.length ? true : null;
+      }, 12000);
+      if (!advanced) {
+        complete = false;
+        break;
+      }
       if (routeKey() !== key) break;
-      // Stop when no new items arrive (last page re-rendered).
-      const after = snapshotVisible().cards.length;
-      if (after === 0) break;
-      void before;
     }
-    return { items: [...items.values()], pages };
+    if (pages === PAGE_CAP && nextButton()) complete = false;
+    return { items: [...items.values()], pages, complete };
   }
 
-  async function capture({ crawl = false } = {}) {
+  function selectedCaptureKey() {
+    return `${routeKey()}:${captureModes.posts}:${captureModes.comments}`;
+  }
+
+  async function captureSelected() {
+    const key = routeKey();
+    if (!key) throw new Error("Open a Rosint profile first (rosint.dev/?u=<name>).");
+    if (completedCapture === selectedCaptureKey()) {
+      const route = parseRoute(location.href);
+      return { route, markdown: H.buildRosintMarkdown({ route, profile, posts, comments, pagesCrawled, capturedAt: new Date().toISOString() }) };
+    }
+    setStatus("waiting", "Reading selected Posts and Comments modes…");
+    const p = await crawlTab(key, "Posts", captureModes.posts);
+    if (routeKey() !== key) throw new Error("Navigated away mid-capture.");
+    const c = await crawlTab(key, "Comments", captureModes.comments);
+    if (routeKey() !== key) throw new Error("Navigated away mid-capture.");
+    posts = p.items;
+    comments = c.items;
+    pagesCrawled = { posts: p.pages, comments: c.pages };
+    const route = parseRoute(location.href);
+    profile = (H.scrapeRosintProfile || (() => null))(document, route.username);
+    completedCapture = p.complete && c.complete ? selectedCaptureKey() : "";
+    const note = p.complete && c.complete ? "" : " Partial capture: Rosint did not advance through every page.";
+    setStatus(posts.length || comments.length ? "ready" : "unavailable", `Captured ${posts.length} posts + ${comments.length} comments.${note}`);
+    renderPreview();
+    return { route, markdown: H.buildRosintMarkdown({ route, profile, posts, comments, pagesCrawled, capturedAt: new Date().toISOString() }) };
+  }
+
+  async function captureVisible() {
     const r = parseRoute(location.href);
     if (!r.kind) throw new Error("Open a Rosint profile first (rosint.dev/?u=<name>).");
-    const key = routeKey();
-    if (crawl) {
-      setStatus("waiting", "Crawling posts + comments across pages…");
-      const p = await crawlTab(key, "Posts");
-      if (routeKey() !== key) throw new Error("Navigated away mid-capture.");
-      const c = await crawlTab(key, "Comments");
-      if (routeKey() !== key) throw new Error("Navigated away mid-capture.");
-      posts = p.items;
-      comments = c.items;
-      pagesCrawled = { posts: p.pages, comments: c.pages };
-      profile = (H.scrapeRosintProfile || (() => null))(document, r.username);
-      if (!posts.length && !comments.length) {
-        setStatus("unavailable", "No results rendered — wait for Rosint to load, then Capture again.");
-      } else {
-        setStatus("ready", `Captured ${posts.length} posts + ${comments.length} comments.`);
-      }
+    setStatus("waiting", "Reading visible results…");
+    const snap = snapshotVisible();
+    profile = snap.profile;
+    // Auto-read lands in posts; tab origin is unknown until a selected capture.
+    posts = snap.cards;
+    if (!posts.length) {
+      setStatus("unavailable", "No results rendered — wait for Rosint to load, then Capture again.");
     } else {
-      setStatus("waiting", "Reading visible results…");
-      const snap = snapshotVisible();
-      profile = snap.profile;
-      // Visible-page capture lands in posts; tab origin unknown without crawl.
-      posts = snap.cards;
-      if (!posts.length) {
-        setStatus("unavailable", "No results rendered — wait for Rosint to load, then Capture again.");
-      } else {
-        setStatus("ready", `Captured ${posts.length} visible results.`);
-      }
+      setStatus("ready", `Captured ${posts.length} visible results.`);
     }
     renderPreview();
     const md = (H.buildRosintMarkdown || (() => ""))({
@@ -321,8 +326,12 @@
         </span>
       </div>
       <div data-sc-body style="display:flex;flex-direction:column;min-height:0;overflow:hidden;padding:12px 14px;gap:8px;">
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:12px;">
+          <label>Posts <select id="sc-rosint-posts-mode" aria-label="Posts capture mode" style="margin-left:4px;background:#272729;color:inherit;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:4px;"><option value="full">Full</option><option value="quick">Quick</option></select></label>
+          <label>Comments <select id="sc-rosint-comments-mode" aria-label="Comments capture mode" style="margin-left:4px;background:#272729;color:inherit;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:4px;"><option value="full">Full</option><option value="quick">Quick</option></select></label>
+        </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
-          <button id="sc-rosint-capture" title="Crawl all pages on Posts + Comments tabs" style="padding:7px 11px;border-radius:8px;border:none;background:#fe5301;color:#fff;font-weight:800;font-size:12px;cursor:pointer;">Capture all</button>
+          <button id="sc-rosint-capture" title="Capture Posts and Comments using their selected modes" style="padding:7px 11px;border-radius:8px;border:none;background:#fe5301;color:#fff;font-weight:800;font-size:12px;cursor:pointer;">Capture</button>
           <button id="sc-rosint-copy" style="padding:7px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-weight:700;font-size:12px;cursor:pointer;">Copy</button>
           <button id="sc-rosint-links" style="padding:7px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-weight:700;font-size:12px;cursor:pointer;">Links</button>
           <button id="sc-rosint-dl" style="padding:7px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:inherit;font-weight:700;font-size:12px;cursor:pointer;">Download .md</button>
@@ -331,7 +340,7 @@
         </div>
         <div id="sc-rosint-meta" style="font-size:11px;opacity:.75;">…</div>
         <div id="sc-rosint-lines" style="max-height:280px;overflow-y:auto;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:10px;font-size:12px;">Not captured yet.</div>
-        <div style="font-size:11px;opacity:.6;">Public archive only (Arctic Shift + PullPush). Capture all walks every page on both tabs.</div>
+        <div style="font-size:11px;opacity:.6;">Full walks every page and opens bodies. Quick reads one page.</div>
       </div>`;
     document.body.appendChild(el);
     el.querySelector("#sc-rosint-capture").onclick = async (e) => {
@@ -339,19 +348,19 @@
       btn.textContent = "Crawling…";
       btn.disabled = true;
       try {
-        await capture({ crawl: true });
+        await captureSelected();
       } catch (err) {
         setStatus("error", err?.message || "Capture failed.");
         renderPreview();
       } finally {
-        btn.textContent = "Capture all";
+        btn.textContent = "Capture";
         btn.disabled = false;
       }
     };
     const quickCopy = async (format) => {
       try {
-        if ((!posts.length && !comments.length) || routeKey() !== currentKey) {
-          await capture({ crawl: false });
+        if (completedCapture !== selectedCaptureKey()) {
+          await captureSelected();
         }
         const r = parseRoute(location.href);
         const out = (H.buildRosintMarkdown || (() => ""))({ route: r, profile, posts, comments, pagesCrawled, capturedAt: new Date().toISOString(), format });
@@ -367,7 +376,7 @@
     el.querySelector("#sc-rosint-snap-high").onclick = () => copyAiSnapshot("high");
     el.querySelector("#sc-rosint-dl").onclick = async () => {
       try {
-        const { route, markdown } = await capture({ crawl: false });
+        const { route, markdown } = await captureSelected();
         const base = (`rosint-${route.username || "profile"}`).replace(/[^a-z0-9_-]+/gi, "_").slice(0, 100);
         downloadFile(`${base}.md`, markdown);
       } catch (err) {
@@ -384,8 +393,23 @@
     const body = el.querySelector("[data-sc-body]");
     const minBtn = el.querySelector("[data-sc-min]");
     const hideBtn = el.querySelector("[data-sc-hide]");
+    for (const name of ["posts", "comments"]) {
+      const select = el.querySelector(`#sc-rosint-${name}-mode`);
+      select.onchange = () => {
+        captureModes[name] = select.value === "quick" ? "quick" : "full";
+        completedCapture = "";
+        try { chrome.storage.local.set({ [`sc_rosint_${name}_mode`]: captureModes[name] }); } catch {}
+      };
+    }
     try {
-      chrome.storage.local.get(["sc_rosint_widget_pos", "sc_rosint_widget_collapsed"], (data) => {
+      chrome.storage.local.get(["sc_rosint_widget_pos", "sc_rosint_widget_collapsed", "sc_rosint_posts_mode", "sc_rosint_comments_mode"], (data) => {
+        for (const name of ["posts", "comments"]) {
+          const value = data?.[`sc_rosint_${name}_mode`];
+          if (value === "quick" || value === "full") {
+            captureModes[name] = value;
+            el.querySelector(`#sc-rosint-${name}-mode`).value = value;
+          }
+        }
         const pos = data?.sc_rosint_widget_pos;
         if (pos && Number.isFinite(pos.left) && Number.isFinite(pos.top)) {
           el.style.left = `${Math.max(0, Math.min(window.innerWidth - 80, pos.left))}px`;
@@ -484,7 +508,7 @@
       return;
     }
     if (message.type === "sc_get_current_markdown" || message.type === "sc_download_current_markdown" || message.type === "sc_download_current_transcript") {
-      capture({ crawl: false }).then(({ route, markdown }) => {
+      captureSelected().then(({ route, markdown }) => {
         if (message.type === "sc_get_current_markdown") {
           sendResponse({ ok: true, markdown, title: `u/${route.username} Rosint`, platform: "rosint" });
         } else {
@@ -514,16 +538,18 @@
       comments = [];
       profile = null;
       pagesCrawled = { posts: 0, comments: 0 };
+      completedCapture = "";
+      lastCrawledTab = "";
       injectPanel();
       setStatus("waiting", "Rosint surface detected. Auto-reading visible results…");
       watchResults(key);
       setTimeout(async () => {
         if (routeKey() !== key || posts.length || comments.length) return;
         try {
-          await capture({ crawl: false });
+          await captureVisible();
         } catch {
           if (routeKey() === key && !posts.length && !comments.length) {
-            setStatus("waiting", "Results not rendered yet — they capture as they load, or press Capture all.");
+            setStatus("waiting", "Results not rendered yet — they capture as they load, or press Capture.");
             renderPreview();
           }
         }
